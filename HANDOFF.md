@@ -35,21 +35,24 @@ There is no active feature request recorded beyond preparing this cross-agent ha
    - **Key Matrix Ingestion ([`Listen-Mk20Keys.ps1`](file:///e:/developments/projects/Snowball_Control/hardware/mk20/orchestration/Listen-Mk20Keys.ps1))**: Real-time switch contact monitor mapping `(row, col)` to physical keys 1..20 and rotary dial actions `100..105`, with semantic action routing (`APPROVE`, `REJECT`, `RETRY`, `CANCEL`).
    - **Zero-Trust Physical Presence Pairing ([`PairingManager.psm1`](file:///e:/developments/projects/Snowball_Control/hardware/mk20/orchestration/PairingManager.psm1))**: Host identity auto-detection (`Get-HostNetworkIdentity`), 6-digit challenge PIN, physical switch confirmation (Key 1), dynamic `iptables` MAC filtering binding, and `/mnt/SDCARD/paired_hosts.json` persistence.
    - **Hardware-in-the-Loop Agent Approvals ([`SyntheticPlayer.ps1`](file:///e:/developments/projects/Snowball_Control/hardware/mk20/orchestration/SyntheticPlayer.ps1))**: `-HardwareApproval` flag pauses agent playback at `approval.requested` until real MK20 switch contact is confirmed.
+3. **Phase 3: Live Coding Agent Adapters & Execution**:
+   - **Universal Agent Adapter ([`AgentAdapter.psm1`](file:///e:/developments/projects/Snowball_Control/hardware/mk20/orchestration/AgentAdapter.psm1))**: Normalizes streaming JSON from Claude Code 2.1 (`claude -p --verbose --output-format stream-json`) and OpenAI Codex (`codex exec --json`) into the universal `SCHEMA.md` pipeline.
+   - **Unit Test Suite ([`Test-AgentAdapter.ps1`](file:///e:/developments/projects/Snowball_Control/hardware/mk20/orchestration/Test-AgentAdapter.ps1))**: 15/15 automated unit tests passing across all event types.
+   - **Session Launcher ([`Start-Mk20Session.ps1`](file:///e:/developments/projects/Snowball_Control/hardware/mk20/orchestration/Start-Mk20Session.ps1))**: Interactive launcher supporting live execution (`-Provider claude`, `-Provider codex`) or synthetic playback (`-Synthetic`) with hardware approval gating.
+   - **Live Execution Verified**: Tested live with Claude Code 2.1; verified real-time stream normalization, token cost reporting, and clean shutdown.
 
 ## Remaining Work
 
-1. **Phase 3: Live Coding Agent Adapters**:
-   - Connect Codex app-server, Claude Agent SDK, and Gemini ACP event streams into the normalized schema.
-2. **Phase 4: MK20 LCD Screen Rendering & HUD UI**:
+1. **Phase 4: MK20 LCD Screen Rendering & HUD UI**:
    - Design and upload 640x656 LCD status views, activity ticker, and approval modals.
-3. **Phase 5: Production Gateway Service & Developer Tooling**:
+2. **Phase 5: Production Gateway Service & Developer Tooling**:
    - Package standalone background service (`snowball-gateway`) with dual-plane failover and IDE plugins.
-4. **Phase 6: Custom Firmware & Production Packaging**:
+3. **Phase 6: Custom Firmware & Production Packaging**:
    - Slim Tina Linux OS image and safe MicroSD OTA rollback.
 
 ## Exact Next Action
 
-Build the first live coding provider adapter (Codex app-server or Claude Agent SDK) under Phase 3 to bridge live coding sessions directly to the MK20.
+Build Phase 4: MK20 LCD Screen Rendering & HUD UI to display the active agent model, turn progress, and high-visibility approval modals directly on the 640x656 display.
 
 ## Architecture and Important Decisions
 
