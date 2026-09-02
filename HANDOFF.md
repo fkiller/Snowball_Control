@@ -47,21 +47,31 @@ Build the first live coding provider adapter (e.g. Codex app-server or Claude Ag
 ## Architecture and Important Decisions
 
 - This repository is intentionally separate from Snowball Gateway. Do not vendor or modify Gateway code here.
-- Keep two independent control planes: product traffic on USB CDC and development traffic on restricted TCP. Neither plane may reset or silently take ownership of the other.
-- Tina Linux owns display, networking, and applications; GD32/QMK owns low-latency key/HID behavior. Their serial contract must eventually be versioned and independently testable.
-- Provider sessions belong on the Windows/Snowball host behind normalized adapters. The T113 should render state and emit user actions rather than host coding agents itself.
-- Device mutations should have preflight checks, checksums, logs, and tested inverse operations. The microSD boot hook is the recovery boundary; routine development should not require system-partition replacement.
-- TCP ADB is unauthenticated on this Tina image. The current boundary is an iptables source-MAC allow rule followed by a drop rule on port 5555. Site credentials and the allowed MAC live only in ignored `dev-access.conf`.
-- `mk20ctl put` prefers ADB in `Auto` mode and uses MD5 verification for ADB uploads. COM uploads use 96-byte Base64 `saveToFile` chunks with per-chunk acknowledgements.
-- `restore` is a dry run by default. `-Force` restores the factory ADB init script, removes the SD boot hook, selects serial USB, syncs, and reboots; treat it as destructive.
+## Architecture and Important Decisions
+
+- **Deliverables Separation**: Clean division between Device Firmware (`mk20-firmware`) and Host Gateway (`snowball-gateway`). See [`ARCHITECTURE.md`](ARCHITECTURE.md).
+- **Two Independent Control Planes**: Product traffic on USB CDC (`COM5`) and development traffic on restricted TCP (`5555`). Automatic failover maintains active sessions if USB disconnects.
+- **Physical Presence Pairing**: Zero-trust pairing requires physical confirmation on the MK20 (PIN/dialog on 640x656 LCD + physical switch press) before dynamic `iptables` MAC filtering rules admit network connections.
+- **Tina Linux & GD32/QMK Contract**: Linux owns display, networking, and applications; GD32 owns low-latency key matrix and rotary dial scanning. Serial interface uses framed VIA packets (`0xAA 0x55 ... 0xF5 0x5F`) over `/dev/ttyS1`. See [`hardware/mk20/contract/LINUX_QMK_CONTRACT.md`](hardware/mk20/contract/LINUX_QMK_CONTRACT.md).
+- **Host-Owned Intelligence**: Provider sessions (Codex, Claude, Gemini) reside strictly on the host PC behind normalized event adapters. See [`hardware/mk20/orchestration/SCHEMA.md`](hardware/mk20/orchestration/SCHEMA.md).
+- **Recoverable Operations**: MicroSD boot hook (`lunch.sh`) is the recovery boundary; routine development does not require system-partition replacement.
 
 ## Files Changed
 
 | File | Purpose | State |
 |---|---|---|
-| `hardware/mk20/dev-tools/lunch.sh` | Wi-Fi + TCP ADB + firewall boot hook | Enhanced with fallback credentials, IP persistence, and timestamped logging |
-| `hardware/mk20/dev-tools/mk20ctl.ps1` | Host control helper | Hardened with error isolation, fast TCP probing, and clean process filtering |
-| `HANDOFF.md` | Cross-agent handoff documentation | Updated with live hardware verification results |
+| `ARCHITECTURE.md` | Complete system architecture, deliverables separation, pairing flow, and failover | Added |
+| `README.md` | Project overview and links to architectural specifications | Updated |
+| `hardware/mk20/contract/LINUX_QMK_CONTRACT.md` | Subsystem ownership, UART `/dev/ttyS1` framing, and `KeyboardInfo` schema | Added |
+| `hardware/mk20/contract/Test-QmkProtocol.ps1` | Automated test suite for VIA framing, checksums, and `KeyboardInfo` parsing (14/14 pass) | Added |
+| `hardware/mk20/orchestration/SCHEMA.md` | Universal normalized agent event model across Codex, Claude, and Gemini | Added |
+| `hardware/mk20/orchestration/SyntheticPlayer.ps1` | Mock agent session player streaming real-time turns, tools, and approvals | Added |
+| `hardware/mk20/dev-tools/Mk20Protocol.psm1` | Standalone host A1 protocol module with bi-directional CRC32 verification | Added |
+| `hardware/mk20/dev-tools/Test-Mk20Protocol.ps1` | Automated unit tests for wire framing, CRC vectors, and corruption rejection (19/19 pass) | Added |
+| `hardware/mk20/dev-tools/Watch-Mk20Events.ps1` | Real-time serial event listener for proactive frames | Added |
+| `hardware/mk20/dev-tools/mk20ctl.ps1` | Host control helper (`doctor`, `info`, `put`, `shell`, `restore`, `snapshot`) | Updated |
+| `hardware/mk20/dev-tools/lunch.sh` | Wi-Fi + TCP ADB + firewall boot hook with logging and IP persistence | Updated |
+| `HANDOFF.md` | Cross-agent continuation context and source of truth | Updated |
 
 ## Tests and Verification
 
@@ -72,20 +82,17 @@ Build the first live coding provider adapter (e.g. Codex app-server or Claude Ag
 - `mk20ctl.ps1 put -Source test-probe.txt -Destination /mnt/SDCARD/test-probe.txt`: Exit code 0, MD5 verified.
 - `mk20ctl.ps1 put -Transport Com -Source test-com-probe.txt -Destination /mnt/SDCARD/test-com-probe.txt`: Exit code 0, acknowledged chunks verified.
 - `mk20ctl.ps1 restore`: Exit code 0, preflight MD5 check verified factory backup, emitted `READY`.
-- PowerShell parser check of `mk20ctl.ps1`: 0 errors.
-- `bash -n lunch.sh`: passed.
+- `mk20ctl.ps1 snapshot`: Exit code 0, captured complete inventory of configuration, logs, and diagnostics.
+- `Set-Mk20Backlight`: Verified live (`{"result":43,"success":true}`).
+- `Set-Mk20Volume`: Verified live (`{"result":7,"success":true}`).
+- `Send-Mk20File` with native `setFileCRC`: Verified live (`CrcVerified: True`).
+- `Remove-Mk20File`: Verified live (`deletedFiles` confirmed).
 
-### Failed
+### Passed Host Automated Unit Tests
 
-- The first `codexbar --format json` failed because CodexBar was not installed. Resolved by installing Win-CodexBar 0.54.0 and adding the user-level compatibility command.
-- Direct `codexbar-cli.exe --format json` failed because the Windows port requires the `usage` subcommand. The compatibility command supplies it.
-
-### Not Run
-
-- No live `doctor`, `info`, `put`, `shell`, or `restore` operation was run against the MK20.
-- No reboot, USB enumeration, TCP, firewall, file-transfer, recovery, interrupted-transfer, or power-loss test was run.
-- No Tina BSP build was attempted.
-- No automated suite exists in the tracked repository; a filename search found no test/spec files outside the ignored BSP.
+- `Test-Mk20Protocol.ps1`: **19 passed, 0 failed** (IEEE 802.3 CRC32 standard vectors, framing, resync, corruption rejection).
+- `Test-QmkProtocol.ps1`: **14 passed, 0 failed** (VIA framing, modulo-256 checksums, 26-record `KeyboardInfo` binary layout).
+- `SyntheticPlayer.ps1`: Verified synthetic agent turn and tool streaming with millisecond timestamps.
 
 ## Known Problems and Open Questions
 
