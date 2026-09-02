@@ -14,13 +14,15 @@ param(
 
     [string]$Objective = 'Harden A1 protocol and validate live hardware',
     [int]$StepDelayMs = 1200,
-    [switch]$InteractiveApproval
+    [switch]$InteractiveApproval,
+    [switch]$HardwareApproval
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 Import-Module (Resolve-Path "$PSScriptRoot\..\dev-tools\Mk20Protocol.psm1") -Force
+. (Resolve-Path "$PSScriptRoot\Listen-Mk20Keys.ps1")
 
 function Emit-Event {
     param(
@@ -139,20 +141,76 @@ $apprEvent = Emit-Event -Type 'approval.requested' -Data @{
     )
 } -Color Yellow
 
-if ($InteractiveApproval) {
+$resolvedBy = 'synthetic_auto_agent'
+if ($HardwareApproval) {
+    Write-Host "`n>>> [HARDWARE APPROVAL ACTIVE]" -ForegroundColor Magenta
+    Write-Host "    Press Key 1 (Approve) or Key 2 (Reject) on your physical MK20..." -ForegroundColor White
+    $resolvedKey = $null
+    $port = Get-Mk20SerialPort
+    if ($port) {
+        $serial = [IO.Ports.SerialPort]::new($port.DeviceID, 115200, 'None', 8, 'One')
+        $serial.ReadTimeout = 150
+        $serial.Open()
+        $serial.DiscardInBuffer()
+        $buf = [Collections.Generic.List[byte]]::new()
+        $deadline = [DateTime]::UtcNow.AddSeconds(25)
+
+        try {
+            while ([DateTime]::UtcNow -lt $deadline -and -not $resolvedKey) {
+                if ($serial.BytesToRead -gt 0) {
+                    $chunk = [byte[]]::new($serial.BytesToRead)
+                    [void]$serial.Read($chunk, 0, $chunk.Length)
+                    $buf.AddRange($chunk)
+
+                    $arr = $buf.ToArray()
+                    for ($i = 0; $i -le ($arr.Length - 8); $i++) {
+                        if ($arr[$i] -eq 0xAA -and $arr[$i+1] -eq 0x55) {
+                            $len = $arr[$i+3]
+                            if (($i + 7 + $len) -le $arr.Length -and $arr[$i+5] -eq 0x16) {
+                                $p = ($arr[$i+6] -ne 0)
+                                if ($p) {
+                                    $meta = Get-KeyMetadata -Row ([int]$arr[$i+7]) -Col ([int]$arr[$i+8]) -Pressed $p
+                                    $resolvedKey = $meta
+                                    break
+                                }
+                            }
+                        }
+                    }
+                }
+                Start-Sleep -Milliseconds 20
+            }
+        }
+        finally {
+            if ($serial.IsOpen) { $serial.Close() }
+            $serial.Dispose()
+        }
+    }
+
+    if ($resolvedKey) {
+        $action = if ($resolvedKey.Action -eq 'REJECT' -or $resolvedKey.KeyNumber -eq 2) { 'reject' } else { 'approve' }
+        $resolvedBy = "mk20_key_$($resolvedKey.KeyNumber)"
+        Write-Host ">>> Physical switch contact registered: Key $($resolvedKey.KeyNumber) -> Action: $action" -ForegroundColor Green
+    } else {
+        Write-Host ">>> Hardware wait timed out; falling back to auto-approval" -ForegroundColor Yellow
+        $action = 'approve'
+        $resolvedBy = 'timeout_fallback'
+    }
+} elseif ($InteractiveApproval) {
     Write-Host "`n>>> Press [Y] to approve or [N] to reject: " -NoNewline -ForegroundColor Yellow
     $key = [Console]::ReadKey($true).KeyChar
     $action = if ($key -eq 'y' -or $key -eq 'Y') { 'approve' } else { 'reject' }
+    $resolvedBy = 'user_keystroke'
 } else {
     Write-Host ">>> (Auto-approving in synthetic playback mode)" -ForegroundColor DarkGray
     $action = 'approve'
+    $resolvedBy = 'synthetic_auto_agent'
 }
 
 # 10. approval.resolved
 Emit-Event -Type 'approval.resolved' -Data @{
     approvalId = 'appr-401'
     action = $action
-    resolvedBy = if ($InteractiveApproval) { 'user_keystroke' } else { 'synthetic_auto_agent' }
+    resolvedBy = $resolvedBy
 } -Color Cyan
 Start-Sleep -Milliseconds $StepDelayMs
 

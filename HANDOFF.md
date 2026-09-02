@@ -25,24 +25,31 @@ There is no active feature request recorded beyond preparing this cross-agent ha
 
 ## Completed Work
 
-1. **Host A1 Protocol Library (`Mk20Protocol.psm1`)**: Full standalone module with CRC32 calculation, strict frame parsing, stream recovery, and 10 RPC methods.
-2. **Wire Protocol Unit Tests (`Test-Mk20Protocol.ps1`)**: 19 automated test cases covering standard vectors, corrupt header/length/payload rejection, and stream framing (100% pass rate).
-3. **Live Hardware Control**: Verified `setBacklight` (levels 0-100), `setVolume` (levels 0-10), chunked `saveToFile` with native `setFileCRC` checksum verification, and `deleteFiles`.
-4. **Device Inventory Snapshot (`mk20ctl snapshot`)**: Automated read-only capture of all MK20 configuration, network, and system state.
-5. **Agent Orchestration Foundation (`SCHEMA.md` & `SyntheticPlayer.ps1`)**: Defined normalized event schema and delivered test session player with millisecond timestamps and colorized status.
-6. **Linux/QMK Architectural Contract (`LINUX_QMK_CONTRACT.md`)**: Full specification of subsystem ownership, UART `/dev/ttyS1` bus parameters, and VIA command framing.
-7. **QMK Protocol Test Suite (`Test-QmkProtocol.ps1`)**: 14 automated unit tests verifying VIA frame packing, checksum modulo-256 validation, and 26-record `KeyboardInfo` binary layout.
-8. **Serial Event Listener (`Watch-Mk20Events.ps1`)**: Real-time monitor for proactive frames and event logging.
+1. **Phase 0 & 1 Foundations**:
+   - Host A1 Protocol Library ([`Mk20Protocol.psm1`](file:///e:/developments/projects/Snowball_Control/hardware/mk20/dev-tools/Mk20Protocol.psm1)) with CRC32 verification and all 10 RPC methods.
+   - Wire protocol automated unit test suite ([`Test-Mk20Protocol.ps1`](file:///e:/developments/projects/Snowball_Control/hardware/mk20/dev-tools/Test-Mk20Protocol.ps1), 19/19 passed).
+   - Linux/QMK subsystem contract ([`LINUX_QMK_CONTRACT.md`](file:///e:/developments/projects/Snowball_Control/hardware/mk20/contract/LINUX_QMK_CONTRACT.md)) and test suite ([`Test-QmkProtocol.ps1`](file:///e:/developments/projects/Snowball_Control/hardware/mk20/contract/Test-QmkProtocol.ps1), 14/14 passed).
+   - System Architecture ([`ARCHITECTURE.md`](file:///e:/developments/projects/Snowball_Control/ARCHITECTURE.md)) documenting Firmware vs Gateway deliverables and pairing model.
+   - Normalized agent event model ([`SCHEMA.md`](file:///e:/developments/projects/Snowball_Control/hardware/mk20/orchestration/SCHEMA.md)).
+2. **Phase 2: Live Key Matrix Ingestion & Pairing Engine**:
+   - **Key Matrix Ingestion ([`Listen-Mk20Keys.ps1`](file:///e:/developments/projects/Snowball_Control/hardware/mk20/orchestration/Listen-Mk20Keys.ps1))**: Real-time switch contact monitor mapping `(row, col)` to physical keys 1..20 and rotary dial actions `100..105`, with semantic action routing (`APPROVE`, `REJECT`, `RETRY`, `CANCEL`).
+   - **Zero-Trust Physical Presence Pairing ([`PairingManager.psm1`](file:///e:/developments/projects/Snowball_Control/hardware/mk20/orchestration/PairingManager.psm1))**: Host identity auto-detection (`Get-HostNetworkIdentity`), 6-digit challenge PIN, physical switch confirmation (Key 1), dynamic `iptables` MAC filtering binding, and `/mnt/SDCARD/paired_hosts.json` persistence.
+   - **Hardware-in-the-Loop Agent Approvals ([`SyntheticPlayer.ps1`](file:///e:/developments/projects/Snowball_Control/hardware/mk20/orchestration/SyntheticPlayer.ps1))**: `-HardwareApproval` flag pauses agent playback at `approval.requested` until real MK20 switch contact is confirmed.
 
 ## Remaining Work
 
-1. Build live provider adapters connecting Codex app-server, Claude Agent SDK, and Gemini ACP event streams into `SyntheticPlayer` / `SCHEMA.md`.
-2. Build custom MK20 HUD screen graphics (status header, activity ticker, approval modal) using the A1 file transfer protocol and Qt theme system.
-3. Wire host-side approval resolution to live physical key presses.
+1. **Phase 3: Live Coding Agent Adapters**:
+   - Connect Codex app-server, Claude Agent SDK, and Gemini ACP event streams into the normalized schema.
+2. **Phase 4: MK20 LCD Screen Rendering & HUD UI**:
+   - Design and upload 640x656 LCD status views, activity ticker, and approval modals.
+3. **Phase 5: Production Gateway Service & Developer Tooling**:
+   - Package standalone background service (`snowball-gateway`) with dual-plane failover and IDE plugins.
+4. **Phase 6: Custom Firmware & Production Packaging**:
+   - Slim Tina Linux OS image and safe MicroSD OTA rollback.
 
 ## Exact Next Action
 
-Build the first live coding provider adapter (e.g. Codex app-server or Claude Agent SDK) to feed real agent events into the normalized schema.
+Build the first live coding provider adapter (Codex app-server or Claude Agent SDK) under Phase 3 to bridge live coding sessions directly to the MK20.
 
 ## Architecture and Important Decisions
 
