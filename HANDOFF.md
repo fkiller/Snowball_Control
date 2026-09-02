@@ -16,32 +16,35 @@ There is no active feature request recorded beyond preparing this cross-agent ha
 
 ## Current State
 
-- `main` contains one implementation commit, `59cf07f` (`Initialize MK20 development tooling`).
-- The tracked project provides MK20 discovery, health reporting, device information, file upload, network shell, and guarded factory restore through `hardware/mk20/dev-tools/mk20ctl.ps1`.
-- `hardware/mk20/dev-tools/lunch.sh` is the device boot hook for Wi-Fi, TCP-only ADB, and a source-MAC firewall rule. It intentionally does not change the USB gadget.
-- The device topology and recovery procedure are documented, but were not exercised against live hardware in this handoff session.
-- No automated test suite or project build system is present. Fast syntax validation passes for both scripts.
-- The large Tina T113 BSP exists locally at `hardware/mk20/Keyboard_T113_SourceCode_20260427_MK20/` and is intentionally ignored because it contains a large vendor tree, nested repositories, and generated artifacts.
+- `main` contains commits through `2111fff` (`Enhance lunch.sh boot hook and mk20ctl connection responsiveness`).
+- Confirmed from vendor BSP (`package/PCMonitorApp/qt_app1` lines 35-42) that `/mnt/SDCARD/lunch.sh` is automatically executed as root on boot after `/mnt/SDCARD` is mounted.
+- Deployed validated, LF-terminated `lunch.sh`, `launch.sh`, and `dev-access.conf` to the microSD card on drive `H:\`.
+- `mk20ctl.ps1` hardened against missing devices, ADB timeouts, and network unavailability (runs in ~5s instead of hanging).
+- Host Wi-Fi is connected to `YOUR_WIFI_SSID 3` with IP `192.168.69.28` and MAC `BC-A8-A6-C0-CA-A1`, matching device firewall rules.
 
 ## Completed Work
 
-- Commit `59cf07f` initialized the standalone repository and added the project overview, MK20 architecture notes, development/recovery docs, configuration template, device boot hook, and Windows helper.
-- `mk20ctl.ps1` implements `doctor`, `info`, `put`, `shell`, and `restore`.
-- This handoff session inspected the working tree, staged and unstaged diffs, diff stat, recent history, branches, remotes, stashes, tracked files, documentation, and both scripts.
-- CodexBar was installed at the user's request using Winget package `Finesssee.Win-CodexBar` version `0.54.0`. A user-level compatibility command at `C:\Users\wondo\.local\bin\codexbar.cmd` maps `codexbar --format json` to the Windows CLI and Codex provider.
+- Hardened `Invoke-Adb`, `Show-Doctor`, and `Show-Info` against terminating errors when ADB/network are down.
+- Added fast TCP port probe to `Connect-Mk20` to eliminate 90s hang on offline endpoints.
+- Confirmed vendor firmware startup mechanism: `/etc/init.d/qt_app1` mounts `/mnt/SDCARD`, copies `lunch.sh` to `/data/lunch.sh`, sets `chmod +x`, and executes it.
+- Configured and deployed `lunch.sh`, `launch.sh` and `dev-access.conf` to SD card (`H:\`) with strict LF line endings.
+- Added IP persistence (`/mnt/SDCARD/current_ip.txt`) and filesystem `sync` to `lunch.sh`.
 
 ## Remaining Work
 
-1. Reboot-test the current COM plus TCP-ADB topology on the physical MK20 and confirm that the product application, product COM, Wi-Fi, TCP ADB, and firewall coexist across reboot.
-2. Run all five `mk20ctl` commands against hardware, beginning with read-only `doctor` and `info`; use `restore` without `-Force` unless factory rollback is explicitly intended.
-3. Add host-side tests for A1 frame construction/parsing, CRC handling, transport selection, upload chunking, error paths, and restore preflight behavior.
-4. Close COM upload integrity gaps: validate response CRCs, verify final remote checksum/length, and define truncation behavior when replacing a longer destination with a shorter file.
-5. Remove the unnecessary unconditional ADB dependency for COM-only operations if hardware validation confirms that change is appropriate.
-6. Continue the milestones in `hardware/mk20/dev-tools/NORTH_STARS.md`; do not begin UI or multi-agent features before the development/recovery workflow is repeatable.
+1. Eject SD card from PC, insert into MK20, power on / reboot MK20.
+2. Run `.\hardware\mk20\dev-tools\mk20ctl.ps1 doctor` to verify COM discovery, Wi-Fi association, TCP ADB on port 5555, and firewall rules.
+3. Run `.\hardware\mk20\dev-tools\mk20ctl.ps1 info` to verify both COM `getInfo` and remote ADB diagnostics.
+4. Test ADB file push and COM upload chunking with disposable files.
+5. Follow milestones in `hardware/mk20/dev-tools/NORTH_STARS.md`.
 
 ## Exact Next Action
 
-After reading `AGENTS.md` and this file and verifying Git state, connect the development PC and MK20 to the documented environment, reboot the MK20, then run:
+1. Safely eject the microSD card from the PC (`H:\`).
+2. Insert the microSD card into the MK20 card slot.
+3. Power on / connect the MK20 to the PC via USB.
+4. Allow ~15-20 seconds for boot, Wi-Fi association, and ADB launch.
+5. Run:
 
 ```powershell
 .\hardware\mk20\dev-tools\mk20ctl.ps1 doctor
