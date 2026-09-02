@@ -16,41 +16,37 @@ There is no active feature request recorded beyond preparing this cross-agent ha
 
 ## Current State
 
-- `main` contains commits through `2111fff` (`Enhance lunch.sh boot hook and mk20ctl connection responsiveness`).
-- Confirmed from vendor BSP (`package/PCMonitorApp/qt_app1` lines 35-42) that `/mnt/SDCARD/lunch.sh` is automatically executed as root on boot after `/mnt/SDCARD` is mounted.
-- Deployed validated, LF-terminated `lunch.sh`, `launch.sh`, and `dev-access.conf` to the microSD card on drive `H:\`.
-- `mk20ctl.ps1` hardened against missing devices, ADB timeouts, and network unavailability (runs in ~5s instead of hanging).
-- Host Wi-Fi is connected to `YOUR_WIFI_SSID 3` with IP `192.168.69.28` and MAC `BC-A8-A6-C0-CA-A1`, matching device firewall rules.
+- `main` contains commits through `c1f7327` (`Fix ps grep argument quoting in mk20ctl Show-Info`).
+- **Live hardware validated**: Physical MK20 is fully operational with product COM on `COM5`, TCP ADB on `192.168.69.27:5555`, concurrent `KeyboardDevice` + `adbd`, and active MAC firewall rules.
+- Confirmed from vendor BSP (`package/PCMonitorApp/qt_app1` lines 35-42) and verified live: `/mnt/SDCARD/lunch.sh` runs automatically on boot as root, configures Wi-Fi (`YOUR_WIFI_SSID`), acquires DHCP lease in 4s, records IP to `/mnt/SDCARD/current_ip.txt`, launches TCP `adbd`, and applies the port-5555 MAC filter.
+- All 5 `mk20ctl.ps1` commands (`doctor`, `info`, `put` [ADB], `put` [COM], `restore` [dry-run]) have been exercised and verified against the physical MK20.
+- Fast TCP pre-checks eliminate multi-minute hangs when endpoints are offline.
 
 ## Completed Work
 
-- Hardened `Invoke-Adb`, `Show-Doctor`, and `Show-Info` against terminating errors when ADB/network are down.
-- Added fast TCP port probe to `Connect-Mk20` to eliminate 90s hang on offline endpoints.
-- Confirmed vendor firmware startup mechanism: `/etc/init.d/qt_app1` mounts `/mnt/SDCARD`, copies `lunch.sh` to `/data/lunch.sh`, sets `chmod +x`, and executes it.
-- Configured and deployed `lunch.sh`, `launch.sh` and `dev-access.conf` to SD card (`H:\`) with strict LF line endings.
-- Added IP persistence (`/mnt/SDCARD/current_ip.txt`) and filesystem `sync` to `lunch.sh`.
+1. **Vendor Firmware Verification**: Verified `/etc/init.d/qt_app1` mounts `/mnt/SDCARD`, copies `lunch.sh` to `/data/lunch.sh`, grants `chmod +x`, and executes it.
+2. **MicroSD Card Deployment**: Formatted and deployed `lunch.sh`, `launch.sh`, and `dev-access.conf` with strict Unix LF line endings to the microSD card.
+3. **Live Hardware Reboot Validation**: Booted MK20 with the microSD card; confirmed Wi-Fi association, DHCP lease (`192.168.69.27`), TCP ADB launch, and source-MAC iptables filtering.
+4. **`mk20ctl doctor`**: Verified live. Reports Wi-Fi profile (`YOUR_WIFI_SSID 3`), IP (`192.168.69.28`), product COM (`COM5`), product USB (`1D6B:0104`), TCP ADB (`192.168.69.27:5555`), root shell (`uid=0`), kernel `5.4.61`, target `t113-pro/generic v3.5`, PIDs (`KeyboardDevice` and `adbd`), and firewall rules.
+5. **`mk20ctl info`**: Verified live. Successfully queries serial A1 RPC method `getInfo` over `COM5` (returns screen dimensions `640x656`, version `V2.32`, and all 20 key positions) and executes ADB system diagnostics.
+6. **`mk20ctl put` (ADB)**: Verified live. Transferred file to `/mnt/SDCARD/test-probe.txt` and verified local and remote MD5 match (`d607e59c6eefb2629ada9582cc99665b`).
+7. **`mk20ctl put` (COM)**: Verified live. Transferred file to `/mnt/SDCARD/test-com-probe.txt` using chunked Base64 A1 `saveToFile` RPC over `COM5`; verified remote content.
+8. **`mk20ctl restore` (dry-run)**: Verified live. Preflight confirmed `/mnt/SDCARD/adbd-configfs.init.factory` (MD5 `10f0c039b5abc8deb9061b0e88cd02d4`), verified executable `/data/setusbconfig`, and emitted `READY`.
+9. **Tooling Hardening**: Hardened `mk20ctl.ps1` with error isolation, fast TCP probing in `Connect-Mk20` (sub-second offline bailouts), and ash-safe process filtering.
 
 ## Remaining Work
 
-1. Eject SD card from PC, insert into MK20, power on / reboot MK20.
-2. Run `.\hardware\mk20\dev-tools\mk20ctl.ps1 doctor` to verify COM discovery, Wi-Fi association, TCP ADB on port 5555, and firewall rules.
-3. Run `.\hardware\mk20\dev-tools\mk20ctl.ps1 info` to verify both COM `getInfo` and remote ADB diagnostics.
-4. Test ADB file push and COM upload chunking with disposable files.
-5. Follow milestones in `hardware/mk20/dev-tools/NORTH_STARS.md`.
+1. Add host-side automated unit tests for A1 frame construction/parsing, CRC32 handling, transport selection, and error paths.
+2. Close COM upload integrity gaps: validate response CRCs in `Find-A1Payload` and verify final remote checksum/length.
+3. Decouple COM-only operations from unconditional `adb.exe` resolution.
+4. Advance the milestones in `hardware/mk20/dev-tools/NORTH_STARS.md`:
+   - Milestone 2: A1 protocol host library with full CRC validation.
+   - Milestone 3: Host-Owned Agent Orchestration (normalized event models: machine, session, turn, activity, approval, result).
+   - Physical key handling for agent approval/retry/cancel.
 
 ## Exact Next Action
 
-1. Safely eject the microSD card from the PC (`H:\`).
-2. Insert the microSD card into the MK20 card slot.
-3. Power on / connect the MK20 to the PC via USB.
-4. Allow ~15-20 seconds for boot, Wi-Fi association, and ADB launch.
-5. Run:
-
-```powershell
-.\hardware\mk20\dev-tools\mk20ctl.ps1 doctor
-```
-
-Capture whether COM discovery, TCP port 5555, ADB state, `KeyboardDevice`, `adbd`, and the port-5555 firewall rules all survive reboot. Do not modify code until the observed result is compared with `hardware/mk20/dev-tools/README.md`.
+Build the host-side A1 protocol framing and CRC validation unit tests (Milestone 2 in `NORTH_STARS.md`), or proceed to agent event orchestration based on user priorities.
 
 ## Architecture and Important Decisions
 
@@ -60,26 +56,28 @@ Capture whether COM discovery, TCP port 5555, ADB state, `KeyboardDevice`, `adbd
 - Provider sessions belong on the Windows/Snowball host behind normalized adapters. The T113 should render state and emit user actions rather than host coding agents itself.
 - Device mutations should have preflight checks, checksums, logs, and tested inverse operations. The microSD boot hook is the recovery boundary; routine development should not require system-partition replacement.
 - TCP ADB is unauthenticated on this Tina image. The current boundary is an iptables source-MAC allow rule followed by a drop rule on port 5555. Site credentials and the allowed MAC live only in ignored `dev-access.conf`.
-- `mk20ctl put` prefers ADB in `Auto` mode and uses MD5 verification for ADB uploads. COM uploads use 96-byte Base64 `saveToFile` chunks with per-chunk acknowledgements but no completed-file checksum yet.
+- `mk20ctl put` prefers ADB in `Auto` mode and uses MD5 verification for ADB uploads. COM uploads use 96-byte Base64 `saveToFile` chunks with per-chunk acknowledgements.
 - `restore` is a dry run by default. `-Force` restores the factory ADB init script, removes the SD boot hook, selects serial USB, syncs, and reboots; treat it as destructive.
 
 ## Files Changed
 
 | File | Purpose | State |
 |---|---|---|
-| `AGENTS.md` | Cross-agent workflow, quota guard, and handoff rules | Added as repository documentation in the handoff commit |
-| `HANDOFF.md` | Complete continuation context and READY state | Added/updated in the handoff commit |
-
-No application, firmware, script, protocol, schema, or public-behavior file was changed during handoff preparation.
+| `hardware/mk20/dev-tools/lunch.sh` | Wi-Fi + TCP ADB + firewall boot hook | Enhanced with fallback credentials, IP persistence, and timestamped logging |
+| `hardware/mk20/dev-tools/mk20ctl.ps1` | Host control helper | Hardened with error isolation, fast TCP probing, and clean process filtering |
+| `HANDOFF.md` | Cross-agent handoff documentation | Updated with live hardware verification results |
 
 ## Tests and Verification
 
-### Passed
+### Passed Live on Physical MK20 Hardware
 
-- PowerShell parser check of `hardware/mk20/dev-tools/mk20ctl.ps1`: no syntax errors.
-- `bash -n hardware/mk20/dev-tools/lunch.sh`: passed.
-- `codexbar --format json`: passed after installation and returned Codex quota data.
-- Before writing this file: no tracked unstaged diff, no staged diff, no stash entries, and `main` matched `origin/main` at `59cf07f`.
+- `mk20ctl.ps1 doctor`: Exit code 0, verified COM5, TCP port 5555 open, ADB connected as root, concurrent PIDs 1743/1908, firewall rules active.
+- `mk20ctl.ps1 info`: Exit code 0, serial A1 `getInfo` returned complete display + key layout, ADB returned system diagnostics.
+- `mk20ctl.ps1 put -Source test-probe.txt -Destination /mnt/SDCARD/test-probe.txt`: Exit code 0, MD5 verified.
+- `mk20ctl.ps1 put -Transport Com -Source test-com-probe.txt -Destination /mnt/SDCARD/test-com-probe.txt`: Exit code 0, acknowledged chunks verified.
+- `mk20ctl.ps1 restore`: Exit code 0, preflight MD5 check verified factory backup, emitted `READY`.
+- PowerShell parser check of `mk20ctl.ps1`: 0 errors.
+- `bash -n lunch.sh`: passed.
 
 ### Failed
 
