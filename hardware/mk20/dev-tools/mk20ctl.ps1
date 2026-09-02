@@ -52,19 +52,6 @@ function Invoke-Adb {
     return $output
 }
 
-function Connect-Mk20 {
-    [void](Invoke-Adb -Arguments @('connect', $Device) -AllowFailure)
-    $state = (Invoke-Adb -Arguments @('-s', $Device, 'get-state') -AllowFailure | Out-String).Trim()
-    return $state -eq 'device'
-}
-
-function Get-Mk20ComPort {
-    $port = Get-CimInstance Win32_SerialPort -ErrorAction SilentlyContinue |
-        Where-Object PNPDeviceID -Match 'VID_1D6B&PID_0104' |
-        Select-Object -First 1
-    return $port
-}
-
 function Test-TcpPort {
     param([string]$HostName, [int]$Port, [int]$TimeoutMs = 1200)
 
@@ -79,6 +66,25 @@ function Test-TcpPort {
     finally {
         $client.Dispose()
     }
+}
+
+function Connect-Mk20 {
+    $parts = $Device.Split(':')
+    $hostName = $parts[0]
+    $port = if ($parts.Length -gt 1) { [int]$parts[1] } else { 5555 }
+    if (-not (Test-TcpPort -HostName $hostName -Port $port -TimeoutMs 1200)) {
+        return $false
+    }
+    [void](Invoke-Adb -Arguments @('connect', $Device) -AllowFailure)
+    $state = (Invoke-Adb -Arguments @('-s', $Device, 'get-state') -AllowFailure | Out-String).Trim()
+    return $state -eq 'device'
+}
+
+function Get-Mk20ComPort {
+    $port = Get-CimInstance Win32_SerialPort -ErrorAction SilentlyContinue |
+        Where-Object PNPDeviceID -Match 'VID_1D6B&PID_0104' |
+        Select-Object -First 1
+    return $port
 }
 
 function Initialize-Crc32 {
