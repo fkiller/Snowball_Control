@@ -37,8 +37,15 @@ function Invoke-Adb {
         [switch]$AllowFailure
     )
 
-    $output = & $script:Adb @Arguments 2>&1
-    $exitCode = $LASTEXITCODE
+    $prevPref = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $output = & $script:Adb @Arguments 2>&1
+        $exitCode = $LASTEXITCODE
+    }
+    finally {
+        $ErrorActionPreference = $prevPref
+    }
     if (-not $AllowFailure -and $exitCode -ne 0) {
         throw "adb failed ($exitCode): $($output -join [Environment]::NewLine)"
     }
@@ -210,12 +217,23 @@ function Invoke-A1OnPort {
 function Show-Doctor {
     $hostName = $Device.Split(':')[0]
     $port = [int]$Device.Split(':')[1]
-    $com = Get-Mk20ComPort
-    $wifi = Get-NetConnectionProfile -InterfaceAlias 'Wi-Fi' -ErrorAction SilentlyContinue
-    $wifiIp = Get-NetIPAddress -InterfaceAlias 'Wi-Fi' -AddressFamily IPv4 -ErrorAction SilentlyContinue |
-        Select-Object -ExpandProperty IPAddress -First 1
-    $tcp = Test-TcpPort -HostName $hostName -Port $port
-    $adbReady = Connect-Mk20
+
+    $com = $null
+    try { $com = Get-Mk20ComPort } catch { Write-Warning "COM discovery failed: $($_.Exception.Message)" }
+
+    $wifi = $null
+    $wifiIp = $null
+    try {
+        $wifi = Get-NetConnectionProfile -InterfaceAlias 'Wi-Fi' -ErrorAction SilentlyContinue
+        $wifiIp = Get-NetIPAddress -InterfaceAlias 'Wi-Fi' -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+            Select-Object -ExpandProperty IPAddress -First 1
+    } catch { Write-Warning "Wi-Fi check failed: $($_.Exception.Message)" }
+
+    $tcp = $false
+    try { $tcp = Test-TcpPort -HostName $hostName -Port $port } catch { Write-Warning "TCP check failed: $($_.Exception.Message)" }
+
+    $adbReady = $false
+    try { $adbReady = Connect-Mk20 } catch { Write-Warning "ADB check failed: $($_.Exception.Message)" }
 
     [pscustomobject]@{
         WifiProfile = $wifi.Name
@@ -228,10 +246,12 @@ function Show-Doctor {
     } | Format-List
 
     if ($adbReady) {
-        Invoke-Adb -Arguments @('-s', $Device, 'shell',
-            'id; echo KERNEL=$(uname -r); echo MODEL=$(cat /etc/openwrt_release | grep DISTRIB_TARGET); ' +
-            'echo PIDS=$(pidof KeyboardDevice) $(pidof adbd); ' +
-            'iptables -L INPUT -n --line-numbers | grep 5555')
+        try {
+            Invoke-Adb -Arguments @('-s', $Device, 'shell',
+                'id; echo KERNEL=$(uname -r); echo MODEL=$(cat /etc/openwrt_release | grep DISTRIB_TARGET); ' +
+                'echo PIDS=$(pidof KeyboardDevice) $(pidof adbd); ' +
+                'iptables -L INPUT -n --line-numbers | grep 5555')
+        } catch { Write-Warning "Remote diagnostics failed: $($_.Exception.Message)" }
     }
 }
 
@@ -250,11 +270,16 @@ function Show-Info {
         Write-Warning 'Product COM interface was not found.'
     }
 
-    if (Connect-Mk20) {
-        Invoke-Adb -Arguments @('-s', $Device, 'shell',
-            'id; uname -a; cat /etc/openwrt_release; echo ===FILESYSTEMS===; df -h; ' +
-            'echo ===NETWORK===; ip addr show wlan0; echo ===PROCESSES===; ' +
-            'ps w | grep -E "[K]eyboardDevice|[a]dbd|[x]iaozhi"')
+    $adbReady = $false
+    try { $adbReady = Connect-Mk20 } catch {}
+
+    if ($adbReady) {
+        try {
+            Invoke-Adb -Arguments @('-s', $Device, 'shell',
+                'id; uname -a; cat /etc/openwrt_release; echo ===FILESYSTEMS===; df -h; ' +
+                'echo ===NETWORK===; ip addr show wlan0; echo ===PROCESSES===; ' +
+                'ps w | grep -E "[K]eyboardDevice|[a]dbd|[x]iaozhi"')
+        } catch { Write-Warning "ADB shell failed: $($_.Exception.Message)" }
     }
     else {
         Write-Warning "Network ADB is unavailable at $Device."
