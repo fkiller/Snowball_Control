@@ -2,13 +2,30 @@
 
 ## Purpose
 
-This repository is primarily developed using OpenAI Codex.
+This repository is co-developed using **OpenAI Codex** and **Google Antigravity**.
 
-When Codex's available 5-hour usage approaches exhaustion, work must be handed off cleanly to Google Antigravity so that another coding agent can continue from the repository state without requiring access to the Codex conversation history.
+When either agent's available usage window approaches exhaustion, work must be handed off cleanly to the other agent so that development can continue seamlessly from the repository state without requiring access to prior conversation history.
 
 The repository, Git history, tests, and `HANDOFF.md` are the source of truth.
 
-\---
+---
+
+# Active Agent Detection & Identity
+
+Coding agents must differentiate their active runtime environment:
+
+- **Google Antigravity**:
+  - Detected when `$env:ANTIGRAVITY_AGENT` is defined (`"1"`).
+  - Monitored rate windows: Gemini 3.1 Pro (High) and Claude Opus 4.6 (Thinking).
+  - Quota inspection: `codexbar usage --provider antigravity --format json` (or `codexbar --format json`).
+  - Handoff target: OpenAI Codex.
+- **OpenAI Codex**:
+  - Active when running in the OpenAI Codex environment (without `ANTIGRAVITY_AGENT`).
+  - Monitored rate window: 5-hour Codex usage window (secondary: weekly).
+  - Quota inspection: `codexbar usage --provider codex --format json`.
+  - Handoff target: Google Antigravity.
+
+---
 
 # General Working Rules
 
@@ -29,27 +46,14 @@ Do not perform broad refactors unless they are necessary for the current task.
 
 Do not change public APIs, schemas, protocols, or externally visible behavior without a clear requirement.
 
-\---
+---
 
 # Agent Quota Guards (Codex & Antigravity)
 
-Quota must be actively monitored by whichever agent is currently working so that enough capacity remains to create a reliable handoff when approaching exhaustion.
+Quota must be actively monitored by whichever agent is currently working so that enough capacity remains to create a reliable handoff when approaching exhaustion:
 
-- When running under **Codex**: monitor the 5-hour Codex usage window.
-- When running under **Antigravity**: monitor the Antigravity (Gemini 3.1 Pro / Claude Opus) rate window.
-
-## Usage Check Commands
-
-Use CodexBar to inspect the quota for the active agent:
-
-- **Codex**:
-  ```bash
-  codexbar usage --provider codex --format json
-  ```
-- **Antigravity**:
-  ```bash
-  codexbar usage --provider antigravity --format json
-  ```
+- When running under **Codex**: monitor the 5-hour Codex usage window via `codexbar usage --provider codex --format json`.
+- When running under **Antigravity**: monitor the Antigravity rate window via `codexbar usage --provider antigravity --format json`.
 
 Do not estimate quota from conversation length or token counts.
 Use the actual quota information returned by CodexBar whenever available.
@@ -306,7 +310,7 @@ After `HANDOFF.md` has been updated:
 3. commit the handoff file if appropriate,
 4. stop implementation work.
 
-Report to the user that Codex reached the configured quota guard and that the repository is ready for Antigravity takeover.
+Report to the user that the active agent (Codex or Antigravity) reached the configured quota guard and that the repository is ready for the other agent to take over.
 
 Do not continue coding after mandatory handoff merely because some quota remains.
 
