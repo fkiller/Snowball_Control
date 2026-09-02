@@ -284,7 +284,7 @@ function Show-Info {
             Invoke-Adb -Arguments @('-s', $Device, 'shell',
                 'id; uname -a; cat /etc/openwrt_release; echo ===FILESYSTEMS===; df -h; ' +
                 'echo ===NETWORK===; ip addr show wlan0; echo ===PROCESSES===; ' +
-                'ps w | grep -E "[K]eyboardDevice|[a]dbd|[x]iaozhi"')
+                'ps | grep -e KeyboardDevice -e adbd -e xiaozhi')
         } catch { Write-Warning "ADB shell failed: $($_.Exception.Message)" }
     }
     else {
