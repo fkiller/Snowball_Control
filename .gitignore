@@ -4,6 +4,7 @@
 # Device-local credentials, captures, and recovery backups.
 /hardware/mk20/dev-tools/dev-access.conf
 /hardware/mk20/dev-tools/sd-backups/
+/hardware/mk20/dev-tools/snapshots/
 /hardware/mk20/dev-tools/*.log
 
 # Tool-generated GitHub modernization state.

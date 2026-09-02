@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet('doctor', 'info', 'put', 'shell', 'restore')]
+    [ValidateSet('doctor', 'info', 'put', 'shell', 'restore', 'snapshot')]
     [string]$Command = 'doctor',
 
     [string]$Device = '192.168.69.27:5555',
@@ -392,6 +392,74 @@ function Restore-Factory {
     Write-Output 'Factory restore was issued; the network ADB connection will close during reboot.'
 }
 
+function Save-Snapshot {
+    $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+    $snapshotDir = Join-Path $PSScriptRoot "snapshots\snapshot-$timestamp"
+    [void](New-Item -ItemType Directory -Path $snapshotDir -Force)
+
+    Write-Output "Capturing MK20 device inventory and configuration to $snapshotDir..."
+
+    # 1. Capture COM A1 getInfo
+    $com = Get-Mk20ComPort
+    if ($com) {
+        try {
+            $infoReply = Invoke-A1 -PortName $com.DeviceID -Request @{ method = 'getInfo' }
+            $infoReply | ConvertTo-Json -Depth 10 | Out-File (Join-Path $snapshotDir 'com_info.json') -Encoding utf8
+            Write-Output "  [+] Captured COM A1 device layout (com_info.json)"
+        }
+        catch {
+            Write-Warning "COM getInfo failed: $($_.Exception.Message)"
+        }
+    }
+
+    # 2. Capture OS and configuration over ADB
+    if (Connect-Mk20) {
+        $filesDir = Join-Path $snapshotDir 'files'
+        [void](New-Item -ItemType Directory -Path $filesDir -Force)
+        $pullFiles = @(
+            '/mnt/SDCARD/config.json',
+            '/mnt/SDCARD/dev-access.conf',
+            '/mnt/SDCARD/lunch.sh',
+            '/mnt/SDCARD/current_ip.txt',
+            '/mnt/SDCARD/dev-access.log',
+            '/data/KeyboardInfo',
+            '/data/qt_env.sh',
+            '/data/appLunch.sh'
+        )
+        foreach ($remFile in $pullFiles) {
+            $baseName = [IO.Path]::GetFileName($remFile)
+            $localDest = Join-Path $filesDir $baseName
+            [void](Invoke-Adb -Arguments @('-s', $Device, 'pull', $remFile, $localDest) -AllowFailure)
+            if (Test-Path -LiteralPath $localDest) {
+                Write-Output "  [+] Pulled $remFile"
+            }
+        }
+
+        # System diagnostics
+        $sysInfo = (Invoke-Adb -Arguments @('-s', $Device, 'shell', 'uname -a; echo ""; cat /etc/openwrt_release; echo ""; id') -AllowFailure | Out-String)
+        $sysInfo | Out-File (Join-Path $snapshotDir 'system_info.txt') -Encoding utf8
+
+        $netInfo = (Invoke-Adb -Arguments @('-s', $Device, 'shell', 'ip addr; echo ""; ip route; echo ""; iptables -L -n --line-numbers') -AllowFailure | Out-String)
+        $netInfo | Out-File (Join-Path $snapshotDir 'network_info.txt') -Encoding utf8
+
+        $procInfo = (Invoke-Adb -Arguments @('-s', $Device, 'shell', 'ps aux 2>/dev/null || ps w') -AllowFailure | Out-String)
+        $procInfo | Out-File (Join-Path $snapshotDir 'processes.txt') -Encoding utf8
+
+        $fsInfo = (Invoke-Adb -Arguments @('-s', $Device, 'shell', 'df -h; echo ""; mount') -AllowFailure | Out-String)
+        $fsInfo | Out-File (Join-Path $snapshotDir 'filesystems.txt') -Encoding utf8
+
+        $dmesg = (Invoke-Adb -Arguments @('-s', $Device, 'shell', 'dmesg') -AllowFailure | Out-String)
+        $dmesg | Out-File (Join-Path $snapshotDir 'dmesg.txt') -Encoding utf8
+
+        Write-Output "  [+] Captured system, network, process, filesystem, and dmesg diagnostics"
+    }
+    else {
+        Write-Warning "Network ADB unavailable; captured COM-only snapshot."
+    }
+
+    Write-Output "Snapshot complete: $snapshotDir"
+}
+
 $script:Adb = Resolve-Adb
 
 switch ($Command) {
@@ -400,4 +468,5 @@ switch ($Command) {
     'put' { Put-File }
     'shell' { Open-Shell }
     'restore' { Restore-Factory }
+    'snapshot' { Save-Snapshot }
 }
