@@ -16,34 +16,33 @@ There is no active feature request recorded beyond preparing this cross-agent ha
 
 ## Current State
 
-- `main` contains commits through `94cd1b3` (`Implement North Star 2 & 3`).
-- **North Star 1 (Dual Control Planes) Complete**: Product COM (`COM5`) and TCP ADB (`192.168.69.27:5555`) verified live, running concurrently with active MAC-restricted iptables firewall rules.
-- **North Star 2 (A1 Host Library & Recovery) Complete**:
-  - `Mk20Protocol.psm1`: Implements table-driven IEEE 802.3 CRC32, bi-directional Length and Payload CRC frame validation, and all 10 A1 RPC methods (`getInfo`, `setBacklight`, `setVolume`, `saveToFile`, `setFileCRC`, `deleteFiles`, `getFilesBySuffix`, `playAudio`, `stopAudio`, `keyboardInput`). Decoupled from ADB.
-  - `Test-Mk20Protocol.ps1`: 19 automated unit tests passed (CRC32 vectors, frame serialization, stream resynchronization, corruption rejection).
-  - `mk20ctl snapshot`: Captures full read-only device inventory (configurations, themes, scripts, process and system diagnostics).
-  - Live hardware validated: `Set-Mk20Backlight`, `Set-Mk20Volume`, `Send-Mk20File` with native `setFileCRC` confirmation, `Remove-Mk20File` (`deleteFiles`).
-- **North Star 3 (Host-Owned Agent Orchestration) Initial Delivery**:
-  - `hardware/mk20/orchestration/SCHEMA.md`: Normalized JSON event model for host agents (Codex, Claude, Gemini) and MK20 HUD.
-  - `hardware/mk20/orchestration/SyntheticPlayer.ps1`: Mock agent session player streaming real-time turns, tool invocations, and approvals.
+- `main` contains commits through `195dfe3` (`Implement North Star 4`).
+- **All 4 North Star architectural foundations delivered**:
+  - **North Star 1 (Dual Control Planes)**: Physical COM (`COM5`) and TCP ADB (`192.168.69.27:5555`) verified live and running concurrently with MAC-restricted firewall rules.
+  - **North Star 2 (A1 Host Library & Recovery)**: `Mk20Protocol.psm1` (all 10 RPC methods, bi-directional CRC32 validation), `Test-Mk20Protocol.ps1` (19/19 unit tests passing), `mk20ctl snapshot` (capturing complete device inventory), and live hardware verification of backlight, volume, and `setFileCRC`.
+  - **North Star 3 (Host-Owned Agent Orchestration)**: `SCHEMA.md` normalized JSON event model (Codex, Claude, Gemini) and `SyntheticPlayer.ps1` session player with real-time HUD event streaming.
+  - **North Star 4 (Linux/QMK Ownership & Contract)**: `LINUX_QMK_CONTRACT.md` documenting UART `/dev/ttyS1` boundary, `Test-QmkProtocol.ps1` (14/14 unit tests passing) validating VIA framing, checksums, and `KeyboardInfo` 26-record binary matrix layout, and `Watch-Mk20Events.ps1` real-time serial listener.
 
 ## Completed Work
 
 1. **Host A1 Protocol Library (`Mk20Protocol.psm1`)**: Full standalone module with CRC32 calculation, strict frame parsing, stream recovery, and 10 RPC methods.
-2. **Automated Unit Tests (`Test-Mk20Protocol.ps1`)**: 19 test cases covering standard vectors, corrupt header/length/payload rejection, and stream framing (100% pass rate).
+2. **Wire Protocol Unit Tests (`Test-Mk20Protocol.ps1`)**: 19 automated test cases covering standard vectors, corrupt header/length/payload rejection, and stream framing (100% pass rate).
 3. **Live Hardware Control**: Verified `setBacklight` (levels 0-100), `setVolume` (levels 0-10), chunked `saveToFile` with native `setFileCRC` checksum verification, and `deleteFiles`.
 4. **Device Inventory Snapshot (`mk20ctl snapshot`)**: Automated read-only capture of all MK20 configuration, network, and system state.
 5. **Agent Orchestration Foundation (`SCHEMA.md` & `SyntheticPlayer.ps1`)**: Defined normalized event schema and delivered test session player with millisecond timestamps and colorized status.
+6. **Linux/QMK Architectural Contract (`LINUX_QMK_CONTRACT.md`)**: Full specification of subsystem ownership, UART `/dev/ttyS1` bus parameters, and VIA command framing.
+7. **QMK Protocol Test Suite (`Test-QmkProtocol.ps1`)**: 14 automated unit tests verifying VIA frame packing, checksum modulo-256 validation, and 26-record `KeyboardInfo` binary layout.
+8. **Serial Event Listener (`Watch-Mk20Events.ps1`)**: Real-time monitor for proactive frames and event logging.
 
 ## Remaining Work
 
-1. Wire physical MK20 keypress events (from UART `/dev/ttyS1` or USB HID) into the host orchestrator to resolve approval requests directly from hardware keys.
-2. Connect live coding agent adapters (Codex app-server, Claude Agent SDK, Gemini ACP) into the normalized schema.
-3. Build MK20 HUD screen rendering (status bar, activity ticker, approval modal) via A1 display/theme protocol.
+1. Build live provider adapters connecting Codex app-server, Claude Agent SDK, and Gemini ACP event streams into `SyntheticPlayer` / `SCHEMA.md`.
+2. Build custom MK20 HUD screen graphics (status header, activity ticker, approval modal) using the A1 file transfer protocol and Qt theme system.
+3. Wire host-side approval resolution to live physical key presses.
 
 ## Exact Next Action
 
-Capture physical key matrix input from the MK20 (GD32/QMK -> Tina Linux -> Host) to trigger approval actions in the orchestration engine.
+Build the first live coding provider adapter (e.g. Codex app-server or Claude Agent SDK) to feed real agent events into the normalized schema.
 
 ## Architecture and Important Decisions
 
