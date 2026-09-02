@@ -16,37 +16,34 @@ There is no active feature request recorded beyond preparing this cross-agent ha
 
 ## Current State
 
-- `main` contains commits through `c1f7327` (`Fix ps grep argument quoting in mk20ctl Show-Info`).
-- **Live hardware validated**: Physical MK20 is fully operational with product COM on `COM5`, TCP ADB on `192.168.69.27:5555`, concurrent `KeyboardDevice` + `adbd`, and active MAC firewall rules.
-- Confirmed from vendor BSP (`package/PCMonitorApp/qt_app1` lines 35-42) and verified live: `/mnt/SDCARD/lunch.sh` runs automatically on boot as root, configures Wi-Fi (`YOUR_WIFI_SSID`), acquires DHCP lease in 4s, records IP to `/mnt/SDCARD/current_ip.txt`, launches TCP `adbd`, and applies the port-5555 MAC filter.
-- All 5 `mk20ctl.ps1` commands (`doctor`, `info`, `put` [ADB], `put` [COM], `restore` [dry-run]) have been exercised and verified against the physical MK20.
-- Fast TCP pre-checks eliminate multi-minute hangs when endpoints are offline.
+- `main` contains commits through `94cd1b3` (`Implement North Star 2 & 3`).
+- **North Star 1 (Dual Control Planes) Complete**: Product COM (`COM5`) and TCP ADB (`192.168.69.27:5555`) verified live, running concurrently with active MAC-restricted iptables firewall rules.
+- **North Star 2 (A1 Host Library & Recovery) Complete**:
+  - `Mk20Protocol.psm1`: Implements table-driven IEEE 802.3 CRC32, bi-directional Length and Payload CRC frame validation, and all 10 A1 RPC methods (`getInfo`, `setBacklight`, `setVolume`, `saveToFile`, `setFileCRC`, `deleteFiles`, `getFilesBySuffix`, `playAudio`, `stopAudio`, `keyboardInput`). Decoupled from ADB.
+  - `Test-Mk20Protocol.ps1`: 19 automated unit tests passed (CRC32 vectors, frame serialization, stream resynchronization, corruption rejection).
+  - `mk20ctl snapshot`: Captures full read-only device inventory (configurations, themes, scripts, process and system diagnostics).
+  - Live hardware validated: `Set-Mk20Backlight`, `Set-Mk20Volume`, `Send-Mk20File` with native `setFileCRC` confirmation, `Remove-Mk20File` (`deleteFiles`).
+- **North Star 3 (Host-Owned Agent Orchestration) Initial Delivery**:
+  - `hardware/mk20/orchestration/SCHEMA.md`: Normalized JSON event model for host agents (Codex, Claude, Gemini) and MK20 HUD.
+  - `hardware/mk20/orchestration/SyntheticPlayer.ps1`: Mock agent session player streaming real-time turns, tool invocations, and approvals.
 
 ## Completed Work
 
-1. **Vendor Firmware Verification**: Verified `/etc/init.d/qt_app1` mounts `/mnt/SDCARD`, copies `lunch.sh` to `/data/lunch.sh`, grants `chmod +x`, and executes it.
-2. **MicroSD Card Deployment**: Formatted and deployed `lunch.sh`, `launch.sh`, and `dev-access.conf` with strict Unix LF line endings to the microSD card.
-3. **Live Hardware Reboot Validation**: Booted MK20 with the microSD card; confirmed Wi-Fi association, DHCP lease (`192.168.69.27`), TCP ADB launch, and source-MAC iptables filtering.
-4. **`mk20ctl doctor`**: Verified live. Reports Wi-Fi profile (`YOUR_WIFI_SSID 3`), IP (`192.168.69.28`), product COM (`COM5`), product USB (`1D6B:0104`), TCP ADB (`192.168.69.27:5555`), root shell (`uid=0`), kernel `5.4.61`, target `t113-pro/generic v3.5`, PIDs (`KeyboardDevice` and `adbd`), and firewall rules.
-5. **`mk20ctl info`**: Verified live. Successfully queries serial A1 RPC method `getInfo` over `COM5` (returns screen dimensions `640x656`, version `V2.32`, and all 20 key positions) and executes ADB system diagnostics.
-6. **`mk20ctl put` (ADB)**: Verified live. Transferred file to `/mnt/SDCARD/test-probe.txt` and verified local and remote MD5 match (`d607e59c6eefb2629ada9582cc99665b`).
-7. **`mk20ctl put` (COM)**: Verified live. Transferred file to `/mnt/SDCARD/test-com-probe.txt` using chunked Base64 A1 `saveToFile` RPC over `COM5`; verified remote content.
-8. **`mk20ctl restore` (dry-run)**: Verified live. Preflight confirmed `/mnt/SDCARD/adbd-configfs.init.factory` (MD5 `10f0c039b5abc8deb9061b0e88cd02d4`), verified executable `/data/setusbconfig`, and emitted `READY`.
-9. **Tooling Hardening**: Hardened `mk20ctl.ps1` with error isolation, fast TCP probing in `Connect-Mk20` (sub-second offline bailouts), and ash-safe process filtering.
+1. **Host A1 Protocol Library (`Mk20Protocol.psm1`)**: Full standalone module with CRC32 calculation, strict frame parsing, stream recovery, and 10 RPC methods.
+2. **Automated Unit Tests (`Test-Mk20Protocol.ps1`)**: 19 test cases covering standard vectors, corrupt header/length/payload rejection, and stream framing (100% pass rate).
+3. **Live Hardware Control**: Verified `setBacklight` (levels 0-100), `setVolume` (levels 0-10), chunked `saveToFile` with native `setFileCRC` checksum verification, and `deleteFiles`.
+4. **Device Inventory Snapshot (`mk20ctl snapshot`)**: Automated read-only capture of all MK20 configuration, network, and system state.
+5. **Agent Orchestration Foundation (`SCHEMA.md` & `SyntheticPlayer.ps1`)**: Defined normalized event schema and delivered test session player with millisecond timestamps and colorized status.
 
 ## Remaining Work
 
-1. Add host-side automated unit tests for A1 frame construction/parsing, CRC32 handling, transport selection, and error paths.
-2. Close COM upload integrity gaps: validate response CRCs in `Find-A1Payload` and verify final remote checksum/length.
-3. Decouple COM-only operations from unconditional `adb.exe` resolution.
-4. Advance the milestones in `hardware/mk20/dev-tools/NORTH_STARS.md`:
-   - Milestone 2: A1 protocol host library with full CRC validation.
-   - Milestone 3: Host-Owned Agent Orchestration (normalized event models: machine, session, turn, activity, approval, result).
-   - Physical key handling for agent approval/retry/cancel.
+1. Wire physical MK20 keypress events (from UART `/dev/ttyS1` or USB HID) into the host orchestrator to resolve approval requests directly from hardware keys.
+2. Connect live coding agent adapters (Codex app-server, Claude Agent SDK, Gemini ACP) into the normalized schema.
+3. Build MK20 HUD screen rendering (status bar, activity ticker, approval modal) via A1 display/theme protocol.
 
 ## Exact Next Action
 
-Build the host-side A1 protocol framing and CRC validation unit tests (Milestone 2 in `NORTH_STARS.md`), or proceed to agent event orchestration based on user priorities.
+Capture physical key matrix input from the MK20 (GD32/QMK -> Tina Linux -> Host) to trigger approval actions in the orchestration engine.
 
 ## Architecture and Important Decisions
 
