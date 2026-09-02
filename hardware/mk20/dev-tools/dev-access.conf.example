@@ -1,0 +1,4 @@
+# Copy this file to dev-access.conf and fill in site-specific values.
+WIFI_SSID="YOUR_WIFI_SSID"
+WIFI_PSK="YOUR_WIFI_PSK"
+DEV_PC_MAC="AA:BB:CC:DD:EE:FF"

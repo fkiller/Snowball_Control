@@ -1,0 +1,33 @@
+# Local vendor SDK/BSP reference. It contains nested repositories and build output.
+/hardware/mk20/Keyboard_T113_SourceCode_20260427_MK20/
+
+# Device-local credentials, captures, and recovery backups.
+/hardware/mk20/dev-tools/dev-access.conf
+/hardware/mk20/dev-tools/sd-backups/
+/hardware/mk20/dev-tools/*.log
+
+# Tool-generated GitHub modernization state.
+/.github/modernize/
+
+# Local environments and build output.
+.env
+.env.*
+!.env.example
+.venv/
+node_modules/
+dist/
+build/
+coverage/
+.pytest_cache/
+__pycache__/
+*.py[cod]
+
+# Editors and operating systems.
+.vscode/
+.idea/
+*.swp
+*.tmp
+*.bak
+.DS_Store
+Thumbs.db
+Desktop.ini
