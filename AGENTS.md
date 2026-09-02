@@ -31,33 +31,34 @@ Do not change public APIs, schemas, protocols, or externally visible behavior wi
 
 \---
 
-# Codex Usage Guard
+# Agent Quota Guards (Codex & Antigravity)
 
-Codex usage must be actively protected so that enough capacity remains to create a reliable handoff.
+Quota must be actively monitored by whichever agent is currently working so that enough capacity remains to create a reliable handoff when approaching exhaustion.
 
-The primary quota is the **5-hour Codex usage window**.
+- When running under **Codex**: monitor the 5-hour Codex usage window.
+- When running under **Antigravity**: monitor the Antigravity (Gemini 3.1 Pro / Claude Opus) rate window.
 
-The weekly quota is secondary.
+## Usage Check Commands
 
-## Usage Check Command
+Use CodexBar to inspect the quota for the active agent:
 
-Use CodexBar to inspect the current quota:
-
-```bash
-codexbar --format json
-```
-
-If needed, inspect only the Codex provider data from the returned JSON.
+- **Codex**:
+  ```bash
+  codexbar usage --provider codex --format json
+  ```
+- **Antigravity**:
+  ```bash
+  codexbar usage --provider antigravity --format json
+  ```
 
 Do not estimate quota from conversation length or token counts.
-
 Use the actual quota information returned by CodexBar whenever available.
 
-\---
+---
 
 # When to Check Usage
 
-Check Codex usage:
+Check quota:
 
 1. At the beginning of a new working session.
 2. Before starting a substantial implementation task.
