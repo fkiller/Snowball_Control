@@ -467,49 +467,73 @@ static void parse_packet(char *buf) {
     }
 }
 
-// Ingest direct serial bytes from GD32/QMK MCU over /dev/ttyS1
-static void check_qmk_serial(int uart_fd) {
-    if (uart_fd < 0) return;
+enum {
+    STATE_HEADER1,
+    STATE_HEADER2,
+    STATE_CHECKSUM,
+    STATE_DATA_LEN,
+    STATE_DATA_LEN_CHECK,
+    STATE_DATA,
+    STATE_TAIL1,
+    STATE_TAIL2
+};
 
-    static uint8_t s_buf[128];
-    static int s_pos = 0;
+static uint8_t s_parse_state = STATE_HEADER1;
+static uint8_t s_checksum = 0;
+static uint8_t s_dataLen = 0;
+static uint8_t s_dataIndex = 0;
+static uint8_t s_dataBuf[256];
 
-    int n = read(uart_fd, s_buf + s_pos, sizeof(s_buf) - s_pos);
-    if (n > 0) {
-        s_pos += n;
-        while (s_pos >= 9) {
-            // Find frame header 0xAA 0x55
-            int idx = -1;
-            for (int i = 0; i <= s_pos - 9; i++) {
-                if (s_buf[i] == 0xAA && s_buf[i+1] == 0x55) {
-                    idx = i;
-                    break;
-                }
-            }
-
-            if (idx < 0) {
-                // Keep last byte if it might be 0xAA
-                if (s_buf[s_pos - 1] == 0xAA) {
-                    s_buf[0] = 0xAA;
-                    s_pos = 1;
-                } else {
-                    s_pos = 0;
-                }
-                break;
-            }
-
-            // If header not at index 0, shift
-            if (idx > 0) {
-                memmove(s_buf, s_buf + idx, s_pos - idx);
-                s_pos -= idx;
-            }
-
-            if (s_pos < 9) break;
-
-            if (s_buf[5] == 0x16) {
-                uint8_t pressed = s_buf[6];
-                uint8_t row = s_buf[7];
-                uint8_t col = s_buf[8];
+// Exact vendor QMK frame state machine
+static void parse_qmk_byte(uint8_t byte) {
+    switch (s_parse_state) {
+    case STATE_HEADER1:
+        if (byte == 0xAA) {
+            s_checksum = 0;
+            s_dataLen = 0;
+            s_dataIndex = 0;
+            s_parse_state = STATE_HEADER2;
+        }
+        break;
+    case STATE_HEADER2:
+        if (byte == 0x55)
+            s_parse_state = STATE_CHECKSUM;
+        else
+            s_parse_state = STATE_HEADER1;
+        break;
+    case STATE_CHECKSUM:
+        s_checksum = byte;
+        s_parse_state = STATE_DATA_LEN;
+        break;
+    case STATE_DATA_LEN:
+        s_dataLen = byte;
+        s_parse_state = STATE_DATA_LEN_CHECK;
+        break;
+    case STATE_DATA_LEN_CHECK:
+        if ((uint8_t)(0xFF - s_dataLen) == byte)
+            s_parse_state = STATE_DATA;
+        else
+            s_parse_state = STATE_HEADER1;
+        break;
+    case STATE_DATA:
+        s_dataBuf[s_dataIndex++] = byte;
+        if (s_dataIndex >= s_dataLen)
+            s_parse_state = STATE_TAIL1;
+        break;
+    case STATE_TAIL1:
+        if (byte == 0xF5)
+            s_parse_state = STATE_TAIL2;
+        else
+            s_parse_state = STATE_HEADER1;
+        break;
+    case STATE_TAIL2:
+        if (byte == 0x5F) {
+            uint8_t sum = 0;
+            for (int i = 0; i < s_dataLen; i++) sum += s_dataBuf[i];
+            if (sum == s_checksum && s_dataLen >= 4 && s_dataBuf[0] == 0x16) {
+                uint8_t pressed = s_dataBuf[1];
+                uint8_t row = s_dataBuf[2];
+                uint8_t col = s_dataBuf[3];
 
                 if (row >= 100) {
                     const char *action = (row == 100) ? "SCROLL LEFT" : ((row == 101) ? "SCROLL RIGHT" : "CLICK PUSH");
@@ -517,28 +541,41 @@ static void check_qmk_serial(int uart_fd) {
                     g_state.dial_until_ms = get_time_ms() + 750;
                     render_and_blit_top();
                 } else if (row < KEY_ROWS && col < KEY_COLS) {
-                    // INSTANT SWITCH CONTACT: Blit single key in 0.04ms!
+                    // DIRECT HARDWARE KEYPRESS -> SUB-MILLISECOND DIRTY RECT BLIT
                     g_keyPressed[row][col] = (pressed != 0);
                     render_and_blit_key(row, col);
                 }
             }
+        }
+        s_parse_state = STATE_HEADER1;
+        break;
+    default:
+        s_parse_state = STATE_HEADER1;
+        break;
+    }
+}
 
-            // Consume packet
-            memmove(s_buf, s_buf + 9, s_pos - 9);
-            s_pos -= 9;
+// Ingest direct serial bytes from GD32/QMK MCU over /dev/ttyS1
+static void check_qmk_serial(int uart_fd) {
+    if (uart_fd < 0) return;
+    uint8_t buf[128];
+    int n = read(uart_fd, buf, sizeof(buf));
+    if (n > 0) {
+        for (int i = 0; i < n; i++) {
+            parse_qmk_byte(buf[i]);
         }
     }
 }
 
 int main(int argc, char *argv[]) {
-    printf("[MK20-HUD] Initializing Ultra-Low Latency MK20 HUD Engine...\n");
+    printf("[MK20-HUD] Initializing Standalone MK20 HUD Engine...\n");
 
     strncpy(g_state.provider, "Claude Code 2.1", sizeof(g_state.provider) - 1);
     strncpy(g_state.model, "deepseek-v4-pro", sizeof(g_state.model) - 1);
     strncpy(g_state.status, "ONLINE", sizeof(g_state.status) - 1);
-    strncpy(g_state.thinking, "Instant Keypress Active (<1ms).", sizeof(g_state.thinking) - 1);
+    strncpy(g_state.thinking, "Standalone Hardware Engine Active.", sizeof(g_state.thinking) - 1);
     strncpy(g_state.tool_name, "Ready", sizeof(g_state.tool_name) - 1);
-    strncpy(g_state.tool_summary, "Listening on /dev/ttyS1 (Raw) & UDP 7701", sizeof(g_state.tool_summary) - 1);
+    strncpy(g_state.tool_summary, "Direct /dev/ttyS1 Hardware Matrix Active", sizeof(g_state.tool_summary) - 1);
     strncpy(g_state.cost, "$0.124", sizeof(g_state.cost) - 1);
     strncpy(g_state.duration, "0.0s", sizeof(g_state.duration) - 1);
     g_state.approval_active = 0;
@@ -572,23 +609,29 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    // Open QMK UART /dev/ttyS1 in RAW low-latency mode
-    int uart_fd = open("/dev/ttyS1", O_RDONLY | O_NOCTTY | O_NONBLOCK);
+    // Open QMK UART /dev/ttyS1 in O_RDWR with exact hardware options
+    int uart_fd = open("/dev/ttyS1", O_RDWR | O_NOCTTY | O_NDELAY);
     if (uart_fd >= 0) {
-        struct termios tty;
-        if (tcgetattr(uart_fd, &tty) == 0) {
-            cfmakeraw(&tty);
-            cfsetispeed(&tty, B115200);
-            cfsetospeed(&tty, B115200);
-            tty.c_cflag |= (CLOCAL | CREAD);
-            tty.c_cc[VMIN] = 1;   // Wake up immediately on first byte
-            tty.c_cc[VTIME] = 0;
-            tcsetattr(uart_fd, TCSANOW, &tty);
-            tcflush(uart_fd, TCIFLUSH);
-        }
-        printf("[MK20-HUD] QMK UART /dev/ttyS1 configured for zero-latency raw input.\n");
+        struct termios options;
+        tcgetattr(uart_fd, &options);
+        cfsetispeed(&options, B115200);
+        cfsetospeed(&options, B115200);
+        options.c_cflag |= (CLOCAL | CREAD);
+        options.c_cflag &= ~CSIZE;
+        options.c_cflag |= CS8;
+        options.c_cflag &= ~PARENB;
+        options.c_cflag &= ~CSTOPB;
+        options.c_cflag &= ~CRTSCTS;
+        options.c_lflag &= ~(ICANON | ECHO | ECHOE | ISIG);
+        options.c_iflag &= ~(IXON | IXOFF | IXANY);
+        options.c_oflag &= ~OPOST;
+        options.c_cc[VMIN] = 1;
+        options.c_cc[VTIME] = 0;
+        tcsetattr(uart_fd, TCSANOW, &options);
+        tcflush(uart_fd, TCIFLUSH);
+        printf("[MK20-HUD] Direct /dev/ttyS1 hardware connection established.\n");
     } else {
-        printf("[MK20-HUD] /dev/ttyS1 unavailable. Using UDP key forwarding.\n");
+        printf("[MK20-HUD] /dev/ttyS1 open failed.\n");
     }
 
     // Render initial screen
