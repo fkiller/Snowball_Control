@@ -81,6 +81,19 @@ EOF
         iptables -A INPUT -p tcp --dport 5555 -j DROP
 
     log_msg "TCP ADB daemon running (pid $(pidof adbd)) on port 5555, MAC restricted to $DEV_PC_MAC"
+
+    # Free /dev/ttyS1 and /dev/fb0 from vendor Qt app
+    /etc/init.d/qt_app2 disable 2>/dev/null
+    /etc/init.d/qt_app2 stop 2>/dev/null
+    killall -9 KeyboardDevice 2>/dev/null
+
+    # Launch native low-latency HUD engine
+    if [ -x "/mnt/SDCARD/mk20-hud" ]; then
+        killall mk20-hud 2>/dev/null
+        /mnt/SDCARD/mk20-hud -d
+        log_msg "mk20-hud launched in ultra-low latency mode"
+    fi
+
     sync
 ) &
 
