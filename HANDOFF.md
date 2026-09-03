@@ -40,11 +40,14 @@ There is no active feature request recorded beyond preparing this cross-agent ha
    - **Unit Test Suite ([`Test-AgentAdapter.ps1`](file:///e:/developments/projects/Snowball_Control/hardware/mk20/orchestration/Test-AgentAdapter.ps1))**: 15/15 automated unit tests passing across all event types.
    - **Session Launcher ([`Start-Mk20Session.ps1`](file:///e:/developments/projects/Snowball_Control/hardware/mk20/orchestration/Start-Mk20Session.ps1))**: Interactive launcher supporting live execution (`-Provider claude`, `-Provider codex`) or synthetic playback (`-Synthetic`) with hardware approval gating.
    - **Live Execution Verified**: Tested live with Claude Code 2.1; verified real-time stream normalization, token cost reporting, and clean shutdown.
-4. **Phase 4: MK20 640x656 LCD Screen Rendering & HUD UI**:
-   - **Native Framebuffer HUD Engine ([`mk20-hud.c`](file:///e:/developments/projects/Snowball_Control/hardware/mk20/hud/mk20-hud.c))**: Directly mmaps `/dev/fb0` (640x656 @ 32bpp, 2560 bytes/row) on Allwinner T113. Renders header status bar, active model badge, real-time thought ticker, active tool execution card, and prominent **[KEY 1] APPROVE** (Green) / **[KEY 2] REJECT** (Red) approval modals.
+4. **Phase 4: MK20 640x656 LCD Screen Rendering & Form-Factor Engine**:
+   - **Native Framebuffer HUD Engine ([`mk20-hud.c`](file:///e:/developments/projects/Snowball_Control/hardware/mk20/hud/mk20-hud.c))**: Directly mmaps `/dev/fb0` (640x656 @ 32bpp, 2560 bytes/row) on Allwinner T113. Redesigned to precisely match the MK20 hardware form factor:
+     - **Top Display Window**: 428x142 px (`x: 106..534, y: 0..142`) for telemetry, model badge, rolling thought ticker, and rotary dial overlay. Hidden bezel corners (`x < 106` and `x > 534`) left blank.
+     - **20 Dynamic Screen Keys**: 5 cols x 4 rows of 128x128 px individual LCD cells directly underneath each transparent mechanical keycap.
+     - **Tactile-Visual Button Press Response**: Dual-input monitoring via `/dev/ttyS1` UART and UDP `KEY:` messages. When a key is pressed, the LCD cell underneath immediately illuminates with bright colored glow, inverted text, and 3px border.
    - **Cross-Compilation Pipeline ([`Makefile`](file:///e:/developments/projects/Snowball_Control/hardware/mk20/hud/Makefile))**: Uses vendor Linaro GCC 6.4.1 toolchain via WSL.
-   - **Host HUD Controller ([`Send-Mk20HudEvent.ps1`](file:///e:/developments/projects/Snowball_Control/hardware/mk20/orchestration/Send-Mk20HudEvent.ps1))**: UDP packet dispatcher (`192.168.69.27:7701`).
-   - **Live Screen Capture Verified**: Validated by dumping physical framebuffer `/dev/fb0` directly from the hardware and confirming sharp typography, color cards, and modal states.
+   - **Host HUD Controller ([`Send-Mk20HudEvent.ps1`](file:///e:/developments/projects/Snowball_Control/hardware/mk20/orchestration/Send-Mk20HudEvent.ps1))**: Added support for `-Action key` (with `-Pressed`) and `-Action dial`.
+   - **Live Screen Capture Verified**: Validated by dumping physical framebuffer `/dev/fb0` directly from the hardware for both normal state and live keypress depression state.
 
 ## Remaining Work
 

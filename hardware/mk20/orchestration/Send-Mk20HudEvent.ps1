@@ -5,7 +5,7 @@
 param(
     [string]$DeviceIp = '192.168.69.27',
     [int]$Port = 7701,
-    [ValidateSet('init', 'thinking', 'tool', 'cost', 'approval', 'clear_approval')]
+    [ValidateSet('init', 'thinking', 'tool', 'cost', 'approval', 'clear_approval', 'key', 'dial')]
     [string]$Action = 'thinking',
     [string]$Provider = 'Claude Code 2.1',
     [string]$Model = 'deepseek-v4-pro',
@@ -15,7 +15,11 @@ param(
     [string]$Cost = '$0.000',
     [string]$Duration = '0.0s',
     [string]$ApprovalTitle = '',
-    [string]$ApprovalDesc = ''
+    [string]$ApprovalDesc = '',
+    [int]$Row = 0,
+    [int]$Col = 0,
+    [switch]$Pressed,
+    [string]$DialAction = 'SCROLL RIGHT'
 )
 
 function Send-Mk20UdpPacket {
@@ -37,6 +41,8 @@ $payload = switch ($Action) {
     'cost'           { "COST:$Cost" }
     'approval'       { "APPROVAL:$ApprovalTitle|$ApprovalDesc" }
     'clear_approval' { "CLEAR_APPROVAL:" }
+    'key'            { "KEY:$Row|$Col|$(if ($Pressed) { 1 } else { 0 })" }
+    'dial'           { "DIAL:$DialAction" }
 }
 
 if ($payload) {
