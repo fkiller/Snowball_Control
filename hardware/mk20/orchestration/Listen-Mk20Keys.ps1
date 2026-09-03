@@ -98,6 +98,15 @@ function Process-KeySignal {
         Write-Host "[KEY $($meta.KeyNumber.ToString().PadLeft(2))] (Row $($meta.Row), Col $($meta.Col)) [$stateText] -> Action: $($meta.Action)" -ForegroundColor $color
     }
 
+    # Forward to MK20 HUD screen for instant visual feedback
+    try {
+        if ($meta.IsDial) {
+            & "$PSScriptRoot\Send-Mk20HudEvent.ps1" -Action dial -DialAction $meta.Action -ErrorAction SilentlyContinue
+        } else {
+            & "$PSScriptRoot\Send-Mk20HudEvent.ps1" -Action key -Row $Row -Col $Col -Pressed:$Pressed -ErrorAction SilentlyContinue
+        }
+    } catch {}
+
     if ($Callback) {
         & $Callback $meta
     }
@@ -197,7 +206,4 @@ function Start-Mk20KeyListener {
     }
 }
 
-# Run standalone if invoked directly
-if ($MyInvocation.InvocationName -ne '.' -and $MyInvocation.InvocationName -ne '&') {
-    Start-Mk20KeyListener -Port $PortName -TimeoutSec $TimeoutSeconds -Callback $OnKeyEvent
-}
+Start-Mk20KeyListener -Port $PortName -TimeoutSec $TimeoutSeconds -Callback $OnKeyEvent
