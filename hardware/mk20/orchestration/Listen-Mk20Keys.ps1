@@ -181,12 +181,15 @@ function Start-Mk20KeyListener {
                 $frame = Parse-Mk20A1Frame -Buffer $buffer.ToArray()
                 while ($frame) {
                     $json = $frame.Payload
-                    if ($json.method -eq 'device_keyState_Changed' -or $json.ack_method -eq 'device_keyState_Changed') {
-                        $params = $json.parameters
-                        $pressed = [bool]$params.pressed
-                        $row = [int]$params.row
-                        $col = [int]$params.col
-                        [void](Process-KeySignal -Row $row -Col $col -Pressed $pressed -Callback $Callback)
+                    $methodName = if ($json.PSObject.Properties['method']) { $json.method } elseif ($json.PSObject.Properties['ack_method']) { $json.ack_method } else { $null }
+                    if ($methodName -eq 'device_keyState_Changed') {
+                        $params = if ($json.PSObject.Properties['parameters']) { $json.parameters } else { $null }
+                        if ($params) {
+                            $pressed = [bool]$params.pressed
+                            $row = [int]$params.row
+                            $col = [int]$params.col
+                            [void](Process-KeySignal -Row $row -Col $col -Pressed $pressed -Callback $Callback)
+                        }
                     }
                     $buffer.RemoveRange(0, $frame.BytesConsumed)
                     $frame = Parse-Mk20A1Frame -Buffer $buffer.ToArray()
