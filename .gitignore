@@ -22,6 +22,7 @@ coverage/
 .pytest_cache/
 __pycache__/
 *.py[cod]
+/hardware/mk20/hud/mk20-hud
 
 # Editors and operating systems.
 .vscode/

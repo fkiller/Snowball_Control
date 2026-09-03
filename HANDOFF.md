@@ -40,19 +40,22 @@ There is no active feature request recorded beyond preparing this cross-agent ha
    - **Unit Test Suite ([`Test-AgentAdapter.ps1`](file:///e:/developments/projects/Snowball_Control/hardware/mk20/orchestration/Test-AgentAdapter.ps1))**: 15/15 automated unit tests passing across all event types.
    - **Session Launcher ([`Start-Mk20Session.ps1`](file:///e:/developments/projects/Snowball_Control/hardware/mk20/orchestration/Start-Mk20Session.ps1))**: Interactive launcher supporting live execution (`-Provider claude`, `-Provider codex`) or synthetic playback (`-Synthetic`) with hardware approval gating.
    - **Live Execution Verified**: Tested live with Claude Code 2.1; verified real-time stream normalization, token cost reporting, and clean shutdown.
+4. **Phase 4: MK20 640x656 LCD Screen Rendering & HUD UI**:
+   - **Native Framebuffer HUD Engine ([`mk20-hud.c`](file:///e:/developments/projects/Snowball_Control/hardware/mk20/hud/mk20-hud.c))**: Directly mmaps `/dev/fb0` (640x656 @ 32bpp, 2560 bytes/row) on Allwinner T113. Renders header status bar, active model badge, real-time thought ticker, active tool execution card, and prominent **[KEY 1] APPROVE** (Green) / **[KEY 2] REJECT** (Red) approval modals.
+   - **Cross-Compilation Pipeline ([`Makefile`](file:///e:/developments/projects/Snowball_Control/hardware/mk20/hud/Makefile))**: Uses vendor Linaro GCC 6.4.1 toolchain via WSL.
+   - **Host HUD Controller ([`Send-Mk20HudEvent.ps1`](file:///e:/developments/projects/Snowball_Control/hardware/mk20/orchestration/Send-Mk20HudEvent.ps1))**: UDP packet dispatcher (`192.168.69.27:7701`).
+   - **Live Screen Capture Verified**: Validated by dumping physical framebuffer `/dev/fb0` directly from the hardware and confirming sharp typography, color cards, and modal states.
 
 ## Remaining Work
 
-1. **Phase 4: MK20 LCD Screen Rendering & HUD UI**:
-   - Design and upload 640x656 LCD status views, activity ticker, and approval modals.
-2. **Phase 5: Production Gateway Service & Developer Tooling**:
+1. **Phase 5: Production Gateway Service & Developer Tooling**:
    - Package standalone background service (`snowball-gateway`) with dual-plane failover and IDE plugins.
-3. **Phase 6: Custom Firmware & Production Packaging**:
+2. **Phase 6: Custom Firmware & Production Packaging**:
    - Slim Tina Linux OS image and safe MicroSD OTA rollback.
 
 ## Exact Next Action
 
-Build Phase 4: MK20 LCD Screen Rendering & HUD UI to display the active agent model, turn progress, and high-visibility approval modals directly on the 640x656 display.
+Build Phase 5: Production Gateway Service packaging the background daemon (`snowball-gateway`) with dual-plane failover (`COM5` and TCP `5555`), heartbeat monitoring, and automatic reconnection.
 
 ## Architecture and Important Decisions
 

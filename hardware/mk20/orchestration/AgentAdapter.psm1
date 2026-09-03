@@ -286,8 +286,25 @@ function Get-SafeProp {
 
                         # Check if modifying tool call requires hardware approval
                         $toolName = Get-SafeProp $norm.data 'toolName'
+
+                        # Push update to physical MK20 HUD screen
+                        try {
+                            switch ($norm.type) {
+                                'turn.start'  { & "$PSScriptRoot\Send-Mk20HudEvent.ps1" -Action thinking -Text "Starting turn: $summaryText" -ErrorAction SilentlyContinue }
+                                'agent.state' { & "$PSScriptRoot\Send-Mk20HudEvent.ps1" -Action thinking -Text $summaryText -ErrorAction SilentlyContinue }
+                                'tool.invocation' { & "$PSScriptRoot\Send-Mk20HudEvent.ps1" -Action tool -ToolName $toolName -ToolSummary $summaryText -ErrorAction SilentlyContinue }
+                                'session.complete' {
+                                    $costVal = Get-SafeProp $norm.data 'cost'
+                                    if ($costVal) { & "$PSScriptRoot\Send-Mk20HudEvent.ps1" -Action cost -Cost $costVal -ErrorAction SilentlyContinue }
+                                }
+                            }
+                        } catch {}
+
                         $isModifying = $norm.type -eq 'tool.invocation' -and ($toolName -match 'Bash|Write|Edit|execute_command|patch')
                         if ($isModifying -and $RequireHardwareApproval) {
+                            try {
+                                & "$PSScriptRoot\Send-Mk20HudEvent.ps1" -Action approval -ApprovalTitle "Execute $toolName?" -ApprovalDesc $summaryText -ErrorAction SilentlyContinue
+                            } catch {}
                             Write-Host "`n>>> [HARDWARE APPROVAL REQUIRED FOR $toolName]" -ForegroundColor Magenta
                             Write-Host "    Press Key 1 (Approve) or Key 2 (Reject) on the physical MK20..." -ForegroundColor White
                             
@@ -328,10 +345,12 @@ function Get-SafeProp {
 
                             if ($resolved -and ($resolved.Action -eq 'REJECT' -or $resolved.KeyNumber -eq 2)) {
                                 Write-Host ">>> REJECTED by physical Key 2! Aborting operation." -ForegroundColor Red
+                                try { & "$PSScriptRoot\Send-Mk20HudEvent.ps1" -Action clear_approval -ErrorAction SilentlyContinue } catch {}
                                 $proc.Kill()
                                 break
                             } else {
                                 Write-Host ">>> APPROVED by physical Key 1 (or timeout). Proceeding..." -ForegroundColor Green
+                                try { & "$PSScriptRoot\Send-Mk20HudEvent.ps1" -Action clear_approval -ErrorAction SilentlyContinue } catch {}
                             }
                         }
                     }

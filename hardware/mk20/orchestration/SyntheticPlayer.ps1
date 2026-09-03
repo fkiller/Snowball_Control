@@ -53,6 +53,19 @@ function Emit-Event {
     Write-Host "[$timeStr] " -NoNewline -ForegroundColor DarkGray
     Write-Host "[$($Type.PadRight(18))] " -NoNewline -ForegroundColor Cyan
     Write-Host "$desc" -ForegroundColor $Color
+
+    # Push event to MK20 HUD screen
+    try {
+        switch ($Type) {
+            'session.init' { & "$PSScriptRoot\Send-Mk20HudEvent.ps1" -Action init -Provider $Data.provider -Model $Data.model -ErrorAction SilentlyContinue }
+            'turn.start' { & "$PSScriptRoot\Send-Mk20HudEvent.ps1" -Action thinking -Text $Data.userPrompt -ErrorAction SilentlyContinue }
+            'agent.state' { & "$PSScriptRoot\Send-Mk20HudEvent.ps1" -Action thinking -Text $Data.headline -ErrorAction SilentlyContinue }
+            'tool.invocation' { & "$PSScriptRoot\Send-Mk20HudEvent.ps1" -Action tool -ToolName $Data.toolName -ToolSummary $Data.summary -ErrorAction SilentlyContinue }
+            'approval.requested' { & "$PSScriptRoot\Send-Mk20HudEvent.ps1" -Action approval -ApprovalTitle $Data.tool -ApprovalDesc $Data.reason -ErrorAction SilentlyContinue }
+            'approval.resolved' { & "$PSScriptRoot\Send-Mk20HudEvent.ps1" -Action clear_approval -ErrorAction SilentlyContinue }
+            'session.complete' { & "$PSScriptRoot\Send-Mk20HudEvent.ps1" -Action cost -Cost "`$$($Data.costUsd) USD" -Duration "$($Data.durationSeconds)s" -ErrorAction SilentlyContinue }
+        }
+    } catch {}
 }
 
 Write-Host "=== MK20 Synthetic Agent Session Player ===" -ForegroundColor Cyan
