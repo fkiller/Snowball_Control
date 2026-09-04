@@ -16,31 +16,13 @@ There is no active feature request recorded beyond preparing this cross-agent ha
 
 ## Current State
 
-- `main` contains commits through `a756c3f` (`feat(mk20-hud): implement smooth vertical value scrolling controlled by knob (Pattern 12)`).
-- **MK20 Hardware Multi-Display Architecture Unlocked**:
-  - **22 Independent Framebuffer Devices**:
-    - `/dev/fb1` to `/dev/fb20`: 20 separate 128x128 16-bit RGB565 LCD screens (driven by individual `fb_gc9107` SPI controllers directly under each keycap).
-    - `/dev/fb21`: 428x142 16-bit RGB565 status screen (driven by `fb_nv3007`) in the top window.
-    - `/dev/fb0`: Virtual unmapped shadow buffer in RAM (not wired to physical glass).
-  - **100% Standalone On-Device Engine**:
-    - `mk20-hud` runs natively on the Allwinner T113 dual Cortex-A7 SoC with zero host PC dependencies, zero USB HID, and sub-millisecond response.
-    - Directly mmaps all 21 hardware framebuffers and forces zero-latency SPI writes (`write(fd, fb, 32768)`).
-    - Communicates over `/dev/ttyS1` to GD32/QMK MCU using vendor 8-state byte machine and dynamic keymap bindings.
-  - **12 Interactive Visual Interaction Patterns Running Live**:
-    - Pattern 1 (Key 1): Toggle (Same Text `[MUTE]`, Dark Card $\leftrightarrow$ Emerald Green).
-    - Pattern 2 (Key 2): Toggle (Different Text & Colors: `[MIC ON]` $\leftrightarrow$ `[MIC OFF]`).
-    - Pattern 7 (Key 3): Shift-Style Momentary (`[TURBO]`, active only while physically held down).
-    - Pattern 10 (Key 4): Pulse-Style Metronome (120 BPM animated pulse with pulsating heart icon).
-    - Pattern 3 (Key 5): Modes (Vertical uniform text list with cyan cursor highlight).
-    - Pattern 4 (Key 6): Modes (Vertical carousel with 2x center enlarged selected mode).
-    - Pattern 5 (Key 7): Modes (2x2 icon matrix with illuminated active quadrant).
-    - Pattern 6 (Key 8): Modes (Horizontal 3-icon strip with 2x center active icon).
-    - Pattern 8 (Key 9): Real-Time Number (Live Allwinner T113 CPU % with level gauge).
-    - Pattern 9 (Key 10): Real-Time Graph (Rolling 60-second CPU load sparkline chart).
-    - Pattern 11 (Key 11 & Top): Concentric Rotating Circular Knob Panel with Rotating Radial Text (6 modes: `CODE`, `PLAN`, `DIFF`, `TEST`, `EXEC`, `CHAT` orbiting at $R=31$, 24 rotating radial ticks, 12 o'clock needle pointer, and synchronized mini dial gauge on `/dev/fb21`).
-    - Pattern 12 (Key 12 & Top): Smooth Vertical Value Scrolling Controlled by Knob (precision vertical reel with 30 FPS lerp interpolation, ruler ticks, center selection band, level progress bar on `/dev/fb21` and `/dev/fb12`).
-    - Keys 13..20: Counter, Audio, Reset, Theme, Provider, Model, Plan, Diff.
-  - **All 4 North Star architectural foundations delivered**: Dual control planes (`COM5` and TCP `5555`), A1 host RPC, normalized agent adapters, and Linux/QMK contract.
+- `main` contains commit `7b98607` (`feat(mk20-hud): decouple dual rotary knobs, add dynamic BPM tempo, and right-scroll animation for Key 8`).
+- **All 4 User Feedback Items Completed & Live on Hardware**:
+  1. **Dual Rotary Knob Separation**: Left Knob strictly controls Top Card 1 (`#11 ROTATING DIAL`) and Key 11. Right Knob strictly controls Top Card 2 (`#12 VALUE REEL`) and Key 12.
+  2. **Bidirectional CW & CCW Rotation**: Both knobs support full bidirectional rotation with MCU rows 100/101 (Left Knob) and rows 103/104 (Right Knob). Push clicks use rows 102 and 105.
+  3. **Dynamic BPM Metronome Tempo**: Key #4 pulses at the exact active tempo (80 / 120 / 160 BPM) using a continuous phase accumulator in the 30 FPS main loop.
+  4. **Key #8 Right-Scrolling Animation**: Modes carousel scrolls smoothly to the right (+X direction, 220ms ease-out, constant icon scale, zero zoom) across 3 distinct zones with higher z-index center highlight box and zero boundary overflow.
+- Daemon `mk20-hud` is currently active on the MK20 device (`PID 1373`).
 
 ## Completed Work
 
