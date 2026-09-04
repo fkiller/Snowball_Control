@@ -37,6 +37,8 @@
 #include <netinet/in.h>
 #include <linux/fb.h>
 #include <math.h>
+#include <signal.h>
+#include <errno.h>
 
 #define KEY_W 128
 #define KEY_H 128
@@ -210,12 +212,15 @@ static int g_top_fd = -1;
 static int g_pat1_toggle = 0;             // Key 1: Toggle Same Text
 static int g_pat2_toggle = 1;             // Key 2: Toggle Different Text
 static int g_pat7_shift = 0;              // Key 3: Momentary Shift
-static int g_pat10_metronome_bpm = 120;   // Key 4: Metronome Pulse
-static int g_pat10_pulse_val = 0;         // 0..100 breathing phase
+static int g_pat10_metronome_bpm = 120;   // Key 4: Metronome Pulse BPM (80/120/160)
+static float g_pat10_phase = 0.0f;        // Key 4: Phase accumulator (0..2*PI)
 static int g_pat3_mode_idx = 0;           // Key 5: Modes Vertical Uniform (0..3)
 static int g_pat4_mode_idx = 0;           // Key 6: Modes Vertical Carousel (0..3)
 static int g_pat5_icon_idx = 0;           // Key 7: Modes 2x2 Icon Grid (0..3)
 static int g_pat6_icon_idx = 0;           // Key 8: Modes Horizontal Strip (0..3)
+static int g_pat6_animating = 0;          // Key 8: Horizontal scroll animation active
+static float g_pat6_anim_offset = 0.0f;   // Key 8: Pixel offset (0.0 .. 40.0)
+static long long g_pat6_anim_start_ms = 0;
 static int g_pat8_cpu_pct = 32;           // Key 9: Real-time Number CPU %
 static int g_pat9_cpu_history[60] = {0};  // Key 10: Real-time Sparkline Graph
 static int g_pat11_knob_val = 45;         // Key 11: Knob Dial Gauge (0..100)
@@ -234,10 +239,22 @@ typedef struct {
     char message[128];
     char dial_action[32];
     long long dial_until_ms;
+    char scroll_action[32];
+    long long scroll_until_ms;
 } HudState;
 
 static HudState g_state;
 static uint8_t g_key_pressed[21] = {0};
+static volatile int g_running = 1;
+static uint32_t g_dirty_keys = 0;
+static int g_dirty_top = 0;
+static long long g_last_top_flush_ms = 0;
+
+static void handle_signal(int sig) {
+    if (sig == SIGINT || sig == SIGTERM) {
+        g_running = 0;
+    }
+}
 
 // Key mapping configuration for the 5x4 matrix
 static int get_mapped_key_index(int row, int col) {
@@ -371,6 +388,28 @@ static void draw_icon12x12(uint16_t *fb, int stride_pixels, int x, int y, const 
                         int px = x + c * scale + sx;
                         int py = y + r * scale + sy;
                         if (px >= 0 && px < stride_pixels && py >= 0 && py < max_h) {
+                            fb[py * stride_pixels + px] = color;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+static void draw_icon12x12_clipped(uint16_t *fb, int stride_pixels, int x, int y, const uint16_t *icon, uint16_t color, int scale, int clip_x, int clip_y, int clip_w, int clip_h) {
+    int max_h = get_fb_height(stride_pixels);
+    for (int r = 0; r < 12; r++) {
+        uint16_t bits = icon[r];
+        for (int c = 0; c < 12; c++) {
+            if (bits & (0x800 >> c)) {
+                for (int sy = 0; sy < scale; sy++) {
+                    for (int sx = 0; sx < scale; sx++) {
+                        int px = x + c * scale + sx;
+                        int py = y + r * scale + sy;
+                        if (px >= clip_x && px < (clip_x + clip_w) &&
+                            py >= clip_y && py < (clip_y + clip_h) &&
+                            px >= 0 && px < stride_pixels && py >= 0 && py < max_h) {
                             fb[py * stride_pixels + px] = color;
                         }
                     }
@@ -599,16 +638,40 @@ static void draw_vertical_value_reel(uint16_t *fb, int stride_pixels,
 static void flush_key(int key_idx) {
     if (key_idx >= 1 && key_idx <= 20 && g_key_fds[key_idx] >= 0 && g_key_fbs[key_idx]) {
         msync(g_key_fbs[key_idx], KEY_FB_BYTES, MS_ASYNC);
-        lseek(g_key_fds[key_idx], 0, SEEK_SET);
-        write(g_key_fds[key_idx], g_key_fbs[key_idx], KEY_FB_BYTES);
+        off_t pos = lseek(g_key_fds[key_idx], 0, SEEK_SET);
+        if (pos == (off_t)-1) return;
+        size_t total = 0;
+        uint8_t *ptr = (uint8_t *)g_key_fbs[key_idx];
+        while (total < KEY_FB_BYTES) {
+            ssize_t n = write(g_key_fds[key_idx], ptr + total, KEY_FB_BYTES - total);
+            if (n > 0) {
+                total += n;
+            } else if (n < 0 && (errno == EINTR || errno == EAGAIN)) {
+                continue;
+            } else {
+                break;
+            }
+        }
     }
 }
 
 static void flush_top(void) {
     if (g_top_fd >= 0 && g_top_fb) {
         msync(g_top_fb, TOP_FB_BYTES, MS_ASYNC);
-        lseek(g_top_fd, 0, SEEK_SET);
-        write(g_top_fd, g_top_fb, TOP_FB_BYTES);
+        off_t pos = lseek(g_top_fd, 0, SEEK_SET);
+        if (pos == (off_t)-1) return;
+        size_t total = 0;
+        uint8_t *ptr = (uint8_t *)g_top_fb;
+        while (total < TOP_FB_BYTES) {
+            ssize_t n = write(g_top_fd, ptr + total, TOP_FB_BYTES - total);
+            if (n > 0) {
+                total += n;
+            } else if (n < 0 && (errno == EINTR || errno == EAGAIN)) {
+                continue;
+            } else {
+                break;
+            }
+        }
     }
 }
 
@@ -703,10 +766,11 @@ static void render_pattern_10(void) {
     if (!fb) return;
 
     int is_pressed = g_key_pressed[4];
-    float pulse = (sinf(g_pat10_pulse_val * 0.1f) + 1.0f) * 0.5f; // 0..1
-    uint16_t bg = (pulse > 0.6f) ? COLOR_ROSE_BG : COLOR_CARD;
-    uint16_t heart_col = is_pressed ? COLOR_WHITE : ((pulse > 0.6f) ? COLOR_WHITE : COLOR_ROSE);
-    int border_thick = is_pressed ? 3 : (int)(2 + pulse * 2);
+    float s = sinf(g_pat10_phase);
+    float pulse = (s > 0.0f) ? (s * s) : 0.0f; // Sharp beat at exact BPM
+    uint16_t bg = (pulse > 0.45f) ? COLOR_ROSE_BG : COLOR_CARD;
+    uint16_t heart_col = is_pressed ? COLOR_WHITE : ((pulse > 0.45f) ? COLOR_WHITE : COLOR_ROSE);
+    int border_thick = is_pressed ? 3 : (int)(2 + pulse * 2.0f);
 
     draw_rect_16(fb, KEY_W, 0, 0, KEY_W, KEY_H, bg);
     draw_border_16(fb, KEY_W, 0, 0, KEY_W, KEY_H, border_thick, heart_col);
@@ -714,7 +778,7 @@ static void render_pattern_10(void) {
     draw_string_16(fb, KEY_W, 6, 6, "#04", heart_col, 1);
     draw_badge_right_16(fb, KEY_W, 6, "PULSE", heart_col);
 
-    int scale = (pulse > 0.7f) ? 3 : 2;
+    int scale = (pulse > 0.6f) ? 3 : 2;
     int hx = (KEY_W - 12 * scale) / 2;
     int hy = 36;
     draw_icon12x12(fb, KEY_W, hx, hy, icon12x12_heart, heart_col, scale);
@@ -831,7 +895,7 @@ static void render_pattern_5(void) {
 }
 
 // =========================================================================
-// PATTERN 6: Modes (Horizontal 3-Item Strip: Prev, Large Center, Next) -> Key 8
+// PATTERN 6: Modes (Horizontal Strip: Right-Scrolling Animation, Higher Z-Index Center) -> Key 8
 // =========================================================================
 static void render_pattern_6(void) {
     uint16_t *fb = g_key_fbs[8];
@@ -841,29 +905,49 @@ static void render_pattern_6(void) {
     static const char *names[4] = {"CPU", "MEM", "WIFI", "LAN"};
 
     int cur = g_pat6_icon_idx;
-    int prev = (cur + 3) % 4;
-    int next = (cur + 1) % 4;
+    int left = (cur + 3) % 4;
+    int right = (cur + 1) % 4;
+    int far_left = (cur + 2) % 4;
     int is_pressed = g_key_pressed[8];
+    float dx = g_pat6_anim_offset; // 0.0 .. 40.0
 
     draw_rect_16(fb, KEY_W, 0, 0, KEY_W, KEY_H, COLOR_CARD);
     draw_border_16(fb, KEY_W, 0, 0, KEY_W, KEY_H, is_pressed ? 3 : 2, is_pressed ? COLOR_WHITE : COLOR_EMERALD);
 
     draw_string_16(fb, KEY_W, 6, 6, "#08", COLOR_EMERALD, 1);
-    draw_badge_right_16(fb, KEY_W, 6, "H-CAR", COLOR_EMERALD);
+    draw_badge_right_16(fb, KEY_W, 6, "SCROLL", COLOR_EMERALD);
 
-    // Left Small Prev Icon
-    draw_icon12x12(fb, KEY_W, 14, 40, icons[prev], COLOR_TEXT_DIM, 1);
+    int iy = 38; // 24x24 icon vertically centered in y: 24..78
 
-    // Center Large Selected Icon (scale 2) inside bright card
-    draw_rect_16(fb, KEY_W, 44, 26, 40, 48, COLOR_EMERALD_BG);
-    draw_border_16(fb, KEY_W, 44, 26, 40, 48, 2, COLOR_EMERALD);
-    draw_icon12x12(fb, KEY_W, 52, 34, icons[cur], COLOR_WHITE, 2);
+    // 1. Left Zone Layer (x: 4..44, width 40, height 54)
+    draw_rect_16(fb, KEY_W, 4, 24, 40, 54, COLOR_BG);
+    draw_border_16(fb, KEY_W, 4, 24, 40, 54, 1, COLOR_CARD_BORDER);
+    // Two icons in left zone scrolling left-to-right:
+    int far_left_x = -28 + (int)roundf(dx);
+    int left_x = 12 + (int)roundf(dx);
+    draw_icon12x12_clipped(fb, KEY_W, far_left_x, iy, icons[far_left], COLOR_DARK_GRAY, 2, 5, 25, 38, 52);
+    draw_icon12x12_clipped(fb, KEY_W, left_x, iy, icons[left], COLOR_TEXT_DIM, 2, 5, 25, 38, 52);
 
-    // Right Small Next Icon
-    draw_icon12x12(fb, KEY_W, KEY_W - 26, 40, icons[next], COLOR_TEXT_DIM, 1);
+    // 2. Right Zone Layer (x: 84..124, width 40, height 54)
+    draw_rect_16(fb, KEY_W, 84, 24, 40, 54, COLOR_BG);
+    draw_border_16(fb, KEY_W, 84, 24, 40, 54, 1, COLOR_CARD_BORDER);
+    // Two icons in right zone scrolling left-to-right (no overflow outside button boundary):
+    int cur_to_right_x = 52 + (int)roundf(dx);
+    int right_x = 92 + (int)roundf(dx);
+    draw_icon12x12_clipped(fb, KEY_W, cur_to_right_x, iy, icons[cur], COLOR_TEXT_DIM, 2, 85, 25, 38, 52);
+    draw_icon12x12_clipped(fb, KEY_W, right_x, iy, icons[right], COLOR_DARK_GRAY, 2, 85, 25, 38, 52);
 
-    // Name Label below
-    draw_string_centered_16(fb, KEY_W, 86, names[cur], COLOR_WHITE, 1);
+    // 3. Center Highlight Box Layer (HIGHER Z-INDEX: drawn OVER left & right zones)
+    draw_rect_16(fb, KEY_W, 44, 22, 40, 58, COLOR_EMERALD_BG);
+    draw_border_16(fb, KEY_W, 44, 22, 40, 58, 2, COLOR_EMERALD);
+    // Center icons clipped to center box interior [46, 24, 36, 54]:
+    draw_icon12x12_clipped(fb, KEY_W, left_x, iy, icons[left], COLOR_WHITE, 2, 46, 24, 36, 54);
+    draw_icon12x12_clipped(fb, KEY_W, cur_to_right_x, iy, icons[cur], COLOR_WHITE, 2, 46, 24, 36, 54);
+
+    // Label below (centered, no overflow)
+    int display_idx = (dx > 20.0f) ? left : cur;
+    draw_string_centered_16(fb, KEY_W, 88, names[display_idx], COLOR_WHITE, 1);
+    draw_string_centered_16(fb, KEY_W, 106, "RIGHT SCROLL", COLOR_GRAY, 1);
 
     flush_key(8);
 }
@@ -1107,22 +1191,33 @@ static void render_aux_key(int key_idx) {
     flush_key(key_idx);
 }
 
+// Render an individual physical keycap by index (1..20)
+static void render_key_by_index(int key_idx) {
+    switch (key_idx) {
+        case 1: render_pattern_1(); break;
+        case 2: render_pattern_2(); break;
+        case 3: render_pattern_7(); break;
+        case 4: render_pattern_10(); break;
+        case 5: render_pattern_3(); break;
+        case 6: render_pattern_4(); break;
+        case 7: render_pattern_5(); break;
+        case 8: render_pattern_6(); break;
+        case 9: render_pattern_8(); break;
+        case 10: render_pattern_9(); break;
+        case 11: render_pattern_11(); break;
+        case 12: render_pattern_12(); break;
+        default:
+            if (key_idx >= 13 && key_idx <= 20) {
+                render_aux_key(key_idx);
+            }
+            break;
+    }
+}
+
 // Render All 20 Physical Keycaps
 static void render_all_keys(void) {
-    render_pattern_1();
-    render_pattern_2();
-    render_pattern_7();
-    render_pattern_10();
-    render_pattern_3();
-    render_pattern_4();
-    render_pattern_5();
-    render_pattern_6();
-    render_pattern_8();
-    render_pattern_9();
-    render_pattern_11();
-    render_pattern_12();
-    for (int k = 13; k <= 20; k++) {
-        render_aux_key(k);
+    for (int k = 1; k <= 20; k++) {
+        render_key_by_index(k);
     }
 }
 
@@ -1194,8 +1289,8 @@ static void render_top_display(void) {
     snprintf(modeBadge, sizeof(modeBadge), "> [ %s ] <", g_pat11_modes[active_mode]);
     draw_string_16(fb, TOP_W, dx + 82, dy + 36, modeBadge, COLOR_WHITE, 1);
 
-    draw_string_16(fb, TOP_W, dx + 72, dy + 62, "ROTATE KNOB", COLOR_GRAY, 1);
-    if (g_state.dial_until_ms > get_time_ms() && strncmp(g_state.dial_action, "DIAL", 4) == 0) {
+    draw_string_16(fb, TOP_W, dx + 72, dy + 62, "LEFT KNOB", COLOR_GRAY, 1);
+    if (g_state.dial_until_ms > get_time_ms()) {
         draw_string_clipped_16(fb, TOP_W, dx + 72, dy + 82, g_state.dial_action, COLOR_AMBER, 1, dx + 72, dy + 80, 124, 16);
     } else {
         draw_string_16(fb, TOP_W, dx + 72, dy + 82, "DIAL SELECTION", COLOR_TEXT_DIM, 1);
@@ -1219,7 +1314,7 @@ static void render_top_display(void) {
 
     // Right Side of Reel in Card 2: Numeric Readout & Dynamic Progress Gauge
     int rx = cx + 114;
-    draw_string_16(fb, TOP_W, rx, cy + 20, "VALUE", COLOR_GRAY, 1);
+    draw_string_16(fb, TOP_W, rx, cy + 20, "RIGHT KNOB", COLOR_GRAY, 1);
     draw_string_16(fb, TOP_W, rx, cy + 36, valStr, COLOR_WHITE, 2);
 
     // Mini Level Bar
@@ -1232,8 +1327,8 @@ static void render_top_display(void) {
         draw_rect_16(fb, TOP_W, bar_x + 1, bar_y + 1, fill_w, bar_h - 2, COLOR_INDIGO);
     }
 
-    if (g_state.dial_until_ms > get_time_ms() && strncmp(g_state.dial_action, "SCROLL", 6) == 0) {
-        draw_string_clipped_16(fb, TOP_W, rx, cy + 86, g_state.dial_action, COLOR_AMBER, 1, rx, cy + 84, 80, 16);
+    if (g_state.scroll_until_ms > get_time_ms()) {
+        draw_string_clipped_16(fb, TOP_W, rx, cy + 86, g_state.scroll_action, COLOR_AMBER, 1, rx, cy + 84, 80, 16);
     } else {
         draw_string_16(fb, TOP_W, rx, cy + 86, "SMOOTH LERP", COLOR_GRAY, 1);
     }
@@ -1267,6 +1362,12 @@ static int read_cpu_percent(void) {
     return 28;
 }
 
+// Forward declarations for knob handlers
+static void on_left_knob(int direction);
+static void on_left_knob_click(void);
+static void on_right_knob(int direction);
+static void on_right_knob_click(void);
+
 // Handle switch contact events
 static void on_key_event(int row, int col, int pressed) {
     int key_idx = get_mapped_key_index(row, col);
@@ -1277,76 +1378,60 @@ static void on_key_event(int row, int col, int pressed) {
     switch (key_idx) {
         case 1:
             if (pressed) g_pat1_toggle = !g_pat1_toggle;
-            render_pattern_1();
             break;
         case 2:
             if (pressed) g_pat2_toggle = !g_pat2_toggle;
-            render_pattern_2();
             break;
         case 3:
             g_pat7_shift = pressed;
-            render_pattern_7();
             break;
         case 4:
             if (pressed) {
                 g_pat10_metronome_bpm = (g_pat10_metronome_bpm == 120) ? 160 : ((g_pat10_metronome_bpm == 160) ? 80 : 120);
             }
-            render_pattern_10();
             break;
         case 5:
             if (pressed) g_pat3_mode_idx = (g_pat3_mode_idx + 1) % 4;
-            render_pattern_3();
             break;
         case 6:
             if (pressed) g_pat4_mode_idx = (g_pat4_mode_idx + 1) % 4;
-            render_pattern_4();
             break;
         case 7:
             if (pressed) g_pat5_icon_idx = (g_pat5_icon_idx + 1) % 4;
-            render_pattern_5();
             break;
         case 8:
-            if (pressed) g_pat6_icon_idx = (g_pat6_icon_idx + 1) % 4;
-            render_pattern_6();
+            if (pressed) {
+                if (g_pat6_animating) {
+                    g_pat6_icon_idx = (g_pat6_icon_idx + 3) % 4;
+                }
+                g_pat6_animating = 1;
+                g_pat6_anim_start_ms = get_time_ms();
+                g_pat6_anim_offset = 0.0f;
+            }
             break;
         case 9:
             if (pressed) g_pat8_cpu_pct = read_cpu_percent();
-            render_pattern_8();
             break;
         case 10:
             if (pressed) {
                 for (int i = 0; i < 59; i++) g_pat9_cpu_history[i] = g_pat9_cpu_history[i + 1];
                 g_pat9_cpu_history[59] = 95;
             }
-            render_pattern_9();
             break;
         case 11:
             if (pressed) {
-                g_pat11_dial_angle += (float)(M_PI / 3.0f);
-                while (g_pat11_dial_angle >= (float)(2.0 * M_PI)) g_pat11_dial_angle -= (float)(2.0 * M_PI);
-                g_pat11_knob_val = (g_pat11_knob_val + 10) % 105;
-                int mode = get_active_dial_mode();
-                snprintf(g_state.dial_action, sizeof(g_state.dial_action), "KEY #11 -> [%s]", g_pat11_modes[mode]);
-                g_state.dial_until_ms = get_time_ms() + 1000;
-                render_top_display();
+                on_left_knob(+1);
             }
-            render_pattern_11();
             break;
         case 12:
             if (pressed) {
-                g_pat12_target_val = (g_pat12_target_val + 5) % 105;
-                snprintf(g_state.dial_action, sizeof(g_state.dial_action), "KEY #12 -> [%d]", g_pat12_target_val);
-                g_state.dial_until_ms = get_time_ms() + 1000;
-                render_top_display();
+                on_right_knob(+1);
             }
-            render_pattern_12();
             break;
         case 13:
             if (pressed) g_aux_counter++;
-            render_aux_key(13);
             break;
         case 14:
-            render_aux_key(14);
             break;
         case 15:
             if (pressed) {
@@ -1356,61 +1441,95 @@ static void on_key_event(int row, int col, int pressed) {
                 g_pat4_mode_idx = 0;
                 g_pat5_icon_idx = 0;
                 g_pat6_icon_idx = 0;
+                g_pat6_animating = 0;
+                g_pat6_anim_offset = 0.0f;
+                g_pat10_metronome_bpm = 120;
+                g_pat10_phase = 0.0f;
                 g_pat11_knob_val = 50;
                 g_pat11_dial_angle = 0.0f;
                 g_pat12_target_val = 50;
                 g_pat12_current_val = 50.0f;
-                render_all_keys();
-                render_top_display();
-            } else {
-                render_aux_key(15);
+                g_state.dial_action[0] = '\0';
+                g_state.dial_until_ms = 0;
+                g_state.scroll_action[0] = '\0';
+                g_state.scroll_until_ms = 0;
+                g_dirty_keys = 0x1FFFFE;
+                g_dirty_top = 1;
+                return;
             }
             break;
         case 16:
             if (pressed) g_aux_theme = !g_aux_theme;
-            render_aux_key(16);
             break;
         case 17:
         case 18:
         case 19:
         case 20:
-            render_aux_key(key_idx);
             break;
     }
+    g_dirty_keys |= (1 << key_idx);
 }
 
-// Handle rotary knob rotation
-static void on_dial_turn(int direction) {
-    // direction: +1 = Right / Clockwise, -1 = Left / Counter-Clockwise
+// Handle Left Rotary Knob (controls Card 1 & Key 11)
+static void on_left_knob(int direction) {
+    // direction: +1 = CW, -1 = CCW
     float step = (float)(M_PI / 12.0f); // 15 degrees per notch
     if (direction > 0) {
         g_pat11_dial_angle += step;
         while (g_pat11_dial_angle >= (float)(2.0 * M_PI)) g_pat11_dial_angle -= (float)(2.0 * M_PI);
         g_pat11_knob_val += 5;
         if (g_pat11_knob_val > 100) g_pat11_knob_val = 100;
-
-        // Pattern 12: Scroll UP
-        g_pat12_target_val += 1;
-        if (g_pat12_target_val > 100) g_pat12_target_val = 100;
-
-        snprintf(g_state.dial_action, sizeof(g_state.dial_action), "SCROLL UP -> [%d]", g_pat12_target_val);
     } else {
         g_pat11_dial_angle -= step;
         while (g_pat11_dial_angle < 0.0f) g_pat11_dial_angle += (float)(2.0 * M_PI);
         g_pat11_knob_val -= 5;
         if (g_pat11_knob_val < 0) g_pat11_knob_val = 0;
-
-        // Pattern 12: Scroll DOWN
-        g_pat12_target_val -= 1;
-        if (g_pat12_target_val < 0) g_pat12_target_val = 0;
-
-        snprintf(g_state.dial_action, sizeof(g_state.dial_action), "SCROLL DOWN <- [%d]", g_pat12_target_val);
     }
+    int mode = get_active_dial_mode();
+    snprintf(g_state.dial_action, sizeof(g_state.dial_action), "DIAL %s -> [%s]",
+             (direction > 0) ? "CW" : "CCW", g_pat11_modes[mode]);
     g_state.dial_until_ms = get_time_ms() + 1000;
 
-    render_pattern_11();
-    render_pattern_12();
-    render_top_display();
+    g_dirty_keys |= (1 << 11);
+    g_dirty_top = 1;
+}
+
+static void on_left_knob_click(void) {
+    g_pat11_dial_angle += (float)(M_PI / 3.0f); // Advance one mode (60 deg)
+    while (g_pat11_dial_angle >= (float)(2.0 * M_PI)) g_pat11_dial_angle -= (float)(2.0 * M_PI);
+    int mode = get_active_dial_mode();
+    snprintf(g_state.dial_action, sizeof(g_state.dial_action), "KNOB CLICK [%s]", g_pat11_modes[mode]);
+    g_state.dial_until_ms = get_time_ms() + 1000;
+
+    g_dirty_keys |= (1 << 11);
+    g_dirty_top = 1;
+}
+
+// Handle Right Rotary Knob (controls Card 2 & Key 12)
+static void on_right_knob(int direction) {
+    // direction: +1 = CW (Up), -1 = CCW (Down)
+    if (direction > 0) {
+        g_pat12_target_val += 2;
+        if (g_pat12_target_val > 100) g_pat12_target_val = 100;
+        snprintf(g_state.scroll_action, sizeof(g_state.scroll_action), "REEL UP -> [%d]", g_pat12_target_val);
+    } else {
+        g_pat12_target_val -= 2;
+        if (g_pat12_target_val < 0) g_pat12_target_val = 0;
+        snprintf(g_state.scroll_action, sizeof(g_state.scroll_action), "REEL DN <- [%d]", g_pat12_target_val);
+    }
+    g_state.scroll_until_ms = get_time_ms() + 1000;
+
+    g_dirty_keys |= (1 << 12);
+    g_dirty_top = 1;
+}
+
+static void on_right_knob_click(void) {
+    g_pat12_target_val = (g_pat12_target_val == 50) ? 100 : ((g_pat12_target_val == 100) ? 0 : 50);
+    snprintf(g_state.scroll_action, sizeof(g_state.scroll_action), "REEL RESET [%d]", g_pat12_target_val);
+    g_state.scroll_until_ms = get_time_ms() + 1000;
+
+    g_dirty_keys |= (1 << 12);
+    g_dirty_top = 1;
 }
 
 // GD32 / QMK 8-State Byte Machine
@@ -1482,18 +1601,35 @@ static void parse_qmk_byte(uint8_t byte) {
                 uint8_t row = s_dataBuf[2];
                 uint8_t col = s_dataBuf[3];
 
+                printf("[QMK RX] row=%u col=%u pressed=%u\n", row, col, pressed);
+                fflush(stdout);
+
+                // Left Rotary Knob (rows 100, 101, 102)
                 if (row == 100) {
-                    on_dial_turn(-1); // Left
+                    if (col == 1 || pressed == 1) {
+                        on_left_knob(+1); // CW
+                    } else {
+                        on_left_knob(-1); // CCW
+                    }
                 } else if (row == 101) {
-                    on_dial_turn(+1); // Right
-                } else if (row == 102 || row == 104) {
-                    // Push Click
-                    int mode = get_active_dial_mode();
-                    snprintf(g_state.dial_action, sizeof(g_state.dial_action), "KNOB CLICK [%s]", g_pat11_modes[mode]);
-                    g_state.dial_until_ms = get_time_ms() + 1000;
-                    render_top_display();
-                } else if (row < 4 && col < 5) {
-                    // Direct Instant Switch Contact
+                    on_left_knob(+1); // CW
+                } else if (row == 102) {
+                    on_left_knob_click(); // Left Click
+                }
+                // Right Rotary Knob (rows 103, 104, 105)
+                else if (row == 103) {
+                    if (col == 1 || pressed == 1) {
+                        on_right_knob(+1); // CW
+                    } else {
+                        on_right_knob(-1); // CCW
+                    }
+                } else if (row == 104) {
+                    on_right_knob(+1); // CW
+                } else if (row == 105) {
+                    on_right_knob_click(); // Right Click
+                }
+                // Direct Instant Switch Contact (Keys 1..20)
+                else if (row < 4 && col < 5) {
                     on_key_event(row, col, pressed != 0);
                 }
             }
@@ -1514,18 +1650,35 @@ static void handle_udp_packet(const char *buf, int len) {
                 on_key_event(r, c, p != 0);
             }
         }
+    } else if (strncmp(buf, "DIAL:LEFT_CW", 12) == 0) {
+        on_left_knob(+1);
+    } else if (strncmp(buf, "DIAL:LEFT_CCW", 13) == 0) {
+        on_left_knob(-1);
+    } else if (strncmp(buf, "DIAL:LEFT_CLICK", 15) == 0) {
+        on_left_knob_click();
+    } else if (strncmp(buf, "DIAL:RIGHT_CW", 13) == 0) {
+        on_right_knob(+1);
+    } else if (strncmp(buf, "DIAL:RIGHT_CCW", 14) == 0) {
+        on_right_knob(-1);
+    } else if (strncmp(buf, "DIAL:RIGHT_CLICK", 16) == 0) {
+        on_right_knob_click();
     } else if (strncmp(buf, "DIAL:LEFT", 9) == 0) {
-        on_dial_turn(-1);
+        on_left_knob(-1);
     } else if (strncmp(buf, "DIAL:RIGHT", 10) == 0) {
-        on_dial_turn(+1);
+        on_left_knob(+1);
     } else if (strncmp(buf, "DIAL:", 5) == 0) {
         strncpy(g_state.dial_action, buf + 5, sizeof(g_state.dial_action) - 1);
         g_state.dial_until_ms = get_time_ms() + 1000;
-        render_top_display();
+        g_dirty_top = 1;
     }
 }
 
 int main(int argc, char *argv[]) {
+    signal(SIGHUP, SIG_IGN);
+    signal(SIGPIPE, SIG_IGN);
+    signal(SIGINT, handle_signal);
+    signal(SIGTERM, handle_signal);
+
     printf("[MK20-HUD] Starting Standalone MK20 12-Pattern Showcase Engine...\n");
 
     strncpy(g_state.provider, "Claude Code 2.1", sizeof(g_state.provider) - 1);
@@ -1540,8 +1693,14 @@ int main(int argc, char *argv[]) {
     }
 
     if (argc > 1 && strcmp(argv[1], "-d") == 0) {
-        if (daemon(1, 0) < 0) {
+        if (daemon(1, 1) < 0) {
             perror("daemon() failed");
+        }
+        int log_fd = open("/tmp/hud.log", O_WRONLY | O_CREAT | O_APPEND, 0644);
+        if (log_fd >= 0) {
+            dup2(log_fd, STDOUT_FILENO);
+            dup2(log_fd, STDERR_FILENO);
+            close(log_fd);
         }
     }
 
@@ -1654,27 +1813,28 @@ int main(int argc, char *argv[]) {
 
     long long last_telemetry_ms = get_time_ms();
     long long last_anim_ms = get_time_ms();
+    long long last_pulse_ms = get_time_ms();
 
-    while (1) {
-        int ret = poll(pfd, pfd_count, 33); // 30 FPS tick
+    while (g_running) {
+        int ret = poll(pfd, pfd_count, 16); // ~60 Hz poll tick
 
         if (ret > 0) {
-            // Hardware UART (GD32 MCU contact)
+            // Hardware UART (GD32 MCU contact) - drain entire FIFO
             if (pfd[0].revents & POLLIN) {
-                int n = read(uart_fd, uart_buf, sizeof(uart_buf));
-                if (n > 0) {
+                int n;
+                while ((n = read(uart_fd, uart_buf, sizeof(uart_buf))) > 0) {
                     for (int i = 0; i < n; i++) {
                         parse_qmk_byte(uart_buf[i]);
                     }
                 }
             }
 
-            // UDP Packet
+            // UDP Packet - drain socket
             if (pfd_count > 1 && (pfd[1].revents & POLLIN)) {
                 struct sockaddr_in cliaddr;
                 socklen_t len = sizeof(cliaddr);
-                int n = recvfrom(sockfd, udp_buf, sizeof(udp_buf) - 1, 0, (struct sockaddr *)&cliaddr, &len);
-                if (n > 0) {
+                int n;
+                while ((n = recvfrom(sockfd, udp_buf, sizeof(udp_buf) - 1, 0, (struct sockaddr *)&cliaddr, &len)) > 0) {
                     udp_buf[n] = '\0';
                     handle_udp_packet(udp_buf, n);
                 }
@@ -1683,28 +1843,50 @@ int main(int argc, char *argv[]) {
 
         long long now = get_time_ms();
 
-        // 30 FPS Animation Tick (Pattern 10 Pulse & Pattern 12 Smooth Lerp)
+        // 1. Dynamic Tempo Metronome Pulse (~33ms tick, 30 FPS) -> Key 4
+        if (now - last_pulse_ms >= 33) {
+            long long dt_ms = now - last_pulse_ms;
+            last_pulse_ms = now;
+            float dt_sec = (float)dt_ms / 1000.0f;
+            float bps = (float)g_pat10_metronome_bpm / 60.0f;
+            g_pat10_phase += 2.0f * (float)M_PI * bps * dt_sec;
+            while (g_pat10_phase >= 2.0f * (float)M_PI) g_pat10_phase -= 2.0f * (float)M_PI;
+            g_dirty_keys |= (1 << 4);
+        }
+
+        // 2. Pattern 6 Horizontal Scroll Animation Tick (~16ms) -> Key 8
+        if (g_pat6_animating) {
+            long long elapsed = now - g_pat6_anim_start_ms;
+            float dur = 220.0f; // 220ms ease-out
+            if (elapsed >= (long long)dur) {
+                g_pat6_animating = 0;
+                g_pat6_anim_offset = 0.0f;
+                g_pat6_icon_idx = (g_pat6_icon_idx + 3) % 4;
+            } else {
+                float t = (float)elapsed / dur;
+                float p = 1.0f - powf(1.0f - t, 3.0f); // Cubic ease-out
+                g_pat6_anim_offset = p * 40.0f;
+            }
+            g_dirty_keys |= (1 << 8);
+        }
+
+        // 3. 30 FPS Physics Lerp (every 33ms) -> Key 12 & Top Display
         if (now - last_anim_ms >= 33) {
             last_anim_ms = now;
 
-            // Pattern 10: Metronome pulse phase
-            g_pat10_pulse_val = (g_pat10_pulse_val + 1) % 628;
-            render_pattern_10();
-
-            // Pattern 12: Smooth vertical value lerp
             float diff = (float)g_pat12_target_val - g_pat12_current_val;
             if (fabsf(diff) > 0.01f) {
                 g_pat12_current_val += diff * 0.30f;
-                render_pattern_12();
-                render_top_display();
+                g_dirty_keys |= (1 << 12);
+                g_dirty_top = 1;
             } else if (g_pat12_current_val != (float)g_pat12_target_val) {
                 g_pat12_current_val = (float)g_pat12_target_val;
-                render_pattern_12();
-                render_top_display();
+                g_dirty_keys |= (1 << 12);
+                g_dirty_top = 1;
             }
         }
 
-        // 1-Second Telemetry Tick (Pattern 8 CPU Number & Pattern 9 CPU Graph)
+        // 4. 1-Second Telemetry Tick (Pattern 8 CPU Number & Pattern 9 CPU Graph)
         if (now - last_telemetry_ms >= 1000) {
             last_telemetry_ms = now;
 
@@ -1714,16 +1896,48 @@ int main(int argc, char *argv[]) {
             }
             g_pat9_cpu_history[59] = g_pat8_cpu_pct;
 
-            render_pattern_8();
-            render_pattern_9();
+            g_dirty_keys |= (1 << 9) | (1 << 10);
+            g_dirty_top = 1;
         }
 
-        // Clear dial overlay if expired
+        // 5. Clear overlays if expired
         if (g_state.dial_until_ms > 0 && now >= g_state.dial_until_ms) {
             g_state.dial_until_ms = 0;
             g_state.dial_action[0] = '\0';
+            g_dirty_top = 1;
+        }
+        if (g_state.scroll_until_ms > 0 && now >= g_state.scroll_until_ms) {
+            g_state.scroll_until_ms = 0;
+            g_state.scroll_action[0] = '\0';
+            g_dirty_top = 1;
+        }
+
+        // Batch flush all dirty keys
+        if (g_dirty_keys) {
+            for (int k = 1; k <= 20; k++) {
+                if (g_dirty_keys & (1 << k)) {
+                    render_key_by_index(k);
+                }
+            }
+            g_dirty_keys = 0;
+        }
+
+        // Rate-limit Top Display flush (<= 20 FPS, interval >= 50ms)
+        if (g_dirty_top && (now - g_last_top_flush_ms >= 50)) {
+            g_last_top_flush_ms = now;
+            g_dirty_top = 0;
             render_top_display();
         }
+    }
+
+    printf("[MK20-HUD] Shutting down cleanly...\n");
+    if (uart_fd >= 0) close(uart_fd);
+    if (sockfd >= 0) close(sockfd);
+    if (g_top_fb) munmap(g_top_fb, TOP_FB_BYTES);
+    if (g_top_fd >= 0) close(g_top_fd);
+    for (int k = 1; k <= 20; k++) {
+        if (g_key_fbs[k]) munmap(g_key_fbs[k], KEY_FB_BYTES);
+        if (g_key_fds[k] >= 0) close(g_key_fds[k]);
     }
 
     return 0;
