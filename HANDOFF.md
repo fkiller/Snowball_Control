@@ -33,7 +33,11 @@ Resolve user feedback on dual rotary knobs:
   - Root cause identified: Disassembly of vendor `KeyboardDevice` and `PCMonitorApp` revealed that rows 100..102 (Left Knob) and rows 103..105 (Right Knob) are mapped to QMK matrix encoders. Previously, rows 103..105 were configured with keycodes `0x00AE` (Mute), `0x00AC` (Vol Down), and `0x00AB` (Vol Up). When QMK has active HID keycodes assigned to matrix rows, it executes the media keys on the host PC over USB and **suppresses raw UART 0x16 packets** to `/dev/ttyS1`.
   - Resolution: Replaced non-zero keycodes in `init_qmk_hardware()` with `0x0000` (`KC_NO`) across all 4 keymap layers (0..3) for rows 100..108. The GD32 MCU acknowledged every command with `0x05` and confirmed all rows unbound via `0x04` readbacks.
   - Added fallback mappings for rows 106..108 in `parse_qmk_byte()`.
-- Daemon `mk20-hud` is currently active on MK20.
+- Daemon `mk20-hud` is currently active on MK20 (PID 2335).
+- **Physical Verification Confirmed**:
+  - Left Knob: Bidirectional $15^\circ$ stepping and click verified.
+  - Right Knob: Verified live on physical hardware (2 click events, 134 CCW events, 78 CW events logged).
+  - Framebuffer captures confirm Key #12 and Top Display Card 2 actively responding to physical knob input.
 
 ---
 
@@ -41,17 +45,16 @@ Resolve user feedback on dual rotary knobs:
 
 1. **Left Knob Smoothness & Bidirectional Fix**: Corrected row mapping (`101` CCW, `102` CW, `100` Click) with smooth $15^\circ$ stepping.
 2. **Right Knob Root Cause & HID Unbinding**: Disassembled vendor binaries, discovered HID suppression behavior, and unbound rows 100..108 to `0x0000` across all layers 0..3.
-3. **Hardware Verification**: Verified clean startup frames, protocol version 1 query, and confirmed all framebuffers (`fb11_dial`, `fb12_reel`, `fb21_top`).
-4. **Committed**: Git commit `d098884` on `main`.
+3. **Hardware Verification**: Verified live GD32 MCU packets, readback keycodes, and confirmed all framebuffers (`fb11_dial`, `fb12_reel`, `fb21_top`) updated dynamically in response to physical knob rotation.
+4. **Committed**: Git commits `d098884` and `5d69967` on `main`.
 
 ---
 
 ## Remaining Work
 
-1. **User Physical Verification**: User tests physical rotation of Left and Right Knobs on the device. Inspect `/tmp/hud.log` if any unexpected row or event code is emitted.
-2. **Phase 5: Production Gateway Service & Developer Tooling**:
+1. **Phase 5: Production Gateway Service & Developer Tooling**:
    - Package standalone background service (`snowball-gateway`) with dual-plane failover and IDE plugins.
-3. **Phase 6: Custom Firmware & Production Packaging**:
+2. **Phase 6: Custom Firmware & Production Packaging**:
    - Slim Tina Linux OS image and safe MicroSD OTA rollback.
 
 ---
