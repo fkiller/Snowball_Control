@@ -16,7 +16,7 @@ There is no active feature request recorded beyond preparing this cross-agent ha
 
 ## Current State
 
-- `main` contains commits through `e2ff82c` (`feat(mk20-hud): implement rotating circular knob panel with rotating text (Pattern 11)`).
+- `main` contains commits through `a756c3f` (`feat(mk20-hud): implement smooth vertical value scrolling controlled by knob (Pattern 12)`).
 - **MK20 Hardware Multi-Display Architecture Unlocked**:
   - **22 Independent Framebuffer Devices**:
     - `/dev/fb1` to `/dev/fb20`: 20 separate 128x128 16-bit RGB565 LCD screens (driven by individual `fb_gc9107` SPI controllers directly under each keycap).
@@ -38,7 +38,7 @@ There is no active feature request recorded beyond preparing this cross-agent ha
     - Pattern 8 (Key 9): Real-Time Number (Live Allwinner T113 CPU % with level gauge).
     - Pattern 9 (Key 10): Real-Time Graph (Rolling 60-second CPU load sparkline chart).
     - Pattern 11 (Key 11 & Top): Concentric Rotating Circular Knob Panel with Rotating Radial Text (6 modes: `CODE`, `PLAN`, `DIFF`, `TEST`, `EXEC`, `CHAT` orbiting at $R=31$, 24 rotating radial ticks, 12 o'clock needle pointer, and synchronized mini dial gauge on `/dev/fb21`).
-    - Pattern 12 (Key 12 & Top): Knob Horizontal Pixel Marquee Text Scroll.
+    - Pattern 12 (Key 12 & Top): Smooth Vertical Value Scrolling Controlled by Knob (precision vertical reel with 30 FPS lerp interpolation, ruler ticks, center selection band, level progress bar on `/dev/fb21` and `/dev/fb12`).
     - Keys 13..20: Counter, Audio, Reset, Theme, Provider, Model, Plan, Diff.
   - **All 4 North Star architectural foundations delivered**: Dual control planes (`COM5` and TCP `5555`), A1 host RPC, normalized agent adapters, and Linux/QMK contract.
 
@@ -183,7 +183,7 @@ If `adb.exe` is not in the default location, set `MK20_ADB` to its full path for
 
 - Branch: `main`
 - Upstream: `origin/main`
-- Latest implementation commit: `e2ff82c` (`feat(mk20-hud): implement rotating circular knob panel with rotating text (Pattern 11)`)
+- Latest implementation commit: `a756c3f` (`feat(mk20-hud): implement smooth vertical value scrolling controlled by knob (Pattern 12)`)
 - Handoff documentation: `walkthrough.md` and `HANDOFF.md`
 - Uncommitted implementation changes: none.
 - Stashes: none.
