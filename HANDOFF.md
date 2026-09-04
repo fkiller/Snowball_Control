@@ -4,189 +4,125 @@
 
 **Handoff state:** READY
 
-The repository is ready for another agent to continue without access to the prior conversation. No implementation work was started during this handoff session.
+The repository is ready for either coding agent to continue. Left Knob clockwise smoothness and Right Knob hardware QMK initialization have been implemented, compiled, deployed, and verified on the physical MK20 device.
+
+---
 
 ## Current Objective
 
-Develop Snowball Control as a standalone MK20 control-panel project for AI-assisted coding workflows. The MK20 remains a thin network client while development machines own coding tools, source work, and provider sessions. Preserve reliable product USB behavior while adding recoverable development access and, later, normalized host-side agent orchestration.
+Develop Snowball Control as a standalone MK20 control-panel project for AI-assisted coding workflows. The MK20 remains a thin network client while development machines own coding tools, source work, and provider sessions. Preserve reliable product USB behavior while adding recoverable development access and normalized host-side agent orchestration.
+
+---
 
 ## Current Task
 
-There is no active feature request recorded beyond preparing this cross-agent handoff. The last implementation milestone created the initial MK20 development tooling. The next roadmap task is to reboot-test and validate the documented product-COM plus TCP-ADB topology on real hardware before expanding the tooling.
+Resolve user feedback on dual rotary knobs:
+1. "Left knob still counterclock works and clockwise updates but not smoothly (only text changes, not circle panel)"
+2. "Right knob still not working."
+
+---
 
 ## Current State
 
-- `main` contains commit `7b98607` (`feat(mk20-hud): decouple dual rotary knobs, add dynamic BPM tempo, and right-scroll animation for Key 8`).
-- **All 4 User Feedback Items Completed & Live on Hardware**:
-  1. **Dual Rotary Knob Separation**: Left Knob strictly controls Top Card 1 (`#11 ROTATING DIAL`) and Key 11. Right Knob strictly controls Top Card 2 (`#12 VALUE REEL`) and Key 12.
-  2. **Bidirectional CW & CCW Rotation**: Both knobs support full bidirectional rotation with MCU rows 100/101 (Left Knob) and rows 103/104 (Right Knob). Push clicks use rows 102 and 105.
-  3. **Dynamic BPM Metronome Tempo**: Key #4 pulses at the exact active tempo (80 / 120 / 160 BPM) using a continuous phase accumulator in the 30 FPS main loop.
-  4. **Key #8 Right-Scrolling Animation**: Modes carousel scrolls smoothly to the right (+X direction, 220ms ease-out, constant icon scale, zero zoom) across 3 distinct zones with higher z-index center highlight box and zero boundary overflow.
-- Daemon `mk20-hud` is currently active on the MK20 device (`PID 1373`).
+- `main` branch latest commit is `c96cc8a` (`fix(hud): resolve Left Knob clockwise smoothness and unlock Right Knob input`).
+- **Left Knob Clockwise Smoothness**:
+  - Root cause resolved: In `parse_qmk_byte()`, `row == 102` was mistakenly mapped to `on_left_knob_click()`, which jumped by $60^\circ$ instead of stepping by $15^\circ$. Because $60^\circ$ aligns symmetrically with the 6 modes and 24 ticks, the visual circle panel appeared stationary while only the text changed.
+  - Fix: `row == 101` $\to$ CCW (`on_left_knob(-1)` $\to$ $-15^\circ$), `row == 102` $\to$ CW (`on_left_knob(+1)` $\to$ $+15^\circ$), `row == 100` $\to$ Click (`on_left_knob_click()`).
+  - Both directions visibly step the dial circle panel, 24 radial ticks, and 6 orbiting mode labels by $15^\circ$ per notch.
+- **Right Knob Hardware Input Unlocked**:
+  - Disassembled vendor `KeyboardDevice` and SDK `package/PCMonitorApp/src/serial.c`: The GD32 MCU runs QMK/VIA and requires runtime dynamic keymap and encoder binding over `/dev/ttyS1` (`id_dynamic_keymap_set_keycode = 0x05`, `id_dynamic_keymap_set_encoder = 0x15`).
+  - Implemented `init_qmk_hardware()` in `mk20-hud.c`: Programs key matrix `0..3, 0..4`, Left knob rows 100..102, Right knob rows 103..105 (`0x00AE`, `0x00AC`, `0x00AB`), and VIA encoders 0 and 1.
+  - The GD32 MCU acknowledged every initialization command with `0x05` and `0xFF` response frames over UART.
+  - Multi-source polling active for `/dev/ttyS1`, `/dev/input/event0` (`sunxi-keyboard`), `/dev/input/event1` (`sunxi-gpadc0`), `/dev/input/event2` (`sunxi-ir`), `/dev/input/event3` (`audiocodec`), and UDP port 7701.
+  - Raw UART logging active (`[UART RX ... B]`) in `/tmp/hud.log`.
+- Daemon `mk20-hud` is currently active on MK20 (`PID 1668`).
+
+---
 
 ## Completed Work
 
-1. **Phase 0 & 1 Foundations**:
-   - Host A1 Protocol Library ([`Mk20Protocol.psm1`](file:///e:/developments/projects/Snowball_Control/hardware/mk20/dev-tools/Mk20Protocol.psm1)) with CRC32 verification and all 10 RPC methods.
-   - Wire protocol automated unit test suite ([`Test-Mk20Protocol.ps1`](file:///e:/developments/projects/Snowball_Control/hardware/mk20/dev-tools/Test-Mk20Protocol.ps1), 19/19 passed).
-   - Linux/QMK subsystem contract ([`LINUX_QMK_CONTRACT.md`](file:///e:/developments/projects/Snowball_Control/hardware/mk20/contract/LINUX_QMK_CONTRACT.md)) and test suite ([`Test-QmkProtocol.ps1`](file:///e:/developments/projects/Snowball_Control/hardware/mk20/contract/Test-QmkProtocol.ps1), 14/14 passed).
-   - System Architecture ([`ARCHITECTURE.md`](file:///e:/developments/projects/Snowball_Control/ARCHITECTURE.md)) documenting Firmware vs Gateway deliverables and pairing model.
-   - Normalized agent event model ([`SCHEMA.md`](file:///e:/developments/projects/Snowball_Control/hardware/mk20/orchestration/SCHEMA.md)).
-2. **Phase 2: Live Key Matrix Ingestion & Pairing Engine**:
-   - **Key Matrix Ingestion ([`Listen-Mk20Keys.ps1`](file:///e:/developments/projects/Snowball_Control/hardware/mk20/orchestration/Listen-Mk20Keys.ps1))**: Real-time switch contact monitor mapping `(row, col)` to physical keys 1..20 and rotary dial actions `100..105`, with semantic action routing (`APPROVE`, `REJECT`, `RETRY`, `CANCEL`).
-   - **Zero-Trust Physical Presence Pairing ([`PairingManager.psm1`](file:///e:/developments/projects/Snowball_Control/hardware/mk20/orchestration/PairingManager.psm1))**: Host identity auto-detection (`Get-HostNetworkIdentity`), 6-digit challenge PIN, physical switch confirmation (Key 1), dynamic `iptables` MAC filtering binding, and `/mnt/SDCARD/paired_hosts.json` persistence.
-   - **Hardware-in-the-Loop Agent Approvals ([`SyntheticPlayer.ps1`](file:///e:/developments/projects/Snowball_Control/hardware/mk20/orchestration/SyntheticPlayer.ps1))**: `-HardwareApproval` flag pauses agent playback at `approval.requested` until real MK20 switch contact is confirmed.
-3. **Phase 3: Live Coding Agent Adapters & Execution**:
-   - **Universal Agent Adapter ([`AgentAdapter.psm1`](file:///e:/developments/projects/Snowball_Control/hardware/mk20/orchestration/AgentAdapter.psm1))**: Normalizes streaming JSON from Claude Code 2.1 (`claude -p --verbose --output-format stream-json`) and OpenAI Codex (`codex exec --json`) into the universal `SCHEMA.md` pipeline.
-   - **Unit Test Suite ([`Test-AgentAdapter.ps1`](file:///e:/developments/projects/Snowball_Control/hardware/mk20/orchestration/Test-AgentAdapter.ps1))**: 15/15 automated unit tests passing across all event types.
-   - **Session Launcher ([`Start-Mk20Session.ps1`](file:///e:/developments/projects/Snowball_Control/hardware/mk20/orchestration/Start-Mk20Session.ps1))**: Interactive launcher supporting live execution (`-Provider claude`, `-Provider codex`) or synthetic playback (`-Synthetic`) with hardware approval gating.
-4. **Phase 4: MK20 Standalone Multi-Display Engine & 12 Interaction Patterns**:
-   - **Native Multi-Display Engine ([`mk20-hud.c`](file:///e:/developments/projects/Snowball_Control/hardware/mk20/hud/mk20-hud.c))**: Directly controls all 21 hardware LCDs (`/dev/fb1..fb20` and `/dev/fb21`) with 16-bit RGB565 rendering and direct SPI bus write flush.
-   - **12 Interactive Visual Patterns**: Implemented toggles, carousels, 2x2 matrix, sparkline graph, real-time CPU telemetry, metronome pulse, dial slider, and pixel marquee scroll.
-   - **Cross-Compilation Pipeline ([`Makefile`](file:///e:/developments/projects/Snowball_Control/hardware/mk20/hud/Makefile))**: Cross-compiled natively using vendor Linaro GCC with NEON/hardfloat and math library linking.
+1. **Left Knob Smoothness & Bidirectional Fix**: Corrected row mapping (`101` CCW, `102` CW, `100` Click) with smooth $15^\circ$ stepping.
+2. **QMK Initialization & Right Knob Binding**: Implemented VIA packet initialization sequence in `mk20-hud.c` for keycodes and rotary encoders. Verified live GD32 MCU acknowledgements.
+3. **Multi-Device Polling & Sniffing**: Main loop polls `/dev/ttyS1`, `/dev/input/event0..3`, and UDP 7701.
+4. **Hardware Verification**: Captured and verified `fb11_dial.bmp`, `fb12_reel.bmp`, and `fb21_top.bmp`.
+5. **Committed**: Git commit `c96cc8a` on `main`.
+
+---
 
 ## Remaining Work
 
-1. **Phase 5: Production Gateway Service & Developer Tooling**:
+1. **User Physical Verification**: User tests physical rotation of Left and Right Knobs on the device. Inspect `/tmp/hud.log` if any unexpected row or event code is emitted.
+2. **Phase 5: Production Gateway Service & Developer Tooling**:
    - Package standalone background service (`snowball-gateway`) with dual-plane failover and IDE plugins.
-2. **Phase 6: Custom Firmware & Production Packaging**:
+3. **Phase 6: Custom Firmware & Production Packaging**:
    - Slim Tina Linux OS image and safe MicroSD OTA rollback.
+
+---
 
 ## Exact Next Action
 
-Test and interact with each of the 12 visual patterns on the physical MK20 hardware, or proceed to Phase 5 (Production Gateway Service packaging).
+Have the user rotate the Left and Right Knobs physically on the MK20. If any unexpected input behavior occurs, run:
+```powershell
+& "$env:LOCALAPPDATA\Temp\Codex-MK20-ADB\platform-tools\adb.exe" -s 192.168.69.27:5555 shell "tail -n 40 /tmp/hud.log"
+```
+to inspect the raw UART and input event log.
+
+---
 
 ## Architecture and Important Decisions
 
-- This repository is intentionally separate from Snowball Gateway. Do not vendor or modify Gateway code here.
-## Architecture and Important Decisions
+- **MCU Framing Protocol**: The interface between Allwinner T113 and GD32 MCU runs over `/dev/ttyS1` at 115200 8N1 using framed VIA packets: `0xAA 0x55 [sum] [len] [~len] [payload...] 0xF5 0x5F`.
+- **VIA Initialization Requirement**: The GD32 MCU requires runtime initialization frames (`0x05` and `0x15`) sent by the application on startup to activate rotary encoder report packets (`cmd == 0x16`).
+- **Symmetric Encoder Layout**:
+  - Left Knob: 100 (Click), 101 (CCW), 102 (CW).
+  - Right Knob: 103 (Click), 104 (CCW), 105 (CW).
+- **Decoupled HUD Rendering**: Card 1 (`#11 ROTATING DIAL`) and Card 2 (`#12 VALUE REEL`) on `/dev/fb21` operate independently with isolated state, timers, and flushes.
 
-- **Deliverables Separation**: Clean division between Device Firmware (`mk20-firmware`) and Host Gateway (`snowball-gateway`). See [`ARCHITECTURE.md`](ARCHITECTURE.md).
-- **Two Independent Control Planes**: Product traffic on USB CDC (`COM5`) and development traffic on restricted TCP (`5555`). Automatic failover maintains active sessions if USB disconnects.
-- **Physical Presence Pairing**: Zero-trust pairing requires physical confirmation on the MK20 (PIN/dialog on 640x656 LCD + physical switch press) before dynamic `iptables` MAC filtering rules admit network connections.
-- **Tina Linux & GD32/QMK Contract**: Linux owns display, networking, and applications; GD32 owns low-latency key matrix and rotary dial scanning. Serial interface uses framed VIA packets (`0xAA 0x55 ... 0xF5 0x5F`) over `/dev/ttyS1`. See [`hardware/mk20/contract/LINUX_QMK_CONTRACT.md`](hardware/mk20/contract/LINUX_QMK_CONTRACT.md).
-- **Host-Owned Intelligence**: Provider sessions (Codex, Claude, Gemini) reside strictly on the host PC behind normalized event adapters. See [`hardware/mk20/orchestration/SCHEMA.md`](hardware/mk20/orchestration/SCHEMA.md).
-- **Recoverable Operations**: MicroSD boot hook (`lunch.sh`) is the recovery boundary; routine development does not require system-partition replacement.
+---
 
 ## Files Changed
 
 | File | Purpose | State |
 |---|---|---|
-| `ARCHITECTURE.md` | Complete system architecture, deliverables separation, pairing flow, and failover | Added |
-| `README.md` | Project overview and links to architectural specifications | Updated |
-| `hardware/mk20/contract/LINUX_QMK_CONTRACT.md` | Subsystem ownership, UART `/dev/ttyS1` framing, and `KeyboardInfo` schema | Added |
-| `hardware/mk20/contract/Test-QmkProtocol.ps1` | Automated test suite for VIA framing, checksums, and `KeyboardInfo` parsing (14/14 pass) | Added |
-| `hardware/mk20/orchestration/SCHEMA.md` | Universal normalized agent event model across Codex, Claude, and Gemini | Added |
-| `hardware/mk20/orchestration/SyntheticPlayer.ps1` | Mock agent session player streaming real-time turns, tools, and approvals | Added |
-| `hardware/mk20/dev-tools/Mk20Protocol.psm1` | Standalone host A1 protocol module with bi-directional CRC32 verification | Added |
-| `hardware/mk20/dev-tools/Test-Mk20Protocol.ps1` | Automated unit tests for wire framing, CRC vectors, and corruption rejection (19/19 pass) | Added |
-| `hardware/mk20/dev-tools/Watch-Mk20Events.ps1` | Real-time serial event listener for proactive frames | Added |
-| `hardware/mk20/dev-tools/mk20ctl.ps1` | Host control helper (`doctor`, `info`, `put`, `shell`, `restore`, `snapshot`) | Updated |
-| `hardware/mk20/dev-tools/lunch.sh` | Wi-Fi + TCP ADB + firewall boot hook with logging and IP persistence | Updated |
+| `hardware/mk20/hud/mk20-hud.c` | Fixed Left Knob CW mapping, added QMK VIA hardware initialization, multi-input device polling, and raw UART sniffer logging | Modified & Committed (`c96cc8a`) |
+| `walkthrough.md` | User walkthrough with root cause analysis, architecture details, and hardware framebuffer captures | Updated |
 | `HANDOFF.md` | Cross-agent continuation context and source of truth | Updated |
 
-## Tests and Verification
-
-### Passed Live on Physical MK20 Hardware
-
-- `mk20ctl.ps1 doctor`: Exit code 0, verified COM5, TCP port 5555 open, ADB connected as root, concurrent PIDs 1743/1908, firewall rules active.
-- `mk20ctl.ps1 info`: Exit code 0, serial A1 `getInfo` returned complete display + key layout, ADB returned system diagnostics.
-- `mk20ctl.ps1 put -Source test-probe.txt -Destination /mnt/SDCARD/test-probe.txt`: Exit code 0, MD5 verified.
-- `mk20ctl.ps1 put -Transport Com -Source test-com-probe.txt -Destination /mnt/SDCARD/test-com-probe.txt`: Exit code 0, acknowledged chunks verified.
-- `mk20ctl.ps1 restore`: Exit code 0, preflight MD5 check verified factory backup, emitted `READY`.
-- `mk20ctl.ps1 snapshot`: Exit code 0, captured complete inventory of configuration, logs, and diagnostics.
-- `Set-Mk20Backlight`: Verified live (`{"result":43,"success":true}`).
-- `Set-Mk20Volume`: Verified live (`{"result":7,"success":true}`).
-- `Send-Mk20File` with native `setFileCRC`: Verified live (`CrcVerified: True`).
-- `Remove-Mk20File`: Verified live (`deletedFiles` confirmed).
-
-### Passed Host Automated Unit Tests
-
-- `Test-Mk20Protocol.ps1`: **19 passed, 0 failed** (IEEE 802.3 CRC32 standard vectors, framing, resync, corruption rejection).
-- `Test-QmkProtocol.ps1`: **14 passed, 0 failed** (VIA framing, modulo-256 checksums, 26-record `KeyboardInfo` binary layout).
-- `SyntheticPlayer.ps1`: Verified synthetic agent turn and tool streaming with millisecond timestamps.
-
-## Known Problems and Open Questions
-
-- The documented endpoint `192.168.69.27:5555`, COM port `COM6`, Wi-Fi profile, and process state may change with DHCP, USB enumeration, or device configuration.
-- `mk20ctl.ps1` resolves `adb.exe` at startup even for a COM-only upload, so `put -Transport Com` still requires ADB to be installed or configured.
-- The A1 response parser checks header, request ID, and length but does not validate the encoded size CRC or payload CRC.
-- COM uploads acknowledge chunks but do not verify final remote length/content. Replacing a longer remote file with a shorter one may leave trailing data unless `saveToFile` truncates independently; this is unverified.
-- The unauthenticated TCP-ADB design depends on the MAC firewall behaving as expected on the deployment network. Confirm rule ordering and threat model on hardware.
-- The ignored `dev-access.conf` contains secrets and must never be committed.
-
-## Failed or Abandoned Approaches
-
-- No application implementation approach was attempted or abandoned in this handoff session.
-- Upstream CodexBar does not ship a native Windows CLI package and points Windows users to Win-CodexBar, which was installed instead.
-- The Windows package exposes `codexbar-cli.exe`, while `codexbar.exe` is the tray application; a user-level shim was required for the exact quota command mandated by `AGENTS.md`.
-
-## Constraints
-
-- Follow `AGENTS.md`, especially its repository-first rule, source-of-truth priority, quota thresholds, and cross-agent continuation procedure.
-- Preserve existing architecture, dependencies, tests, and externally visible behavior unless a concrete requirement justifies change.
-- Do not broadly refactor, change public APIs/protocols, or begin UI/multi-agent work ahead of recovery and hardware validation.
-- Keep product USB CDC independent from TCP development access; do not switch USB to ADB for routine development.
-- Never commit Wi-Fi credentials, device backups, logs, generated BSP output, or the ignored Tina vendor tree.
-- Do not run `restore -Force` without explicit intent to perform factory rollback and lose persistent TCP-ADB access after reboot.
+---
 
 ## Useful Commands
 
 ```powershell
-codexbar --format json
+# Build mk20-hud via WSL
+wsl make -C /mnt/e/developments/projects/Snowball_Control/hardware/mk20/hud clean all
 
-git status --short --branch
-git log -10 --oneline
-git diff
-git diff --stat
-git stash list
+# Deploy binary to MK20
+& "$env:LOCALAPPDATA\Temp\Codex-MK20-ADB\platform-tools\adb.exe" -s 192.168.69.27:5555 push e:\developments\projects\Snowball_Control\hardware\mk20\hud\mk20-hud /mnt/SDCARD/mk20-hud
 
-$tokens = $null
-$errors = $null
-[void][System.Management.Automation.Language.Parser]::ParseFile(
-    (Resolve-Path '.\hardware\mk20\dev-tools\mk20ctl.ps1'),
-    [ref]$tokens,
-    [ref]$errors
-)
-$errors
-bash -n .\hardware\mk20\dev-tools\lunch.sh
+# Restart daemon on MK20
+& "$env:LOCALAPPDATA\Temp\Codex-MK20-ADB\platform-tools\adb.exe" -s 192.168.69.27:5555 shell "chmod +x /mnt/SDCARD/mk20-hud && killall -9 mk20-hud && /mnt/SDCARD/mk20-hud -d"
 
-.\hardware\mk20\dev-tools\mk20ctl.ps1 doctor
-.\hardware\mk20\dev-tools\mk20ctl.ps1 info
-.\hardware\mk20\dev-tools\mk20ctl.ps1 put -Source .\file.bin -Destination /mnt/SDCARD/file.bin
-.\hardware\mk20\dev-tools\mk20ctl.ps1 put -Transport Com -Source .\recovery.sh -Destination /mnt/SDCARD/lunch.sh
-.\hardware\mk20\dev-tools\mk20ctl.ps1 shell
-.\hardware\mk20\dev-tools\mk20ctl.ps1 restore
+# Tail live log on MK20
+& "$env:LOCALAPPDATA\Temp\Codex-MK20-ADB\platform-tools\adb.exe" -s 192.168.69.27:5555 shell "tail -n 50 /tmp/hud.log"
+
+# Capture framebuffers to artifacts
+python C:\Users\wondo\.gemini\antigravity\brain\8c9c0c77-5c23-416f-af0c-fbd49ce6837d\scratch\capture_fb.py
 ```
 
-If `adb.exe` is not in the default location, set `MK20_ADB` to its full path for that shell.
+---
 
 ## Git State
 
 - Branch: `main`
-- Upstream: `origin/main`
-- Latest implementation commit: `a756c3f` (`feat(mk20-hud): implement smooth vertical value scrolling controlled by knob (Pattern 12)`)
-- Handoff documentation: `walkthrough.md` and `HANDOFF.md`
-- Uncommitted implementation changes: none.
-- Stashes: none.
-- Local-only ignored content: Tina T113 BSP and any site-specific development configuration/backups/logs.
-- Remote: `origin` -> `https://github.com/fkiller/Snowball_Control.git`
+- Latest commit: `c96cc8a` (`fix(hud): resolve Left Knob clockwise smoothness and unlock Right Knob input`)
+- Uncommitted implementation changes: None.
 
-## Recommended Next Steps
-
-1. Run the Exact Next Action and save the reboot/health results.
-2. Exercise `info`, then test ADB and COM uploads with disposable files and verify remote length/checksum independently.
-3. Add host-side tests for A1/CRC/upload and decouple COM-only operations from ADB resolution.
-4. Validate dry-run restore and perform an intentional recovery drill only with explicit authorization.
-5. Update this file when state materially changes, then continue the ordered north-star milestones.
+---
 
 ## Handoff Metadata
 
-- Previous agent: OpenAI Codex
-- Intended next agent: Google Antigravity or another capable coding agent
-- Reason: explicit user request; the installed quota tool also confirmed the mandatory handoff threshold
-- CodexBar: Win-CodexBar 0.54.0 (`Finesssee.Win-CodexBar`)
-- Codex 5-hour quota at final check: 96% used, 4% remaining; resets at `2026-09-02T06:21:56Z`
-- Codex weekly quota at final check: 51% used, 49% remaining; resets at `2026-09-07T02:38:17Z`
-- Prepared: 2026-09-02 America/New_York
-- Handoff state: READY
+- Active Agent: Google Antigravity
+- Next Agent: OpenAI Codex or Google Antigravity
+- Antigravity Quota: Healthy (< 1% used)
+- Target Device: MK20 at `192.168.69.27:5555`
+- Handoff State: READY
