@@ -221,7 +221,8 @@ static int g_pat9_cpu_history[60] = {0};  // Key 10: Real-time Sparkline Graph
 static int g_pat11_knob_val = 45;         // Key 11: Knob Dial Gauge (0..100)
 static float g_pat11_dial_angle = 0.0f;   // Key 11: Circular Dial Panel rotation angle (radians)
 static const char *g_pat11_modes[6] = {"CODE", "PLAN", "DIFF", "TEST", "EXEC", "CHAT"};
-static int g_pat12_scroll_px = 0;         // Key 12: Horizontal Marquee Scroll
+static int g_pat12_target_val = 50;        // Key 12: Smooth Vertical Value (0..100)
+static float g_pat12_current_val = 50.0f;  // Key 12: Smoothly interpolated value position
 static int g_aux_counter = 0;             // Key 13: Aux Click Counter
 static int g_aux_theme = 0;               // Key 14: Aux Theme Toggle
 
@@ -521,6 +522,77 @@ static int get_active_dial_mode(void) {
         }
     }
     return best_idx;
+}
+
+// Draw a precision vertical value scrolling reel with smooth fractional offset and ruler ticks
+static void draw_vertical_value_reel(uint16_t *fb, int stride_pixels,
+                                    int vx, int vy, int vw, int vh,
+                                    float current_val, int target_val,
+                                    uint16_t border_col, uint16_t highlight_col) {
+    int max_h = get_fb_height(stride_pixels);
+    if (vy + vh > max_h) vh = max_h - vy;
+
+    // 1. Viewport Background & Frame
+    draw_rect_16(fb, stride_pixels, vx, vy, vw, vh, COLOR_BG);
+    draw_border_16(fb, stride_pixels, vx, vy, vw, vh, 1, border_col);
+
+    int cy = vy + vh / 2;
+    int item_pitch = 20;
+    int band_h = 20;
+
+    // 2. Active Center Selection Band
+    draw_rect_16(fb, stride_pixels, vx + 2, cy - band_h / 2, vw - 4, band_h, COLOR_INDIGO_BG);
+    draw_border_16(fb, stride_pixels, vx + 2, cy - band_h / 2, vw - 4, band_h, 1, highlight_col);
+
+    // Pointer Needles flanking the center
+    draw_string_16(fb, stride_pixels, vx + 4, cy - 8, ">", highlight_col, 1);
+    draw_string_16(fb, stride_pixels, vx + vw - 12, cy - 8, "<", highlight_col, 1);
+
+    // 3. Visible Range of Integer Values
+    int min_k = (int)floorf(current_val) - 4;
+    int max_k = (int)ceilf(current_val) + 4;
+
+    for (int k = min_k; k <= max_k; k++) {
+        if (k < 0 || k > 100) continue;
+
+        // When current_val increases, values scroll UP
+        float delta = (float)k - current_val;
+        int y_pos = cy + (int)roundf(delta * (float)item_pitch) - 8;
+
+        // Quick culling
+        if (y_pos + 16 < vy || y_pos > vy + vh) continue;
+
+        float dist = fabsf(delta);
+        uint16_t num_color;
+        if (dist < 0.5f) {
+            num_color = COLOR_WHITE;
+        } else if (dist < 1.5f) {
+            num_color = highlight_col;
+        } else {
+            num_color = COLOR_TEXT_DIM;
+        }
+
+        char num_str[8];
+        snprintf(num_str, sizeof(num_str), "%02d", k);
+        int num_len_px = strlen(num_str) * 8;
+        int num_x = vx + (vw - num_len_px) / 2;
+
+        draw_string_clipped_16(fb, stride_pixels, num_x, y_pos, num_str, num_color, 1,
+                              vx + 2, vy + 2, vw - 4, vh - 4);
+
+        // Ruler Ticks on Left & Right
+        int tick_y = cy + (int)roundf(delta * (float)item_pitch);
+        if (tick_y >= vy + 2 && tick_y <= vy + vh - 2) {
+            int is_major = (k % 5 == 0);
+            int tick_len = is_major ? 6 : 3;
+            uint16_t tick_c = is_major ? highlight_col : COLOR_DARK_GRAY;
+
+            // Left tick
+            draw_line_16(fb, stride_pixels, vx + 14, tick_y, vx + 14 + tick_len, tick_y, tick_c);
+            // Right tick
+            draw_line_16(fb, stride_pixels, vx + vw - 14 - tick_len, tick_y, vx + vw - 14, tick_y, tick_c);
+        }
+    }
 }
 
 // Flush Key Framebuffer over SPI bus immediately
@@ -943,15 +1015,13 @@ static void render_pattern_11(void) {
 }
 
 // =========================================================================
-// PATTERN 12: Knob Pixel Text Horizontal Marquee Scroll -> Key 12
+// PATTERN 12: Smooth Vertical Value Scrolling Controlled by Knob -> Key 12
 // =========================================================================
 static void render_pattern_12(void) {
     uint16_t *fb = g_key_fbs[12];
     if (!fb) return;
 
     int is_pressed = g_key_pressed[12];
-    static const char *msg = ">>> ANTIGRAVITY MK20 REALTIME MULTI-DISPLAY INTERACTION ENGINE <<< ";
-    int msg_len_px = strlen(msg) * 8;
 
     draw_rect_16(fb, KEY_W, 0, 0, KEY_W, KEY_H, COLOR_CARD);
     draw_border_16(fb, KEY_W, 0, 0, KEY_W, KEY_H, is_pressed ? 3 : 2, is_pressed ? COLOR_WHITE : COLOR_INDIGO);
@@ -959,19 +1029,16 @@ static void render_pattern_12(void) {
     draw_string_16(fb, KEY_W, 6, 6, "#12", COLOR_INDIGO, 1);
     draw_badge_right_16(fb, KEY_W, 6, "SCROLL", COLOR_INDIGO);
 
-    // Marquee Viewport Window
-    int vx = 6, vy = 30, vw = KEY_W - 12, vh = 32;
-    draw_rect_16(fb, KEY_W, vx, vy, vw, vh, COLOR_BG);
-    draw_border_16(fb, KEY_W, vx, vy, vw, vh, 1, COLOR_INDIGO_BG);
+    // Vertical Value Reel Viewport
+    draw_vertical_value_reel(fb, KEY_W, 16, 24, 96, 72,
+                             g_pat12_current_val, g_pat12_target_val,
+                             COLOR_INDIGO_BG, COLOR_INDIGO);
 
-    // Render Scrolled Text with strict viewport clipping
-    int text_x = vx + 4 - (g_pat12_scroll_px % msg_len_px);
-    draw_string_clipped_16(fb, KEY_W, text_x, vy + 8, msg, COLOR_WHITE, 1, vx + 2, vy + 2, vw - 4, vh - 4);
-    draw_string_clipped_16(fb, KEY_W, text_x + msg_len_px, vy + 8, msg, COLOR_WHITE, 1, vx + 2, vy + 2, vw - 4, vh - 4);
-
-    // Bottom Subtitles (centered, NO overflow!)
-    draw_string_centered_16(fb, KEY_W, 70, "MARQUEE", COLOR_INDIGO, 1);
-    draw_string_centered_16(fb, KEY_W, 90, "TURN KNOB", COLOR_GRAY, 1);
+    // Bottom Status & Numeric Readout
+    char valStr[16];
+    snprintf(valStr, sizeof(valStr), "[ %3d%% ]", (int)roundf(g_pat12_current_val));
+    draw_string_centered_16(fb, KEY_W, 100, valStr, is_pressed ? COLOR_WHITE : COLOR_INDIGO, 1);
+    draw_string_centered_16(fb, KEY_W, 114, "SMOOTH REEL", COLOR_GRAY, 1);
 
     flush_key(12);
 }
@@ -1069,27 +1136,41 @@ static void render_top_display(void) {
     draw_rect_16(fb, TOP_W, 0, 0, TOP_W, TOP_H, COLOR_BG);
     draw_border_16(fb, TOP_W, 0, 0, TOP_W, TOP_H, 2, COLOR_CARD_BORDER);
 
-    // Header Title
-    draw_string_16(fb, TOP_W, 10, 8, "MK20 UI SHOWCASE", COLOR_CYAN, 1);
-    draw_string_16(fb, TOP_W, 150, 8, "12 INTERACTIVE PATTERNS", COLOR_GRAY, 1);
+    // 1. Top Header Bar (y=0..26)
+    draw_string_16(fb, TOP_W, 10, 6, "MK20 UI SHOWCASE", COLOR_CYAN, 1);
+
+    char cpuStr[24];
+    snprintf(cpuStr, sizeof(cpuStr), "CPU: %2d%%", g_pat8_cpu_pct);
+    draw_string_16(fb, TOP_W, 146, 6, cpuStr, COLOR_AMBER, 1);
+    draw_string_16(fb, TOP_W, 222, 6, "LAT: 0.01ms", COLOR_EMERALD, 1);
 
     // Status Pill
-    draw_rect_16(fb, TOP_W, TOP_W - 75, 6, 65, 18, COLOR_EMERALD);
-    draw_string_16(fb, TOP_W, TOP_W - 70, 8, "ACTIVE", COLOR_BLACK, 1);
+    draw_rect_16(fb, TOP_W, TOP_W - 75, 4, 65, 18, COLOR_EMERALD);
+    draw_string_16(fb, TOP_W, TOP_W - 70, 6, "ACTIVE", COLOR_BLACK, 1);
 
-    draw_rect_16(fb, TOP_W, 8, 28, TOP_W - 16, 1, COLOR_CARD_BORDER);
+    draw_rect_16(fb, TOP_W, 8, 25, TOP_W - 16, 1, COLOR_CARD_BORDER);
 
-    // PATTERN 11: Rotating Circular Knob Dial Gauge
-    int dx = 10, dy = 34, dw = 200, dh = 58;
+    // 2. Main Content: Dual Feature Cards (y=29..136, height=107)
+
+    // CARD 1: PATTERN 11: Rotating Circular Knob Dial Gauge (Left)
+    int dx = 8, dy = 29, dw = 202, dh = 107;
     draw_rect_16(fb, TOP_W, dx, dy, dw, dh, COLOR_CARD);
     draw_border_16(fb, TOP_W, dx, dy, dw, dh, 1, COLOR_CYAN);
 
-    // Mini Circular Rotating Dial on left
-    int tcx = dx + 26, tcy = dy + 32;
-    int tr = 18;
+    // Header inside Card 1
+    draw_string_16(fb, TOP_W, dx + 6, dy + 6, "#11 ROTATING DIAL", COLOR_CYAN, 1);
+    char degStr[16];
+    float deg = g_pat11_dial_angle * 180.0f / (float)M_PI;
+    if (deg < 0.0f) deg += 360.0f;
+    snprintf(degStr, sizeof(degStr), "%3.0f*", deg);
+    draw_string_16(fb, TOP_W, dx + dw - 40, dy + 6, degStr, COLOR_WHITE, 1);
+
+    // Mini Circular Rotating Dial in Card 1
+    int tcx = dx + 38, tcy = dy + 56;
+    int tr = 24;
     draw_circle_thick_16(fb, TOP_W, tcx, tcy, tr, 1, COLOR_CYAN_BG);
-    draw_filled_circle_16(fb, TOP_W, tcx, tcy, 7, COLOR_BG);
-    draw_circle_thick_16(fb, TOP_W, tcx, tcy, 7, 1, COLOR_CYAN);
+    draw_filled_circle_16(fb, TOP_W, tcx, tcy, 9, COLOR_BG);
+    draw_circle_thick_16(fb, TOP_W, tcx, tcy, 9, 1, COLOR_CYAN);
 
     for (int t = 0; t < 12; t++) {
         float tang = -(float)(M_PI / 2.0) - t * (float)(M_PI / 6.0) + g_pat11_dial_angle;
@@ -1105,49 +1186,57 @@ static void render_top_display(void) {
     }
     draw_triangle_down_16(fb, TOP_W, tcx, tcy - tr - 2, 5, 4, COLOR_WHITE);
 
-    // Right side: Active Mode & Degree Angle
+    // Right of Dial: Mode Selection Box & Subtitle
     int active_mode = get_active_dial_mode();
-    draw_string_16(fb, TOP_W, dx + 54, dy + 6, "ROTATING DIAL", COLOR_CYAN, 1);
-    char degStr[16];
-    float deg = g_pat11_dial_angle * 180.0f / (float)M_PI;
-    if (deg < 0.0f) deg += 360.0f;
-    snprintf(degStr, sizeof(degStr), "%3.0f*", deg);
-    draw_string_16(fb, TOP_W, dx + dw - 42, dy + 6, degStr, COLOR_WHITE, 1);
+    draw_rect_16(fb, TOP_W, dx + 72, dy + 32, 120, 22, COLOR_CYAN_BG);
+    draw_border_16(fb, TOP_W, dx + 72, dy + 32, 120, 22, 1, COLOR_CYAN);
+    char modeBadge[32];
+    snprintf(modeBadge, sizeof(modeBadge), "> [ %s ] <", g_pat11_modes[active_mode]);
+    draw_string_16(fb, TOP_W, dx + 82, dy + 36, modeBadge, COLOR_WHITE, 1);
 
-    // Mode Selection Box
-    draw_rect_16(fb, TOP_W, dx + 54, dy + 22, 60, 16, COLOR_CYAN_BG);
-    draw_border_16(fb, TOP_W, dx + 54, dy + 22, 60, 16, 1, COLOR_CYAN);
-    draw_string_16(fb, TOP_W, dx + 68, dy + 22, g_pat11_modes[active_mode], COLOR_WHITE, 1);
-
-    // Status or Dial Action
-    if (g_state.dial_until_ms > get_time_ms()) {
-        draw_string_clipped_16(fb, TOP_W, dx + 54, dy + 42, g_state.dial_action, COLOR_AMBER, 1, dx + 54, dy + 40, dw - 58, 16);
+    draw_string_16(fb, TOP_W, dx + 72, dy + 62, "ROTATE KNOB", COLOR_GRAY, 1);
+    if (g_state.dial_until_ms > get_time_ms() && strncmp(g_state.dial_action, "DIAL", 4) == 0) {
+        draw_string_clipped_16(fb, TOP_W, dx + 72, dy + 82, g_state.dial_action, COLOR_AMBER, 1, dx + 72, dy + 80, 124, 16);
     } else {
-        draw_string_16(fb, TOP_W, dx + 54, dy + 42, "TURN KNOB ->", COLOR_GRAY, 1);
+        draw_string_16(fb, TOP_W, dx + 72, dy + 82, "DIAL SELECTION", COLOR_TEXT_DIM, 1);
     }
 
-    // PATTERN 8 & 9 Preview Card: Live CPU
-    int cx = 218, cy = 34, cw = TOP_W - 228, ch = 58;
-    draw_rect_16(fb, TOP_W, cx, cy, cw, ch, COLOR_CARD);
-    draw_border_16(fb, TOP_W, cx, cy, cw, ch, 1, COLOR_AMBER);
+    // CARD 2: PATTERN 12: Smooth Vertical Value Reel (Right)
+    int cx = 218, cy = 29, cw = 202, dh2 = 107;
+    draw_rect_16(fb, TOP_W, cx, cy, cw, dh2, COLOR_CARD);
+    draw_border_16(fb, TOP_W, cx, cy, cw, dh2, 1, COLOR_INDIGO);
 
-    draw_string_16(fb, TOP_W, cx + 6, cy + 6, "SYSTEM TELEMETRY", COLOR_AMBER, 1);
-    char cpuMsg[32];
-    snprintf(cpuMsg, sizeof(cpuMsg), "CPU LOAD: %2d%%", g_pat8_cpu_pct);
-    draw_string_16(fb, TOP_W, cx + 6, cy + 24, cpuMsg, COLOR_WHITE, 1);
-    draw_string_16(fb, TOP_W, cx + 6, cy + 40, "LATENCY: 0.01ms (SPI)", COLOR_EMERALD, 1);
+    // Header inside Card 2
+    draw_string_16(fb, TOP_W, cx + 6, cy + 6, "#12 VALUE REEL", COLOR_INDIGO, 1);
+    char valStr[16];
+    snprintf(valStr, sizeof(valStr), "%3d%%", (int)roundf(g_pat12_current_val));
+    draw_string_16(fb, TOP_W, cx + cw - 42, cy + 6, valStr, COLOR_WHITE, 1);
 
-    // PATTERN 12: Horizontal Marquee Marquee Bar (Bottom Strip)
-    static const char *top_marquee = "ANTIGRAVITY MK20 DUAL-CORE STANDALONE HARDWARE TWIN -- PRESS KEYS #01 TO #12 TO TEST VISUAL PATTERNS -- ROTATE DIAL TO ADJUST GAUGES -- ";
-    int top_marq_len = strlen(top_marquee) * 8;
+    // Vertical Value Reel Viewport in Card 2
+    draw_vertical_value_reel(fb, TOP_W, cx + 6, cy + 24, 102, 76,
+                             g_pat12_current_val, g_pat12_target_val,
+                             COLOR_INDIGO_BG, COLOR_INDIGO);
 
-    int mx = 10, my = 100, mw = TOP_W - 20, mh = 32;
-    draw_rect_16(fb, TOP_W, mx, my, mw, mh, COLOR_CARD);
-    draw_border_16(fb, TOP_W, mx, my, mw, mh, 1, COLOR_CARD_BORDER);
+    // Right Side of Reel in Card 2: Numeric Readout & Dynamic Progress Gauge
+    int rx = cx + 114;
+    draw_string_16(fb, TOP_W, rx, cy + 20, "VALUE", COLOR_GRAY, 1);
+    draw_string_16(fb, TOP_W, rx, cy + 36, valStr, COLOR_WHITE, 2);
 
-    int scroll_x = mx + 4 - (g_pat12_scroll_px % top_marq_len);
-    draw_string_clipped_16(fb, TOP_W, scroll_x, my + 8, top_marquee, COLOR_WHITE, 1, mx + 2, my + 2, mw - 4, mh - 4);
-    draw_string_clipped_16(fb, TOP_W, scroll_x + top_marq_len, my + 8, top_marquee, COLOR_WHITE, 1, mx + 2, my + 2, mw - 4, mh - 4);
+    // Mini Level Bar
+    int bar_x = rx, bar_y = cy + 72, bar_w = 76, bar_h = 7;
+    draw_rect_16(fb, TOP_W, bar_x, bar_y, bar_w, bar_h, COLOR_BG);
+    draw_border_16(fb, TOP_W, bar_x, bar_y, bar_w, bar_h, 1, COLOR_CARD_BORDER);
+    int fill_w = (int)roundf((g_pat12_current_val / 100.0f) * (bar_w - 2));
+    if (fill_w > bar_w - 2) fill_w = bar_w - 2;
+    if (fill_w > 0) {
+        draw_rect_16(fb, TOP_W, bar_x + 1, bar_y + 1, fill_w, bar_h - 2, COLOR_INDIGO);
+    }
+
+    if (g_state.dial_until_ms > get_time_ms() && strncmp(g_state.dial_action, "SCROLL", 6) == 0) {
+        draw_string_clipped_16(fb, TOP_W, rx, cy + 86, g_state.dial_action, COLOR_AMBER, 1, rx, cy + 84, 80, 16);
+    } else {
+        draw_string_16(fb, TOP_W, rx, cy + 86, "SMOOTH LERP", COLOR_GRAY, 1);
+    }
 
     flush_top();
 }
@@ -1245,7 +1334,9 @@ static void on_key_event(int row, int col, int pressed) {
             break;
         case 12:
             if (pressed) {
-                g_pat12_scroll_px += 24;
+                g_pat12_target_val = (g_pat12_target_val + 5) % 105;
+                snprintf(g_state.dial_action, sizeof(g_state.dial_action), "KEY #12 -> [%d]", g_pat12_target_val);
+                g_state.dial_until_ms = get_time_ms() + 1000;
                 render_top_display();
             }
             render_pattern_12();
@@ -1267,6 +1358,8 @@ static void on_key_event(int row, int col, int pressed) {
                 g_pat6_icon_idx = 0;
                 g_pat11_knob_val = 50;
                 g_pat11_dial_angle = 0.0f;
+                g_pat12_target_val = 50;
+                g_pat12_current_val = 50.0f;
                 render_all_keys();
                 render_top_display();
             } else {
@@ -1295,18 +1388,23 @@ static void on_dial_turn(int direction) {
         while (g_pat11_dial_angle >= (float)(2.0 * M_PI)) g_pat11_dial_angle -= (float)(2.0 * M_PI);
         g_pat11_knob_val += 5;
         if (g_pat11_knob_val > 100) g_pat11_knob_val = 100;
-        g_pat12_scroll_px += 16;
-        int mode = get_active_dial_mode();
-        snprintf(g_state.dial_action, sizeof(g_state.dial_action), "DIAL CW -> [%s]", g_pat11_modes[mode]);
+
+        // Pattern 12: Scroll UP
+        g_pat12_target_val += 1;
+        if (g_pat12_target_val > 100) g_pat12_target_val = 100;
+
+        snprintf(g_state.dial_action, sizeof(g_state.dial_action), "SCROLL UP -> [%d]", g_pat12_target_val);
     } else {
         g_pat11_dial_angle -= step;
         while (g_pat11_dial_angle < 0.0f) g_pat11_dial_angle += (float)(2.0 * M_PI);
         g_pat11_knob_val -= 5;
         if (g_pat11_knob_val < 0) g_pat11_knob_val = 0;
-        g_pat12_scroll_px -= 16;
-        if (g_pat12_scroll_px < 0) g_pat12_scroll_px = 0;
-        int mode = get_active_dial_mode();
-        snprintf(g_state.dial_action, sizeof(g_state.dial_action), "DIAL CCW <- [%s]", g_pat11_modes[mode]);
+
+        // Pattern 12: Scroll DOWN
+        g_pat12_target_val -= 1;
+        if (g_pat12_target_val < 0) g_pat12_target_val = 0;
+
+        snprintf(g_state.dial_action, sizeof(g_state.dial_action), "SCROLL DOWN <- [%d]", g_pat12_target_val);
     }
     g_state.dial_until_ms = get_time_ms() + 1000;
 
@@ -1585,7 +1683,7 @@ int main(int argc, char *argv[]) {
 
         long long now = get_time_ms();
 
-        // 30 FPS Animation Tick (Pattern 10 Pulse & Pattern 12 Marquee)
+        // 30 FPS Animation Tick (Pattern 10 Pulse & Pattern 12 Smooth Lerp)
         if (now - last_anim_ms >= 33) {
             last_anim_ms = now;
 
@@ -1593,10 +1691,17 @@ int main(int argc, char *argv[]) {
             g_pat10_pulse_val = (g_pat10_pulse_val + 1) % 628;
             render_pattern_10();
 
-            // Pattern 12: Auto-scroll pixel marquee
-            g_pat12_scroll_px += 2;
-            render_pattern_12();
-            render_top_display();
+            // Pattern 12: Smooth vertical value lerp
+            float diff = (float)g_pat12_target_val - g_pat12_current_val;
+            if (fabsf(diff) > 0.01f) {
+                g_pat12_current_val += diff * 0.30f;
+                render_pattern_12();
+                render_top_display();
+            } else if (g_pat12_current_val != (float)g_pat12_target_val) {
+                g_pat12_current_val = (float)g_pat12_target_val;
+                render_pattern_12();
+                render_top_display();
+            }
         }
 
         // 1-Second Telemetry Tick (Pattern 8 CPU Number & Pattern 9 CPU Graph)
