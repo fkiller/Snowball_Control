@@ -219,6 +219,8 @@ static int g_pat6_icon_idx = 0;           // Key 8: Modes Horizontal Strip (0..3
 static int g_pat8_cpu_pct = 32;           // Key 9: Real-time Number CPU %
 static int g_pat9_cpu_history[60] = {0};  // Key 10: Real-time Sparkline Graph
 static int g_pat11_knob_val = 45;         // Key 11: Knob Dial Gauge (0..100)
+static float g_pat11_dial_angle = 0.0f;   // Key 11: Circular Dial Panel rotation angle (radians)
+static const char *g_pat11_modes[6] = {"CODE", "PLAN", "DIFF", "TEST", "EXEC", "CHAT"};
 static int g_pat12_scroll_px = 0;         // Key 12: Horizontal Marquee Scroll
 static int g_aux_counter = 0;             // Key 13: Aux Click Counter
 static int g_aux_theme = 0;               // Key 14: Aux Theme Toggle
@@ -375,6 +377,150 @@ static void draw_icon12x12(uint16_t *fb, int stride_pixels, int x, int y, const 
             }
         }
     }
+}
+
+static void draw_line_16(uint16_t *fb, int stride_pixels, int x0, int y0, int x1, int y1, uint16_t color) {
+    int max_h = get_fb_height(stride_pixels);
+    int dx = abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
+    int dy = -abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
+    int err = dx + dy, e2;
+
+    while (1) {
+        if (x0 >= 0 && x0 < stride_pixels && y0 >= 0 && y0 < max_h) {
+            fb[y0 * stride_pixels + x0] = color;
+        }
+        if (x0 == x1 && y0 == y1) break;
+        e2 = 2 * err;
+        if (e2 >= dy) { err += dy; x0 += sx; }
+        if (e2 <= dx) { err += dx; y0 += sy; }
+    }
+}
+
+static void draw_circle_16(uint16_t *fb, int stride_pixels, int cx, int cy, int r, uint16_t color) {
+    int max_h = get_fb_height(stride_pixels);
+    int x = 0, y = r;
+    int d = 3 - 2 * r;
+
+    while (y >= x) {
+        int pts[8][2] = {
+            {cx + x, cy + y}, {cx - x, cy + y}, {cx + x, cy - y}, {cx - x, cy - y},
+            {cx + y, cy + x}, {cx - y, cy + x}, {cx + y, cy - x}, {cx - y, cy - x}
+        };
+        for (int i = 0; i < 8; i++) {
+            int px = pts[i][0], py = pts[i][1];
+            if (px >= 0 && px < stride_pixels && py >= 0 && py < max_h) {
+                fb[py * stride_pixels + px] = color;
+            }
+        }
+        if (d < 0) {
+            d += 4 * x + 6;
+        } else {
+            d += 4 * (x - y) + 10;
+            y--;
+        }
+        x++;
+    }
+}
+
+static void draw_circle_thick_16(uint16_t *fb, int stride_pixels, int cx, int cy, int r, int thick, uint16_t color) {
+    for (int t = 0; t < thick; t++) {
+        draw_circle_16(fb, stride_pixels, cx, cy, r - t, color);
+    }
+}
+
+static void draw_filled_circle_16(uint16_t *fb, int stride_pixels, int cx, int cy, int r, uint16_t color) {
+    int max_h = get_fb_height(stride_pixels);
+    int r2 = r * r;
+    for (int dy = -r; dy <= r; dy++) {
+        int py = cy + dy;
+        if (py < 0 || py >= max_h) continue;
+        int dx_max = (int)sqrtf((float)(r2 - dy * dy));
+        int x_start = cx - dx_max;
+        int x_end = cx + dx_max;
+        if (x_start < 0) x_start = 0;
+        if (x_end >= stride_pixels) x_end = stride_pixels - 1;
+        for (int px = x_start; px <= x_end; px++) {
+            fb[py * stride_pixels + px] = color;
+        }
+    }
+}
+
+static void draw_triangle_down_16(uint16_t *fb, int stride_pixels, int tip_x, int tip_y, int base_w, int h, uint16_t color) {
+    int max_h = get_fb_height(stride_pixels);
+    for (int dy = 0; dy <= h; dy++) {
+        int y = tip_y - h + dy;
+        int half_w = (base_w * (h - dy)) / (2 * h);
+        int x0 = tip_x - half_w;
+        int x1 = tip_x + half_w;
+        for (int x = x0; x <= x1; x++) {
+            if (x >= 0 && x < stride_pixels && y >= 0 && y < max_h) {
+                fb[y * stride_pixels + x] = color;
+            }
+        }
+    }
+}
+
+static void draw_char_rotated_16(uint16_t *fb, int stride_pixels, int cx, int cy, char c, float angle_rad, uint16_t color) {
+    if (c < 32 || c > 126) c = ' ';
+    const uint8_t *glyph = font8x16[c - 32];
+    int max_h = get_fb_height(stride_pixels);
+    float cos_a = cosf(angle_rad);
+    float sin_a = sinf(angle_rad);
+
+    static const float sub_dx[4] = { 0.0f, 0.5f, 0.0f, 0.5f };
+    static const float sub_dy[4] = { 0.0f, 0.0f, 0.5f, 0.5f };
+
+    for (int gy = 0; gy < 16; gy++) {
+        uint8_t bits = glyph[gy];
+        if (!bits) continue;
+        for (int gx = 0; gx < 8; gx++) {
+            if (bits & (0x80 >> gx)) {
+                for (int s = 0; s < 4; s++) {
+                    float lx = (float)(gx - 4) + sub_dx[s];
+                    float ly = (float)(gy - 8) + sub_dy[s];
+                    int px = cx + (int)roundf(lx * cos_a - ly * sin_a);
+                    int py = cy + (int)roundf(lx * sin_a + ly * cos_a);
+                    if (px >= 0 && px < stride_pixels && py >= 0 && py < max_h) {
+                        fb[py * stride_pixels + px] = color;
+                    }
+                }
+            }
+        }
+    }
+}
+
+static void draw_string_rotated_16(uint16_t *fb, int stride_pixels, int cx, int cy, float radius, float angle_center, const char *str, uint16_t color) {
+    int len = strlen(str);
+    float tangent_angle = angle_center + (float)(M_PI / 2.0);
+    float cos_t = cosf(tangent_angle);
+    float sin_t = sinf(tangent_angle);
+
+    float mid_x = cx + radius * cosf(angle_center);
+    float mid_y = cy + radius * sinf(angle_center);
+
+    float char_pitch = 8.0f;
+    for (int i = 0; i < len; i++) {
+        float offset = (i - (len - 1) * 0.5f) * char_pitch;
+        int ch_x = (int)roundf(mid_x + offset * cos_t);
+        int ch_y = (int)roundf(mid_y + offset * sin_t);
+        draw_char_rotated_16(fb, stride_pixels, ch_x, ch_y, str[i], tangent_angle, color);
+    }
+}
+
+static int get_active_dial_mode(void) {
+    float best_diff = 1000.0f;
+    int best_idx = 0;
+    float target = -(float)(M_PI / 2.0); // Top pointer at -90 degrees
+
+    for (int i = 0; i < 6; i++) {
+        float angle = target - i * (float)(M_PI / 3.0) + g_pat11_dial_angle;
+        float diff = fmodf(angle - target + 3.0f * (float)M_PI, 2.0f * (float)M_PI) - (float)M_PI;
+        if (fabsf(diff) < best_diff) {
+            best_diff = fabsf(diff);
+            best_idx = i;
+        }
+    }
+    return best_idx;
 }
 
 // Flush Key Framebuffer over SPI bus immediately
@@ -736,13 +882,14 @@ static void render_pattern_9(void) {
 }
 
 // =========================================================================
-// PATTERN 11: Knob Dial Gauge in LCD (| O [ VALUE ] O |) -> Key 11
+// PATTERN 11: Rotating Circular Panel with Rotating Text (Concentric with Knob) -> Key 11
 // =========================================================================
 static void render_pattern_11(void) {
     uint16_t *fb = g_key_fbs[11];
     if (!fb) return;
 
     int is_pressed = g_key_pressed[11];
+    int active_idx = get_active_dial_mode();
 
     draw_rect_16(fb, KEY_W, 0, 0, KEY_W, KEY_H, COLOR_CARD);
     draw_border_16(fb, KEY_W, 0, 0, KEY_W, KEY_H, is_pressed ? 3 : 2, is_pressed ? COLOR_WHITE : COLOR_CYAN);
@@ -750,26 +897,47 @@ static void render_pattern_11(void) {
     draw_string_16(fb, KEY_W, 6, 6, "#11", COLOR_CYAN, 1);
     draw_badge_right_16(fb, KEY_W, 6, "DIAL", COLOR_CYAN);
 
-    // Rotary Gauge Icon
-    draw_icon12x12(fb, KEY_W, (KEY_W - 24)/2, 22, icon12x12_dial, COLOR_CYAN, 2);
+    int cx = 64, cy = 64;
+    int r_bezel = 48;
+    float target_top = -(float)(M_PI / 2.0);
 
-    // Value display: e.g. " 45% "
-    char valStr[16];
-    snprintf(valStr, sizeof(valStr), "%3d%%", g_pat11_knob_val);
-    draw_string_centered_16(fb, KEY_W, 48, valStr, COLOR_WHITE, 1);
+    // 1. Outer Bezel Ring (Circle around the dial)
+    draw_circle_thick_16(fb, KEY_W, cx, cy, r_bezel, 2, COLOR_CYAN_BG);
 
-    // Dial Slider Track
-    int tx = 8, ty = 70, tw = KEY_W - 16, th = 14;
-    draw_rect_16(fb, KEY_W, tx, ty, tw, th, COLOR_BG);
-    draw_border_16(fb, KEY_W, tx, ty, tw, th, 1, COLOR_CARD_BORDER);
+    // 2. Rotating Radial Ticks (24 ticks, every 15 degrees)
+    for (int t = 0; t < 24; t++) {
+        float tick_angle = target_top - t * (float)(M_PI / 12.0) + g_pat11_dial_angle;
+        float cos_t = cosf(tick_angle);
+        float sin_t = sinf(tick_angle);
+        int is_major = (t % 4 == 0); // 6 major ticks aligned with modes
+        int tick_len = is_major ? 7 : 3;
+        uint16_t tick_col = is_major ? COLOR_CYAN : COLOR_DARK_GRAY;
 
-    // Slider Knob position
-    int kx = tx + 2 + ((tw - 16) * g_pat11_knob_val) / 100;
-    draw_rect_16(fb, KEY_W, kx, ty + 2, 12, 10, COLOR_CYAN);
-    draw_border_16(fb, KEY_W, kx, ty + 2, 12, 10, 1, COLOR_WHITE);
+        int x0 = cx + (int)roundf((r_bezel - tick_len) * cos_t);
+        int y0 = cy + (int)roundf((r_bezel - tick_len) * sin_t);
+        int x1 = cx + (int)roundf((r_bezel - 1) * cos_t);
+        int y1 = cy + (int)roundf((r_bezel - 1) * sin_t);
+        draw_line_16(fb, KEY_W, x0, y0, x1, y1, tick_col);
+    }
 
-    // Bottom Subtitle (centered, NO overflow!)
-    draw_string_centered_16(fb, KEY_W, 92, "TURN KNOB", COLOR_GRAY, 1);
+    // 3. Rotating Mode Texts along Circular Orbit
+    for (int i = 0; i < 6; i++) {
+        float angle = target_top - i * (float)(M_PI / 3.0) + g_pat11_dial_angle;
+        int is_active = (i == active_idx);
+        uint16_t text_col = is_active ? COLOR_WHITE : COLOR_TEXT_DIM;
+        draw_string_rotated_16(fb, KEY_W, cx, cy, 31.0f, angle, g_pat11_modes[i], text_col);
+    }
+
+    // 4. Central Knob Hub (concentric with the knob)
+    draw_filled_circle_16(fb, KEY_W, cx, cy, 19, is_pressed ? COLOR_CYAN_BG : COLOR_BG);
+    draw_circle_thick_16(fb, KEY_W, cx, cy, 19, 2, is_pressed ? COLOR_WHITE : COLOR_CYAN);
+
+    // Active Mode Text centered inside Hub
+    draw_string_centered_16(fb, KEY_W, cy - 8, g_pat11_modes[active_idx], is_pressed ? COLOR_WHITE : COLOR_CYAN, 1);
+
+    // 5. Fixed Top Indicator Pointer (Triangle pointing down at 12 o'clock)
+    draw_triangle_down_16(fb, KEY_W, cx, 14, 8, 6, COLOR_WHITE);
+    draw_line_16(fb, KEY_W, cx, 8, cx, 14, COLOR_CYAN);
 
     flush_key(11);
 }
@@ -911,29 +1079,52 @@ static void render_top_display(void) {
 
     draw_rect_16(fb, TOP_W, 8, 28, TOP_W - 16, 1, COLOR_CARD_BORDER);
 
-    // PATTERN 11: Top Knob Dial Slider: | O [ ( VALUE ) ] O |
+    // PATTERN 11: Rotating Circular Knob Dial Gauge
     int dx = 10, dy = 34, dw = 200, dh = 58;
     draw_rect_16(fb, TOP_W, dx, dy, dw, dh, COLOR_CARD);
     draw_border_16(fb, TOP_W, dx, dy, dw, dh, 1, COLOR_CYAN);
 
-    draw_string_16(fb, TOP_W, dx + 6, dy + 6, "KNOB DIAL GAUGE", COLOR_CYAN, 1);
-    char dialValStr[16];
-    snprintf(dialValStr, sizeof(dialValStr), "%3d%%", g_pat11_knob_val);
-    draw_string_16(fb, TOP_W, dx + dw - 44, dy + 6, dialValStr, COLOR_WHITE, 1);
+    // Mini Circular Rotating Dial on left
+    int tcx = dx + 26, tcy = dy + 32;
+    int tr = 18;
+    draw_circle_thick_16(fb, TOP_W, tcx, tcy, tr, 1, COLOR_CYAN_BG);
+    draw_filled_circle_16(fb, TOP_W, tcx, tcy, 7, COLOR_BG);
+    draw_circle_thick_16(fb, TOP_W, tcx, tcy, 7, 1, COLOR_CYAN);
 
-    // Track
-    int track_x = dx + 18, track_y = dy + 32, track_w = dw - 36, track_h = 14;
-    draw_rect_16(fb, TOP_W, track_x, track_y, track_w, track_h, COLOR_BG);
-    draw_border_16(fb, TOP_W, track_x, track_y, track_w, track_h, 1, COLOR_CARD_BORDER);
+    for (int t = 0; t < 12; t++) {
+        float tang = -(float)(M_PI / 2.0) - t * (float)(M_PI / 6.0) + g_pat11_dial_angle;
+        float c_t = cosf(tang), s_t = sinf(tang);
+        int is_m = (t % 2 == 0);
+        int tlen = is_m ? 5 : 2;
+        uint16_t tcol = is_m ? COLOR_CYAN : COLOR_DARK_GRAY;
+        int tx0 = tcx + (int)roundf((tr - tlen) * c_t);
+        int ty0 = tcy + (int)roundf((tr - tlen) * s_t);
+        int tx1 = tcx + (int)roundf((tr - 1) * c_t);
+        int ty1 = tcy + (int)roundf((tr - 1) * s_t);
+        draw_line_16(fb, TOP_W, tx0, ty0, tx1, ty1, tcol);
+    }
+    draw_triangle_down_16(fb, TOP_W, tcx, tcy - tr - 2, 5, 4, COLOR_WHITE);
 
-    // Knob Ends | O ... O |
-    draw_string_16(fb, TOP_W, dx + 4, track_y - 1, "|O", COLOR_CYAN, 1);
-    draw_string_16(fb, TOP_W, dx + dw - 18, track_y - 1, "O|", COLOR_CYAN, 1);
+    // Right side: Active Mode & Degree Angle
+    int active_mode = get_active_dial_mode();
+    draw_string_16(fb, TOP_W, dx + 54, dy + 6, "ROTATING DIAL", COLOR_CYAN, 1);
+    char degStr[16];
+    float deg = g_pat11_dial_angle * 180.0f / (float)M_PI;
+    if (deg < 0.0f) deg += 360.0f;
+    snprintf(degStr, sizeof(degStr), "%3.0f*", deg);
+    draw_string_16(fb, TOP_W, dx + dw - 42, dy + 6, degStr, COLOR_WHITE, 1);
 
-    // Active Slider Thumb
-    int thumb_x = track_x + 2 + ((track_w - 20) * g_pat11_knob_val) / 100;
-    draw_rect_16(fb, TOP_W, thumb_x, track_y + 2, 16, 10, COLOR_CYAN);
-    draw_border_16(fb, TOP_W, thumb_x, track_y + 2, 16, 10, 1, COLOR_WHITE);
+    // Mode Selection Box
+    draw_rect_16(fb, TOP_W, dx + 54, dy + 22, 60, 16, COLOR_CYAN_BG);
+    draw_border_16(fb, TOP_W, dx + 54, dy + 22, 60, 16, 1, COLOR_CYAN);
+    draw_string_16(fb, TOP_W, dx + 68, dy + 22, g_pat11_modes[active_mode], COLOR_WHITE, 1);
+
+    // Status or Dial Action
+    if (g_state.dial_until_ms > get_time_ms()) {
+        draw_string_clipped_16(fb, TOP_W, dx + 54, dy + 42, g_state.dial_action, COLOR_AMBER, 1, dx + 54, dy + 40, dw - 58, 16);
+    } else {
+        draw_string_16(fb, TOP_W, dx + 54, dy + 42, "TURN KNOB ->", COLOR_GRAY, 1);
+    }
 
     // PATTERN 8 & 9 Preview Card: Live CPU
     int cx = 218, cy = 34, cw = TOP_W - 228, ch = 58;
@@ -1042,7 +1233,12 @@ static void on_key_event(int row, int col, int pressed) {
             break;
         case 11:
             if (pressed) {
+                g_pat11_dial_angle += (float)(M_PI / 3.0f);
+                while (g_pat11_dial_angle >= (float)(2.0 * M_PI)) g_pat11_dial_angle -= (float)(2.0 * M_PI);
                 g_pat11_knob_val = (g_pat11_knob_val + 10) % 105;
+                int mode = get_active_dial_mode();
+                snprintf(g_state.dial_action, sizeof(g_state.dial_action), "KEY #11 -> [%s]", g_pat11_modes[mode]);
+                g_state.dial_until_ms = get_time_ms() + 1000;
                 render_top_display();
             }
             render_pattern_11();
@@ -1070,6 +1266,7 @@ static void on_key_event(int row, int col, int pressed) {
                 g_pat5_icon_idx = 0;
                 g_pat6_icon_idx = 0;
                 g_pat11_knob_val = 50;
+                g_pat11_dial_angle = 0.0f;
                 render_all_keys();
                 render_top_display();
             } else {
@@ -1092,17 +1289,24 @@ static void on_key_event(int row, int col, int pressed) {
 // Handle rotary knob rotation
 static void on_dial_turn(int direction) {
     // direction: +1 = Right / Clockwise, -1 = Left / Counter-Clockwise
+    float step = (float)(M_PI / 12.0f); // 15 degrees per notch
     if (direction > 0) {
+        g_pat11_dial_angle += step;
+        while (g_pat11_dial_angle >= (float)(2.0 * M_PI)) g_pat11_dial_angle -= (float)(2.0 * M_PI);
         g_pat11_knob_val += 5;
         if (g_pat11_knob_val > 100) g_pat11_knob_val = 100;
         g_pat12_scroll_px += 16;
-        strncpy(g_state.dial_action, "KNOB -> RIGHT (+5%)", sizeof(g_state.dial_action) - 1);
+        int mode = get_active_dial_mode();
+        snprintf(g_state.dial_action, sizeof(g_state.dial_action), "DIAL CW -> [%s]", g_pat11_modes[mode]);
     } else {
+        g_pat11_dial_angle -= step;
+        while (g_pat11_dial_angle < 0.0f) g_pat11_dial_angle += (float)(2.0 * M_PI);
         g_pat11_knob_val -= 5;
         if (g_pat11_knob_val < 0) g_pat11_knob_val = 0;
         g_pat12_scroll_px -= 16;
         if (g_pat12_scroll_px < 0) g_pat12_scroll_px = 0;
-        strncpy(g_state.dial_action, "KNOB <- LEFT (-5%)", sizeof(g_state.dial_action) - 1);
+        int mode = get_active_dial_mode();
+        snprintf(g_state.dial_action, sizeof(g_state.dial_action), "DIAL CCW <- [%s]", g_pat11_modes[mode]);
     }
     g_state.dial_until_ms = get_time_ms() + 1000;
 
@@ -1186,7 +1390,8 @@ static void parse_qmk_byte(uint8_t byte) {
                     on_dial_turn(+1); // Right
                 } else if (row == 102 || row == 104) {
                     // Push Click
-                    strncpy(g_state.dial_action, "KNOB CLICK [PUSH]", sizeof(g_state.dial_action) - 1);
+                    int mode = get_active_dial_mode();
+                    snprintf(g_state.dial_action, sizeof(g_state.dial_action), "KNOB CLICK [%s]", g_pat11_modes[mode]);
                     g_state.dial_until_ms = get_time_ms() + 1000;
                     render_top_display();
                 } else if (row < 4 && col < 5) {
