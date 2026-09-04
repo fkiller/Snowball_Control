@@ -24,28 +24,25 @@ Resolve user feedback on dual rotary knobs:
 
 ## Current State
 
-- `main` branch latest commit is `c96cc8a` (`fix(hud): resolve Left Knob clockwise smoothness and unlock Right Knob input`).
+- `main` branch latest commit is `d098884` (`fix(hud): unbind right knob HID keycodes across all layers to unlock raw UART event escalation`).
 - **Left Knob Clockwise Smoothness**:
   - Root cause resolved: In `parse_qmk_byte()`, `row == 102` was mistakenly mapped to `on_left_knob_click()`, which jumped by $60^\circ$ instead of stepping by $15^\circ$. Because $60^\circ$ aligns symmetrically with the 6 modes and 24 ticks, the visual circle panel appeared stationary while only the text changed.
   - Fix: `row == 101` $\to$ CCW (`on_left_knob(-1)` $\to$ $-15^\circ$), `row == 102` $\to$ CW (`on_left_knob(+1)` $\to$ $+15^\circ$), `row == 100` $\to$ Click (`on_left_knob_click()`).
-  - Both directions visibly step the dial circle panel, 24 radial ticks, and 6 orbiting mode labels by $15^\circ$ per notch.
+  - Both directions visibly step the dial circle panel, 24 radial ticks, and 6 orbiting mode labels by $15^\circ$ per notch. Verified on live hardware.
 - **Right Knob Hardware Input Unlocked**:
-  - Disassembled vendor `KeyboardDevice` and SDK `package/PCMonitorApp/src/serial.c`: The GD32 MCU runs QMK/VIA and requires runtime dynamic keymap and encoder binding over `/dev/ttyS1` (`id_dynamic_keymap_set_keycode = 0x05`, `id_dynamic_keymap_set_encoder = 0x15`).
-  - Implemented `init_qmk_hardware()` in `mk20-hud.c`: Programs key matrix `0..3, 0..4`, Left knob rows 100..102, Right knob rows 103..105 (`0x00AE`, `0x00AC`, `0x00AB`), and VIA encoders 0 and 1.
-  - The GD32 MCU acknowledged every initialization command with `0x05` and `0xFF` response frames over UART.
-  - Multi-source polling active for `/dev/ttyS1`, `/dev/input/event0` (`sunxi-keyboard`), `/dev/input/event1` (`sunxi-gpadc0`), `/dev/input/event2` (`sunxi-ir`), `/dev/input/event3` (`audiocodec`), and UDP port 7701.
-  - Raw UART logging active (`[UART RX ... B]`) in `/tmp/hud.log`.
-- Daemon `mk20-hud` is currently active on MK20 (`PID 1668`).
+  - Root cause identified: Disassembly of vendor `KeyboardDevice` and `PCMonitorApp` revealed that rows 100..102 (Left Knob) and rows 103..105 (Right Knob) are mapped to QMK matrix encoders. Previously, rows 103..105 were configured with keycodes `0x00AE` (Mute), `0x00AC` (Vol Down), and `0x00AB` (Vol Up). When QMK has active HID keycodes assigned to matrix rows, it executes the media keys on the host PC over USB and **suppresses raw UART 0x16 packets** to `/dev/ttyS1`.
+  - Resolution: Replaced non-zero keycodes in `init_qmk_hardware()` with `0x0000` (`KC_NO`) across all 4 keymap layers (0..3) for rows 100..108. The GD32 MCU acknowledged every command with `0x05` and confirmed all rows unbound via `0x04` readbacks.
+  - Added fallback mappings for rows 106..108 in `parse_qmk_byte()`.
+- Daemon `mk20-hud` is currently active on MK20.
 
 ---
 
 ## Completed Work
 
 1. **Left Knob Smoothness & Bidirectional Fix**: Corrected row mapping (`101` CCW, `102` CW, `100` Click) with smooth $15^\circ$ stepping.
-2. **QMK Initialization & Right Knob Binding**: Implemented VIA packet initialization sequence in `mk20-hud.c` for keycodes and rotary encoders. Verified live GD32 MCU acknowledgements.
-3. **Multi-Device Polling & Sniffing**: Main loop polls `/dev/ttyS1`, `/dev/input/event0..3`, and UDP 7701.
-4. **Hardware Verification**: Captured and verified `fb11_dial.bmp`, `fb12_reel.bmp`, and `fb21_top.bmp`.
-5. **Committed**: Git commit `c96cc8a` on `main`.
+2. **Right Knob Root Cause & HID Unbinding**: Disassembled vendor binaries, discovered HID suppression behavior, and unbound rows 100..108 to `0x0000` across all layers 0..3.
+3. **Hardware Verification**: Verified clean startup frames, protocol version 1 query, and confirmed all framebuffers (`fb11_dial`, `fb12_reel`, `fb21_top`).
+4. **Committed**: Git commit `d098884` on `main`.
 
 ---
 
@@ -114,7 +111,7 @@ python C:\Users\wondo\.gemini\antigravity\brain\8c9c0c77-5c23-416f-af0c-fbd49ce6
 ## Git State
 
 - Branch: `main`
-- Latest commit: `c96cc8a` (`fix(hud): resolve Left Knob clockwise smoothness and unlock Right Knob input`)
+- Latest commit: `d098884` (`fix(hud): unbind right knob HID keycodes across all layers to unlock raw UART event escalation`)
 - Uncommitted implementation changes: None.
 
 ---
