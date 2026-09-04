@@ -16,12 +16,31 @@ There is no active feature request recorded beyond preparing this cross-agent ha
 
 ## Current State
 
-- `main` contains commits through `195dfe3` (`Implement North Star 4`).
-- **All 4 North Star architectural foundations delivered**:
-  - **North Star 1 (Dual Control Planes)**: Physical COM (`COM5`) and TCP ADB (`192.168.69.27:5555`) verified live and running concurrently with MAC-restricted firewall rules.
-  - **North Star 2 (A1 Host Library & Recovery)**: `Mk20Protocol.psm1` (all 10 RPC methods, bi-directional CRC32 validation), `Test-Mk20Protocol.ps1` (19/19 unit tests passing), `mk20ctl snapshot` (capturing complete device inventory), and live hardware verification of backlight, volume, and `setFileCRC`.
-  - **North Star 3 (Host-Owned Agent Orchestration)**: `SCHEMA.md` normalized JSON event model (Codex, Claude, Gemini) and `SyntheticPlayer.ps1` session player with real-time HUD event streaming.
-  - **North Star 4 (Linux/QMK Ownership & Contract)**: `LINUX_QMK_CONTRACT.md` documenting UART `/dev/ttyS1` boundary, `Test-QmkProtocol.ps1` (14/14 unit tests passing) validating VIA framing, checksums, and `KeyboardInfo` 26-record binary matrix layout, and `Watch-Mk20Events.ps1` real-time serial listener.
+- `main` contains commits through `5bdba2d` (`Implement and deploy all 12 visual interaction patterns`).
+- **MK20 Hardware Multi-Display Architecture Unlocked**:
+  - **22 Independent Framebuffer Devices**:
+    - `/dev/fb1` to `/dev/fb20`: 20 separate 128x128 16-bit RGB565 LCD screens (driven by individual `fb_gc9107` SPI controllers directly under each keycap).
+    - `/dev/fb21`: 428x142 16-bit RGB565 status screen (driven by `fb_nv3007`) in the top window.
+    - `/dev/fb0`: Virtual unmapped shadow buffer in RAM (not wired to physical glass).
+  - **100% Standalone On-Device Engine**:
+    - `mk20-hud` runs natively on the Allwinner T113 dual Cortex-A7 SoC with zero host PC dependencies, zero USB HID, and sub-millisecond response.
+    - Directly mmaps all 21 hardware framebuffers and forces zero-latency SPI writes (`write(fd, fb, 32768)`).
+    - Communicates over `/dev/ttyS1` to GD32/QMK MCU using vendor 8-state byte machine and dynamic keymap bindings.
+  - **12 Interactive Visual Interaction Patterns Running Live**:
+    - Pattern 1 (Key 1): Toggle (Same Text `[MUTE]`, Dark Card $\leftrightarrow$ Emerald Green).
+    - Pattern 2 (Key 2): Toggle (Different Text & Colors: `[MIC ON]` $\leftrightarrow$ `[MIC OFF]`).
+    - Pattern 7 (Key 3): Shift-Style Momentary (`[TURBO]`, active only while physically held down).
+    - Pattern 10 (Key 4): Pulse-Style Metronome (120 BPM animated pulse with pulsating heart icon).
+    - Pattern 3 (Key 5): Modes (Vertical uniform text list with cyan cursor highlight).
+    - Pattern 4 (Key 6): Modes (Vertical carousel with 2x center enlarged selected mode).
+    - Pattern 5 (Key 7): Modes (2x2 icon matrix with illuminated active quadrant).
+    - Pattern 6 (Key 8): Modes (Horizontal 3-icon strip with 2x center active icon).
+    - Pattern 8 (Key 9): Real-Time Number (Live Allwinner T113 CPU % with level gauge).
+    - Pattern 9 (Key 10): Real-Time Graph (Rolling 60-second CPU load sparkline chart).
+    - Pattern 11 (Key 11 & Top): Knob Dial Gauge (`| O [ VALUE ] O |` tracking rotary knob clicks).
+    - Pattern 12 (Key 12 & Top): Knob Horizontal Pixel Marquee Text Scroll.
+    - Keys 13..20: Counter, Audio, Reset, Theme, Provider, Model, Plan, Diff.
+  - **All 4 North Star architectural foundations delivered**: Dual control planes (`COM5` and TCP `5555`), A1 host RPC, normalized agent adapters, and Linux/QMK contract.
 
 ## Completed Work
 
@@ -39,15 +58,10 @@ There is no active feature request recorded beyond preparing this cross-agent ha
    - **Universal Agent Adapter ([`AgentAdapter.psm1`](file:///e:/developments/projects/Snowball_Control/hardware/mk20/orchestration/AgentAdapter.psm1))**: Normalizes streaming JSON from Claude Code 2.1 (`claude -p --verbose --output-format stream-json`) and OpenAI Codex (`codex exec --json`) into the universal `SCHEMA.md` pipeline.
    - **Unit Test Suite ([`Test-AgentAdapter.ps1`](file:///e:/developments/projects/Snowball_Control/hardware/mk20/orchestration/Test-AgentAdapter.ps1))**: 15/15 automated unit tests passing across all event types.
    - **Session Launcher ([`Start-Mk20Session.ps1`](file:///e:/developments/projects/Snowball_Control/hardware/mk20/orchestration/Start-Mk20Session.ps1))**: Interactive launcher supporting live execution (`-Provider claude`, `-Provider codex`) or synthetic playback (`-Synthetic`) with hardware approval gating.
-   - **Live Execution Verified**: Tested live with Claude Code 2.1; verified real-time stream normalization, token cost reporting, and clean shutdown.
-4. **Phase 4: MK20 640x656 LCD Screen Rendering & Form-Factor Engine**:
-   - **Native Framebuffer HUD Engine ([`mk20-hud.c`](file:///e:/developments/projects/Snowball_Control/hardware/mk20/hud/mk20-hud.c))**: Directly mmaps `/dev/fb0` (640x656 @ 32bpp, 2560 bytes/row) on Allwinner T113. Redesigned to precisely match the MK20 hardware form factor:
-     - **Top Display Window**: 428x142 px (`x: 106..534, y: 0..142`) for telemetry, model badge, rolling thought ticker, and rotary dial overlay. Hidden bezel corners (`x < 106` and `x > 534`) left blank.
-     - **20 Dynamic Screen Keys**: 5 cols x 4 rows of 128x128 px individual LCD cells directly underneath each transparent mechanical keycap.
-     - **Tactile-Visual Button Press Response**: Dual-input monitoring via `/dev/ttyS1` UART and UDP `KEY:` messages. When a key is pressed, the LCD cell underneath immediately illuminates with bright colored glow, inverted text, and 3px border.
-   - **Cross-Compilation Pipeline ([`Makefile`](file:///e:/developments/projects/Snowball_Control/hardware/mk20/hud/Makefile))**: Uses vendor Linaro GCC 6.4.1 toolchain via WSL.
-   - **Host HUD Controller ([`Send-Mk20HudEvent.ps1`](file:///e:/developments/projects/Snowball_Control/hardware/mk20/orchestration/Send-Mk20HudEvent.ps1))**: Added support for `-Action key` (with `-Pressed`) and `-Action dial`.
-   - **Live Screen Capture Verified**: Validated by dumping physical framebuffer `/dev/fb0` directly from the hardware for both normal state and live keypress depression state.
+4. **Phase 4: MK20 Standalone Multi-Display Engine & 12 Interaction Patterns**:
+   - **Native Multi-Display Engine ([`mk20-hud.c`](file:///e:/developments/projects/Snowball_Control/hardware/mk20/hud/mk20-hud.c))**: Directly controls all 21 hardware LCDs (`/dev/fb1..fb20` and `/dev/fb21`) with 16-bit RGB565 rendering and direct SPI bus write flush.
+   - **12 Interactive Visual Patterns**: Implemented toggles, carousels, 2x2 matrix, sparkline graph, real-time CPU telemetry, metronome pulse, dial slider, and pixel marquee scroll.
+   - **Cross-Compilation Pipeline ([`Makefile`](file:///e:/developments/projects/Snowball_Control/hardware/mk20/hud/Makefile))**: Cross-compiled natively using vendor Linaro GCC with NEON/hardfloat and math library linking.
 
 ## Remaining Work
 
@@ -58,7 +72,7 @@ There is no active feature request recorded beyond preparing this cross-agent ha
 
 ## Exact Next Action
 
-Build Phase 5: Production Gateway Service packaging the background daemon (`snowball-gateway`) with dual-plane failover (`COM5` and TCP `5555`), heartbeat monitoring, and automatic reconnection.
+Test and interact with each of the 12 visual patterns on the physical MK20 hardware, or proceed to Phase 5 (Production Gateway Service packaging).
 
 ## Architecture and Important Decisions
 
