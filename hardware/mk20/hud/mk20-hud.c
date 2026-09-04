@@ -1622,18 +1622,18 @@ static void parse_qmk_byte(uint8_t byte) {
                     } else if (row == 102) {
                         on_left_knob(+1);         // Left Knob CW (smooth 15 deg step)
                     }
-                    // Right Rotary Knob (rows 103, 104, 105)
-                    else if (row == 103) {
-                        if (col == 103 || col == 0) {
+                    // Right Rotary Knob (rows 103, 104, 105, plus 106..108 fallback)
+                    else if (row == 103 || row == 106) {
+                        if (col == 103 || col == 106 || col == 0) {
                             on_right_knob_click(); // Right Knob Push Click
                         } else if (col == 1) {
                             on_right_knob(+1);     // Right Knob CW
                         } else {
                             on_right_knob(-1);     // Right Knob CCW
                         }
-                    } else if (row == 104) {
+                    } else if (row == 104 || row == 107) {
                         on_right_knob(-1);         // Right Knob CCW
-                    } else if (row == 105) {
+                    } else if (row == 105 || row == 108) {
                         on_right_knob(+1);         // Right Knob CW
                     }
                     // Direct Instant Switch Contact (Keys 1..20)
@@ -1728,45 +1728,46 @@ static void send_qmk_set_keycode(int fd, uint8_t layer, uint8_t row, uint8_t col
     send_qmk_frame(fd, data, sizeof(data));
 }
 
-static void send_qmk_set_encoder(int fd, uint8_t layer, uint8_t encoder_idx, uint8_t dir, uint16_t keycode) {
-    uint8_t data[6];
-    data[0] = 0x15; // id_dynamic_keymap_set_encoder
+static void send_qmk_get_keycode(int fd, uint8_t layer, uint8_t row, uint8_t col) {
+    uint8_t data[4];
+    data[0] = 0x04; // id_dynamic_keymap_get_keycode
     data[1] = layer;
-    data[2] = encoder_idx;
-    data[3] = dir;
-    data[4] = (uint8_t)(keycode >> 8);
-    data[5] = (uint8_t)(keycode & 0xFF);
+    data[2] = row;
+    data[3] = col;
     send_qmk_frame(fd, data, sizeof(data));
 }
 
 static void init_qmk_hardware(int uart_fd) {
     if (uart_fd < 0) return;
-    printf("[MK20-HUD] Initializing QMK key matrix and rotary encoders...\n");
+    printf("[MK20-HUD] Initializing QMK key matrix and rotary encoders across all 4 layers...\n");
 
-    // 1. Matrix keys 0..3, 0..4 (20 keys)
-    for (int r = 0; r < 4; r++) {
-        for (int c = 0; c < 5; c++) {
-            send_qmk_set_keycode(uart_fd, 0, r, c, 0x000A); // KC_G
+    // 1. Matrix keys 0..3, 0..4 (20 keys) on all 4 layers
+    for (int l = 0; l < 4; l++) {
+        for (int r = 0; r < 4; r++) {
+            for (int c = 0; c < 5; c++) {
+                send_qmk_set_keycode(uart_fd, l, r, c, 0x000A); // KC_G
+            }
         }
     }
 
-    // 2. Left Knob bindings (rows 100, 101, 102)
-    send_qmk_set_keycode(uart_fd, 0, 100, 100, 0x0000);
-    send_qmk_set_keycode(uart_fd, 0, 101, 101, 0x0000);
-    send_qmk_set_keycode(uart_fd, 0, 102, 102, 0x0000);
+    // 2. Both Rotary Knobs (Left: rows 100..102, Right: rows 103..105, Extra: 106..108)
+    // Keycode 0x0000 (KC_NO) instructs QMK not to consume events for USB HID,
+    // thereby escalating raw id_custom_report_key_state (0x16) packets over UART /dev/ttyS1.
+    for (int l = 0; l < 4; l++) {
+        for (int row = 100; row <= 108; row++) {
+            send_qmk_set_keycode(uart_fd, l, row, row, 0x0000);
+        }
+    }
 
-    // 3. Right Knob bindings (rows 103, 104, 105) matching /data/KeyboardInfo
-    send_qmk_set_keycode(uart_fd, 0, 103, 103, 0x00AE);
-    send_qmk_set_keycode(uart_fd, 0, 104, 104, 0x00AC);
-    send_qmk_set_keycode(uart_fd, 0, 105, 105, 0x00AB);
+    // 3. Query protocol version and read back encoder keycodes
+    uint8_t ver_cmd[1] = { 0x01 }; // id_get_protocol_version
+    send_qmk_frame(uart_fd, ver_cmd, sizeof(ver_cmd));
 
-    // 4. VIA Encoder definitions (Encoder 0 = Left, Encoder 1 = Right)
-    send_qmk_set_encoder(uart_fd, 0, 0, 0, 0x0002); // Encoder 0 CW
-    send_qmk_set_encoder(uart_fd, 0, 0, 1, 0x0001); // Encoder 0 CCW
-    send_qmk_set_encoder(uart_fd, 0, 1, 0, 0x00AB); // Encoder 1 CW
-    send_qmk_set_encoder(uart_fd, 0, 1, 1, 0x00AC); // Encoder 1 CCW
+    for (int row = 100; row <= 105; row++) {
+        send_qmk_get_keycode(uart_fd, 0, row, row);
+    }
 
-    printf("[MK20-HUD] QMK hardware initialized successfully.\n");
+    printf("[MK20-HUD] QMK hardware initialized successfully (rows 100..108 unbound to HID on layers 0..3).\n");
     fflush(stdout);
 }
 
