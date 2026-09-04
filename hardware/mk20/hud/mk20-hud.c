@@ -36,10 +36,13 @@
 #include <sys/time.h>
 #include <netinet/in.h>
 #include <linux/fb.h>
+#include <linux/input.h>
 #include <math.h>
 #include <signal.h>
 #include <errno.h>
 
+#undef KEY_W
+#undef KEY_H
 #define KEY_W 128
 #define KEY_H 128
 #define KEY_FB_BYTES (KEY_W * KEY_H * 2) // 32,768 bytes
@@ -1596,42 +1599,56 @@ static void parse_qmk_byte(uint8_t byte) {
             uint8_t sum = 0;
             for (int i = 0; i < s_dataLen; i++) sum += s_dataBuf[i];
 
-            if (sum == s_checksum && s_dataLen >= 4 && s_dataBuf[0] == 0x16) {
-                uint8_t pressed = s_dataBuf[1];
-                uint8_t row = s_dataBuf[2];
-                uint8_t col = s_dataBuf[3];
+            if (sum == s_checksum) {
+                if (s_dataLen >= 4 && s_dataBuf[0] == 0x16) {
+                    uint8_t pressed = s_dataBuf[1];
+                    uint8_t row = s_dataBuf[2];
+                    uint8_t col = s_dataBuf[3];
 
-                printf("[QMK RX] row=%u col=%u pressed=%u\n", row, col, pressed);
+                    printf("[QMK RX] row=%u col=%u pressed=%u\n", row, col, pressed);
+                    fflush(stdout);
+
+                    // Left Rotary Knob (rows 100, 101, 102)
+                    if (row == 100) {
+                        if (col == 100 || col == 0) {
+                            on_left_knob_click(); // Left Knob Push Click
+                        } else if (col == 1) {
+                            on_left_knob(+1);     // Left Knob CW
+                        } else {
+                            on_left_knob(-1);     // Left Knob CCW
+                        }
+                    } else if (row == 101) {
+                        on_left_knob(-1);         // Left Knob CCW (smooth 15 deg step)
+                    } else if (row == 102) {
+                        on_left_knob(+1);         // Left Knob CW (smooth 15 deg step)
+                    }
+                    // Right Rotary Knob (rows 103, 104, 105)
+                    else if (row == 103) {
+                        if (col == 103 || col == 0) {
+                            on_right_knob_click(); // Right Knob Push Click
+                        } else if (col == 1) {
+                            on_right_knob(+1);     // Right Knob CW
+                        } else {
+                            on_right_knob(-1);     // Right Knob CCW
+                        }
+                    } else if (row == 104) {
+                        on_right_knob(-1);         // Right Knob CCW
+                    } else if (row == 105) {
+                        on_right_knob(+1);         // Right Knob CW
+                    }
+                    // Direct Instant Switch Contact (Keys 1..20)
+                    else if (row < 4 && col < 5) {
+                        on_key_event(row, col, pressed != 0);
+                    }
+                } else {
+                    printf("[QMK RX OTHER] cmd=0x%02X len=%u: ", s_dataBuf[0], s_dataLen);
+                    for (int i = 0; i < s_dataLen; i++) printf("%02X ", s_dataBuf[i]);
+                    printf("\n");
+                    fflush(stdout);
+                }
+            } else {
+                printf("[QMK CHECKSUM ERR] sum=0x%02X expected=0x%02X\n", sum, s_checksum);
                 fflush(stdout);
-
-                // Left Rotary Knob (rows 100, 101, 102)
-                if (row == 100) {
-                    if (col == 1 || pressed == 1) {
-                        on_left_knob(+1); // CW
-                    } else {
-                        on_left_knob(-1); // CCW
-                    }
-                } else if (row == 101) {
-                    on_left_knob(+1); // CW
-                } else if (row == 102) {
-                    on_left_knob_click(); // Left Click
-                }
-                // Right Rotary Knob (rows 103, 104, 105)
-                else if (row == 103) {
-                    if (col == 1 || pressed == 1) {
-                        on_right_knob(+1); // CW
-                    } else {
-                        on_right_knob(-1); // CCW
-                    }
-                } else if (row == 104) {
-                    on_right_knob(+1); // CW
-                } else if (row == 105) {
-                    on_right_knob_click(); // Right Click
-                }
-                // Direct Instant Switch Contact (Keys 1..20)
-                else if (row < 4 && col < 5) {
-                    on_key_event(row, col, pressed != 0);
-                }
             }
         }
         s_parse_state = STATE_HEADER1;
@@ -1671,6 +1688,86 @@ static void handle_udp_packet(const char *buf, int len) {
         g_state.dial_until_ms = get_time_ms() + 1000;
         g_dirty_top = 1;
     }
+}
+
+// QMK / VIA Hardware Initialization Helpers
+static void send_qmk_frame(int fd, const uint8_t *data, uint8_t len) {
+    if (fd < 0) return;
+    uint8_t frame[64];
+    uint8_t sum = 0;
+    int idx = 0;
+
+    frame[idx++] = 0xAA;
+    frame[idx++] = 0x55;
+    frame[idx++] = 0x00; // placeholder for sum
+    frame[idx++] = len;
+    frame[idx++] = (uint8_t)(0xFF - len);
+
+    for (int i = 0; i < len; i++) {
+        frame[idx++] = data[i];
+        sum += data[i];
+    }
+
+    frame[2] = sum;
+
+    frame[idx++] = 0xF5;
+    frame[idx++] = 0x5F;
+
+    write(fd, frame, idx);
+    usleep(1000); // 1ms delay between VIA packets
+}
+
+static void send_qmk_set_keycode(int fd, uint8_t layer, uint8_t row, uint8_t col, uint16_t keycode) {
+    uint8_t data[6];
+    data[0] = 0x05; // id_dynamic_keymap_set_keycode
+    data[1] = layer;
+    data[2] = row;
+    data[3] = col;
+    data[4] = (uint8_t)(keycode >> 8);
+    data[5] = (uint8_t)(keycode & 0xFF);
+    send_qmk_frame(fd, data, sizeof(data));
+}
+
+static void send_qmk_set_encoder(int fd, uint8_t layer, uint8_t encoder_idx, uint8_t dir, uint16_t keycode) {
+    uint8_t data[6];
+    data[0] = 0x15; // id_dynamic_keymap_set_encoder
+    data[1] = layer;
+    data[2] = encoder_idx;
+    data[3] = dir;
+    data[4] = (uint8_t)(keycode >> 8);
+    data[5] = (uint8_t)(keycode & 0xFF);
+    send_qmk_frame(fd, data, sizeof(data));
+}
+
+static void init_qmk_hardware(int uart_fd) {
+    if (uart_fd < 0) return;
+    printf("[MK20-HUD] Initializing QMK key matrix and rotary encoders...\n");
+
+    // 1. Matrix keys 0..3, 0..4 (20 keys)
+    for (int r = 0; r < 4; r++) {
+        for (int c = 0; c < 5; c++) {
+            send_qmk_set_keycode(uart_fd, 0, r, c, 0x000A); // KC_G
+        }
+    }
+
+    // 2. Left Knob bindings (rows 100, 101, 102)
+    send_qmk_set_keycode(uart_fd, 0, 100, 100, 0x0000);
+    send_qmk_set_keycode(uart_fd, 0, 101, 101, 0x0000);
+    send_qmk_set_keycode(uart_fd, 0, 102, 102, 0x0000);
+
+    // 3. Right Knob bindings (rows 103, 104, 105) matching /data/KeyboardInfo
+    send_qmk_set_keycode(uart_fd, 0, 103, 103, 0x00AE);
+    send_qmk_set_keycode(uart_fd, 0, 104, 104, 0x00AC);
+    send_qmk_set_keycode(uart_fd, 0, 105, 105, 0x00AB);
+
+    // 4. VIA Encoder definitions (Encoder 0 = Left, Encoder 1 = Right)
+    send_qmk_set_encoder(uart_fd, 0, 0, 0, 0x0002); // Encoder 0 CW
+    send_qmk_set_encoder(uart_fd, 0, 0, 1, 0x0001); // Encoder 0 CCW
+    send_qmk_set_encoder(uart_fd, 0, 1, 0, 0x00AB); // Encoder 1 CW
+    send_qmk_set_encoder(uart_fd, 0, 1, 1, 0x00AC); // Encoder 1 CCW
+
+    printf("[MK20-HUD] QMK hardware initialized successfully.\n");
+    fflush(stdout);
 }
 
 int main(int argc, char *argv[]) {
@@ -1756,38 +1853,25 @@ int main(int argc, char *argv[]) {
         tcflush(uart_fd, TCIFLUSH);
         printf("[MK20-HUD] Connected to hardware UART /dev/ttyS1.\n");
 
-        // Initialize dynamic keymap on GD32 MCU
-        for (int r = 0; r < 4; r++) {
-            for (int c = 0; c < 5; c++) {
-                uint8_t data[6];
-                uint8_t frame[64];
-                data[0] = 0x05; // id_dynamic_keymap_set_keycode
-                data[1] = 0;    // layer 0
-                data[2] = r;
-                data[3] = c;
-                data[4] = 0x00;
-                data[5] = 0x0A; // KC_G
-                uint8_t sum = 0;
-                int idx = 0;
-                frame[idx++] = 0xAA;
-                frame[idx++] = 0x55;
-                frame[idx++] = 0x00;
-                frame[idx++] = sizeof(data);
-                frame[idx++] = 0xFF - sizeof(data);
-                for (int d = 0; d < (int)sizeof(data); d++) {
-                    frame[idx++] = data[d];
-                    sum += data[d];
-                }
-                frame[2] = sum;
-                frame[idx++] = 0xF5;
-                frame[idx++] = 0x5F;
-                write(uart_fd, frame, idx);
-                usleep(500);
-            }
+        // Initialize dynamic keymap and rotary encoders on GD32 MCU
+        init_qmk_hardware(uart_fd);
+    }
+
+    // 5. Open Input Event Devices (/dev/input/event0 .. event3)
+    int ev_fds[4] = {-1, -1, -1, -1};
+    int ev_pfd_idx[4] = {-1, -1, -1, -1};
+    for (int e = 0; e < 4; e++) {
+        char path[32];
+        snprintf(path, sizeof(path), "/dev/input/event%d", e);
+        ev_fds[e] = open(path, O_RDONLY | O_NONBLOCK);
+        if (ev_fds[e] >= 0) {
+            char name[64] = "unknown";
+            ioctl(ev_fds[e], EVIOCGNAME(sizeof(name)), name);
+            printf("[MK20-HUD] Listening on %s: '%s' (fd %d)\n", path, name, ev_fds[e]);
         }
     }
 
-    // 5. Open UDP Socket
+    // 6. Open UDP Socket
     int sockfd = socket(AF_INET, SOCK_DGRAM, 0);
     if (sockfd >= 0) {
         int flags = fcntl(sockfd, F_GETFL, 0);
@@ -1800,13 +1884,28 @@ int main(int argc, char *argv[]) {
         bind(sockfd, (const struct sockaddr *)&servaddr, sizeof(servaddr));
     }
 
-    // 6. Event Loop with Animation & Telemetry Timers
-    struct pollfd pfd[2];
-    pfd[0].fd = uart_fd;
-    pfd[0].events = POLLIN;
-    pfd[1].fd = sockfd;
-    pfd[1].events = POLLIN;
-    int pfd_count = (sockfd >= 0) ? 2 : 1;
+    // 7. Event Loop with Animation & Telemetry Timers
+    struct pollfd pfd[8];
+    int pfd_count = 0;
+
+    pfd[pfd_count].fd = uart_fd;
+    pfd[pfd_count].events = POLLIN;
+    int uart_pfd_idx = pfd_count++;
+
+    int udp_pfd_idx = -1;
+    if (sockfd >= 0) {
+        pfd[pfd_count].fd = sockfd;
+        pfd[pfd_count].events = POLLIN;
+        udp_pfd_idx = pfd_count++;
+    }
+
+    for (int e = 0; e < 4; e++) {
+        if (ev_fds[e] >= 0) {
+            pfd[pfd_count].fd = ev_fds[e];
+            pfd[pfd_count].events = POLLIN;
+            ev_pfd_idx[e] = pfd_count++;
+        }
+    }
 
     uint8_t uart_buf[128];
     char udp_buf[512];
@@ -1820,17 +1919,49 @@ int main(int argc, char *argv[]) {
 
         if (ret > 0) {
             // Hardware UART (GD32 MCU contact) - drain entire FIFO
-            if (pfd[0].revents & POLLIN) {
+            if (uart_pfd_idx >= 0 && (pfd[uart_pfd_idx].revents & POLLIN)) {
                 int n;
                 while ((n = read(uart_fd, uart_buf, sizeof(uart_buf))) > 0) {
+                    printf("[UART RX %d B] ", n);
+                    for (int i = 0; i < n; i++) printf("%02X ", uart_buf[i]);
+                    printf("\n");
+                    fflush(stdout);
                     for (int i = 0; i < n; i++) {
                         parse_qmk_byte(uart_buf[i]);
                     }
                 }
             }
 
+            // Input Event Devices
+            for (int e = 0; e < 4; e++) {
+                if (ev_pfd_idx[e] >= 0 && (pfd[ev_pfd_idx[e]].revents & POLLIN)) {
+                    struct input_event evs[16];
+                    int n = read(ev_fds[e], evs, sizeof(evs));
+                    if (n > 0) {
+                        int count = n / (int)sizeof(struct input_event);
+                        for (int i = 0; i < count; i++) {
+                            if (evs[i].type == 0) continue; // Skip EV_SYN
+                            printf("[INPUT EV%d] type=%u code=%u val=%d\n", e, evs[i].type, evs[i].code, evs[i].value);
+                            fflush(stdout);
+                            if (evs[i].type == EV_REL) {
+                                if (evs[i].value > 0) on_right_knob(+1);
+                                else if (evs[i].value < 0) on_right_knob(-1);
+                            } else if (evs[i].type == EV_KEY && evs[i].value == 1) {
+                                if (evs[i].code == 28 || evs[i].code == 352) { // ENTER / OK
+                                    on_right_knob_click();
+                                } else if (evs[i].code == 115 || evs[i].code == 103) { // Vol Up / Up
+                                    on_right_knob(+1);
+                                } else if (evs[i].code == 114 || evs[i].code == 108) { // Vol Down / Down
+                                    on_right_knob(-1);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             // UDP Packet - drain socket
-            if (pfd_count > 1 && (pfd[1].revents & POLLIN)) {
+            if (udp_pfd_idx >= 0 && (pfd[udp_pfd_idx].revents & POLLIN)) {
                 struct sockaddr_in cliaddr;
                 socklen_t len = sizeof(cliaddr);
                 int n;
