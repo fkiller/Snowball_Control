@@ -234,6 +234,7 @@ typedef struct {
 } HudState;
 
 static HudState g_state;
+static uint8_t g_key_pressed[21] = {0};
 
 // Key mapping configuration for the 5x4 matrix
 static int get_mapped_key_index(int row, int col) {
@@ -255,10 +256,15 @@ static long long get_time_ms(void) {
     return (long long)tv.tv_sec * 1000 + tv.tv_usec / 1000;
 }
 
+static inline int get_fb_height(int stride_pixels) {
+    return (stride_pixels == TOP_W) ? TOP_H : KEY_H;
+}
+
 // Low-Level Drawing Primitives
 static void draw_char_16(uint16_t *fb, int stride_pixels, int x, int y, char c, uint16_t color, int scale) {
     if (c < 32 || c > 126) c = ' ';
     const uint8_t *glyph = font8x16[c - 32];
+    int max_h = get_fb_height(stride_pixels);
     for (int row = 0; row < 16; row++) {
         uint8_t bits = glyph[row];
         for (int col = 0; col < 8; col++) {
@@ -267,7 +273,7 @@ static void draw_char_16(uint16_t *fb, int stride_pixels, int x, int y, char c, 
                     for (int sx = 0; sx < scale; sx++) {
                         int px = x + col * scale + sx;
                         int py = y + row * scale + sy;
-                        if (px >= 0 && px < stride_pixels && py >= 0 && py < KEY_H) {
+                        if (px >= 0 && px < stride_pixels && py >= 0 && py < max_h) {
                             fb[py * stride_pixels + px] = color;
                         }
                     }
@@ -286,10 +292,55 @@ static void draw_string_16(uint16_t *fb, int stride_pixels, int x, int y, const 
     }
 }
 
+static void draw_string_clipped_16(uint16_t *fb, int stride_pixels, int x, int y, const char *str, uint16_t color, int scale, int clip_x, int clip_y, int clip_w, int clip_h) {
+    int cur_x = x;
+    int max_h = get_fb_height(stride_pixels);
+    while (*str) {
+        char c = *str;
+        if (c < 32 || c > 126) c = ' ';
+        const uint8_t *glyph = font8x16[c - 32];
+        for (int row = 0; row < 16; row++) {
+            uint8_t bits = glyph[row];
+            for (int col = 0; col < 8; col++) {
+                if (bits & (0x80 >> col)) {
+                    for (int sy = 0; sy < scale; sy++) {
+                        for (int sx = 0; sx < scale; sx++) {
+                            int px = cur_x + col * scale + sx;
+                            int py = y + row * scale + sy;
+                            if (px >= clip_x && px < (clip_x + clip_w) &&
+                                py >= clip_y && py < (clip_y + clip_h) &&
+                                px >= 0 && px < stride_pixels && py >= 0 && py < max_h) {
+                                fb[py * stride_pixels + px] = color;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        cur_x += 8 * scale;
+        str++;
+    }
+}
+
+static void draw_string_centered_16(uint16_t *fb, int stride_pixels, int y, const char *str, uint16_t color, int scale) {
+    int len = strlen(str);
+    int x = (KEY_W - len * 8 * scale) / 2;
+    if (x < 2) x = 2;
+    draw_string_16(fb, stride_pixels, x, y, str, color, scale);
+}
+
+static void draw_badge_right_16(uint16_t *fb, int stride_pixels, int y, const char *str, uint16_t color) {
+    int len = strlen(str);
+    int x = KEY_W - 6 - len * 8;
+    if (x < 0) x = 0;
+    draw_string_16(fb, stride_pixels, x, y, str, color, 1);
+}
+
 static void draw_rect_16(uint16_t *fb, int stride_pixels, int x, int y, int w, int h, uint16_t color) {
+    int max_h = get_fb_height(stride_pixels);
     for (int dy = 0; dy < h; dy++) {
         int py = y + dy;
-        if (py < 0 || py >= KEY_H) continue;
+        if (py < 0 || py >= max_h) continue;
         for (int dx = 0; dx < w; dx++) {
             int px = x + dx;
             if (px >= 0 && px < stride_pixels) {
@@ -307,6 +358,7 @@ static void draw_border_16(uint16_t *fb, int stride_pixels, int x, int y, int w,
 }
 
 static void draw_icon12x12(uint16_t *fb, int stride_pixels, int x, int y, const uint16_t *icon, uint16_t color, int scale) {
+    int max_h = get_fb_height(stride_pixels);
     for (int r = 0; r < 12; r++) {
         uint16_t bits = icon[r];
         for (int c = 0; c < 12; c++) {
@@ -315,7 +367,7 @@ static void draw_icon12x12(uint16_t *fb, int stride_pixels, int x, int y, const 
                     for (int sx = 0; sx < scale; sx++) {
                         int px = x + c * scale + sx;
                         int py = y + r * scale + sy;
-                        if (px >= 0 && px < stride_pixels && py >= 0 && py < KEY_H) {
+                        if (px >= 0 && px < stride_pixels && py >= 0 && py < max_h) {
                             fb[py * stride_pixels + px] = color;
                         }
                     }
@@ -349,23 +401,25 @@ static void render_pattern_1(void) {
     uint16_t *fb = g_key_fbs[1];
     if (!fb) return;
 
+    int is_pressed = g_key_pressed[1];
     uint16_t bg = g_pat1_toggle ? COLOR_EMERALD : COLOR_CARD;
-    uint16_t border = g_pat1_toggle ? COLOR_WHITE : COLOR_EMERALD;
+    uint16_t border = is_pressed ? COLOR_WHITE : (g_pat1_toggle ? COLOR_WHITE : COLOR_EMERALD);
     uint16_t text_col = g_pat1_toggle ? COLOR_BLACK : COLOR_WHITE;
     uint16_t badge_col = g_pat1_toggle ? COLOR_BLACK : COLOR_EMERALD;
+    int border_thick = is_pressed ? 3 : (g_pat1_toggle ? 3 : 2);
 
     draw_rect_16(fb, KEY_W, 0, 0, KEY_W, KEY_H, bg);
-    draw_border_16(fb, KEY_W, 2, 2, KEY_W - 4, KEY_H - 4, 3, border);
+    draw_border_16(fb, KEY_W, 0, 0, KEY_W, KEY_H, border_thick, border);
 
-    draw_string_16(fb, KEY_W, 8, 8, "#01", badge_col, 1);
-    draw_string_16(fb, KEY_W, KEY_W - 56, 8, "TOGGLE", badge_col, 1);
+    draw_string_16(fb, KEY_W, 6, 6, "#01", badge_col, 1);
+    draw_badge_right_16(fb, KEY_W, 6, "TOGGLE", badge_col);
 
     // Same Text always: MUTE
-    draw_string_16(fb, KEY_W, 32, 48, "MUTE", text_col, 2);
+    draw_string_16(fb, KEY_W, 32, 44, "MUTE", text_col, 2);
 
     // Subtitle indicator
-    const char *stateStr = g_pat1_toggle ? "[ ACTIVE ]" : "[ INACTIVE ]";
-    draw_string_16(fb, KEY_W, (KEY_W - strlen(stateStr)*8)/2, 86, stateStr, text_col, 1);
+    const char *stateStr = g_pat1_toggle ? "[ ACTIVE ]" : "[INACTIVE]";
+    draw_string_centered_16(fb, KEY_W, 86, stateStr, text_col, 1);
 
     flush_key(1);
 }
@@ -377,21 +431,23 @@ static void render_pattern_2(void) {
     uint16_t *fb = g_key_fbs[2];
     if (!fb) return;
 
+    int is_pressed = g_key_pressed[2];
     uint16_t bg = g_pat2_toggle ? COLOR_EMERALD_BG : COLOR_ROSE_BG;
-    uint16_t border = g_pat2_toggle ? COLOR_EMERALD : COLOR_ROSE;
+    uint16_t border = is_pressed ? COLOR_WHITE : (g_pat2_toggle ? COLOR_EMERALD : COLOR_ROSE);
     uint16_t text_col = COLOR_WHITE;
     const char *label = g_pat2_toggle ? "MIC ON" : "MIC OFF";
-    const char *sublabel = g_pat2_toggle ? "UNMUTED" : "MUTED";
+    const char *sublabel = g_pat2_toggle ? "[UNMUTED]" : "[ MUTED ]";
+    int border_thick = is_pressed ? 3 : 2;
 
     draw_rect_16(fb, KEY_W, 0, 0, KEY_W, KEY_H, bg);
-    draw_border_16(fb, KEY_W, 2, 2, KEY_W - 4, KEY_H - 4, 3, border);
+    draw_border_16(fb, KEY_W, 0, 0, KEY_W, KEY_H, border_thick, border);
 
-    draw_string_16(fb, KEY_W, 8, 8, "#02", border, 1);
-    draw_string_16(fb, KEY_W, KEY_W - 48, 8, "ON/OFF", border, 1);
+    draw_string_16(fb, KEY_W, 6, 6, "#02", border, 1);
+    draw_badge_right_16(fb, KEY_W, 6, "ON/OFF", border);
 
     // Different Text
-    draw_string_16(fb, KEY_W, (KEY_W - strlen(label)*16)/2, 48, label, text_col, 2);
-    draw_string_16(fb, KEY_W, (KEY_W - strlen(sublabel)*8)/2, 86, sublabel, border, 1);
+    draw_string_centered_16(fb, KEY_W, 44, label, text_col, 2);
+    draw_string_centered_16(fb, KEY_W, 86, sublabel, border, 1);
 
     flush_key(2);
 }
@@ -406,16 +462,17 @@ static void render_pattern_7(void) {
     uint16_t bg = g_pat7_shift ? COLOR_PURPLE : COLOR_CARD;
     uint16_t border = g_pat7_shift ? COLOR_WHITE : COLOR_PURPLE;
     uint16_t text_col = g_pat7_shift ? COLOR_BLACK : COLOR_WHITE;
+    uint16_t badge_col = g_pat7_shift ? COLOR_BLACK : COLOR_PURPLE;
 
     draw_rect_16(fb, KEY_W, 0, 0, KEY_W, KEY_H, bg);
-    draw_border_16(fb, KEY_W, 2, 2, KEY_W - 4, KEY_H - 4, g_pat7_shift ? 4 : 2, border);
+    draw_border_16(fb, KEY_W, 0, 0, KEY_W, KEY_H, g_pat7_shift ? 3 : 2, border);
 
-    draw_string_16(fb, KEY_W, 8, 8, "#03", g_pat7_shift ? COLOR_BLACK : COLOR_PURPLE, 1);
-    draw_string_16(fb, KEY_W, KEY_W - 48, 8, "SHIFT", g_pat7_shift ? COLOR_BLACK : COLOR_PURPLE, 1);
+    draw_string_16(fb, KEY_W, 6, 6, "#03", badge_col, 1);
+    draw_badge_right_16(fb, KEY_W, 6, "SHIFT", badge_col);
 
-    draw_string_16(fb, KEY_W, 24, 48, "TURBO", text_col, 2);
+    draw_string_centered_16(fb, KEY_W, 44, "TURBO", text_col, 2);
     const char *stateStr = g_pat7_shift ? "<HOLDING>" : "[PUSH/HOLD]";
-    draw_string_16(fb, KEY_W, (KEY_W - strlen(stateStr)*8)/2, 86, stateStr, text_col, 1);
+    draw_string_centered_16(fb, KEY_W, 86, stateStr, text_col, 1);
 
     flush_key(3);
 }
@@ -427,27 +484,26 @@ static void render_pattern_10(void) {
     uint16_t *fb = g_key_fbs[4];
     if (!fb) return;
 
-    // Pulse brightness calculation
+    int is_pressed = g_key_pressed[4];
     float pulse = (sinf(g_pat10_pulse_val * 0.1f) + 1.0f) * 0.5f; // 0..1
     uint16_t bg = (pulse > 0.6f) ? COLOR_ROSE_BG : COLOR_CARD;
-    uint16_t heart_col = (pulse > 0.6f) ? COLOR_WHITE : COLOR_ROSE;
+    uint16_t heart_col = is_pressed ? COLOR_WHITE : ((pulse > 0.6f) ? COLOR_WHITE : COLOR_ROSE);
+    int border_thick = is_pressed ? 3 : (int)(2 + pulse * 2);
 
     draw_rect_16(fb, KEY_W, 0, 0, KEY_W, KEY_H, bg);
-    draw_border_16(fb, KEY_W, 2, 2, KEY_W - 4, KEY_H - 4, (int)(1 + pulse * 4), heart_col);
+    draw_border_16(fb, KEY_W, 0, 0, KEY_W, KEY_H, border_thick, heart_col);
 
-    draw_string_16(fb, KEY_W, 8, 8, "#04", heart_col, 1);
-    draw_string_16(fb, KEY_W, KEY_W - 48, 8, "PULSE", heart_col, 1);
+    draw_string_16(fb, KEY_W, 6, 6, "#04", heart_col, 1);
+    draw_badge_right_16(fb, KEY_W, 6, "PULSE", heart_col);
 
-    // Draw pulsating Heart Icon (scale 2 or 3)
     int scale = (pulse > 0.7f) ? 3 : 2;
     int hx = (KEY_W - 12 * scale) / 2;
-    int hy = 40;
+    int hy = 36;
     draw_icon12x12(fb, KEY_W, hx, hy, icon12x12_heart, heart_col, scale);
 
-    // BPM Label
     char bpmStr[16];
     snprintf(bpmStr, sizeof(bpmStr), "BPM %d", g_pat10_metronome_bpm);
-    draw_string_16(fb, KEY_W, (KEY_W - strlen(bpmStr)*8)/2, 88, bpmStr, COLOR_WHITE, 1);
+    draw_string_centered_16(fb, KEY_W, 86, bpmStr, COLOR_WHITE, 1);
 
     flush_key(4);
 }
@@ -460,24 +516,24 @@ static void render_pattern_3(void) {
     if (!fb) return;
 
     static const char *modes[4] = {"PROD", "STAG", "DEV ", "LOCL"};
+    int is_pressed = g_key_pressed[5];
 
     draw_rect_16(fb, KEY_W, 0, 0, KEY_W, KEY_H, COLOR_CARD);
-    draw_border_16(fb, KEY_W, 2, 2, KEY_W - 4, KEY_H - 4, 2, COLOR_CARD_BORDER);
+    draw_border_16(fb, KEY_W, 0, 0, KEY_W, KEY_H, is_pressed ? 3 : 2, is_pressed ? COLOR_WHITE : COLOR_CYAN);
 
-    draw_string_16(fb, KEY_W, 8, 6, "#05", COLOR_CYAN, 1);
-    draw_string_16(fb, KEY_W, KEY_W - 48, 6, "MODES", COLOR_CYAN, 1);
+    draw_string_16(fb, KEY_W, 6, 6, "#05", COLOR_CYAN, 1);
+    draw_badge_right_16(fb, KEY_W, 6, "MODES", COLOR_CYAN);
 
     for (int i = 0; i < 4; i++) {
-        int y = 28 + i * 24;
+        int y = 24 + i * 21;
         if (i == g_pat3_mode_idx) {
-            // Highlighted Row
-            draw_rect_16(fb, KEY_W, 6, y - 2, KEY_W - 12, 20, COLOR_CYAN_BG);
-            draw_border_16(fb, KEY_W, 6, y - 2, KEY_W - 12, 20, 1, COLOR_CYAN);
-            draw_string_16(fb, KEY_W, 12, y, ">", COLOR_CYAN, 1);
-            draw_string_16(fb, KEY_W, 28, y, modes[i], COLOR_WHITE, 1);
-            draw_string_16(fb, KEY_W, KEY_W - 28, y, "*", COLOR_CYAN, 1);
+            draw_rect_16(fb, KEY_W, 4, y - 2, KEY_W - 8, 19, COLOR_CYAN_BG);
+            draw_border_16(fb, KEY_W, 4, y - 2, KEY_W - 8, 19, 1, COLOR_CYAN);
+            draw_string_16(fb, KEY_W, 8, y, ">", COLOR_CYAN, 1);
+            draw_string_16(fb, KEY_W, 22, y, modes[i], COLOR_WHITE, 1);
+            draw_string_16(fb, KEY_W, KEY_W - 16, y, "*", COLOR_CYAN, 1);
         } else {
-            draw_string_16(fb, KEY_W, 28, y, modes[i], COLOR_TEXT_DIM, 1);
+            draw_string_16(fb, KEY_W, 22, y, modes[i], COLOR_TEXT_DIM, 1);
         }
     }
 
@@ -495,23 +551,24 @@ static void render_pattern_4(void) {
     int cur = g_pat4_mode_idx;
     int prev = (cur + 3) % 4;
     int next = (cur + 1) % 4;
+    int is_pressed = g_key_pressed[6];
 
     draw_rect_16(fb, KEY_W, 0, 0, KEY_W, KEY_H, COLOR_CARD);
-    draw_border_16(fb, KEY_W, 2, 2, KEY_W - 4, KEY_H - 4, 2, COLOR_AMBER);
+    draw_border_16(fb, KEY_W, 0, 0, KEY_W, KEY_H, is_pressed ? 3 : 2, is_pressed ? COLOR_WHITE : COLOR_AMBER);
 
-    draw_string_16(fb, KEY_W, 8, 6, "#06", COLOR_AMBER, 1);
-    draw_string_16(fb, KEY_W, KEY_W - 48, 6, "WHEEL", COLOR_AMBER, 1);
+    draw_string_16(fb, KEY_W, 6, 6, "#06", COLOR_AMBER, 1);
+    draw_badge_right_16(fb, KEY_W, 6, "WHEEL", COLOR_AMBER);
 
     // Small Prev at top
-    draw_string_16(fb, KEY_W, (KEY_W - strlen(modes[prev])*8)/2, 26, modes[prev], COLOR_TEXT_DIM, 1);
+    draw_string_centered_16(fb, KEY_W, 24, modes[prev], COLOR_TEXT_DIM, 1);
 
     // Large Centered Selected with highlighted card
-    draw_rect_16(fb, KEY_W, 8, 48, KEY_W - 16, 36, COLOR_AMBER_BG);
-    draw_border_16(fb, KEY_W, 8, 48, KEY_W - 16, 36, 2, COLOR_AMBER);
-    draw_string_16(fb, KEY_W, (KEY_W - strlen(modes[cur])*16)/2, 53, modes[cur], COLOR_WHITE, 2);
+    draw_rect_16(fb, KEY_W, 6, 44, KEY_W - 12, 34, COLOR_AMBER_BG);
+    draw_border_16(fb, KEY_W, 6, 44, KEY_W - 12, 34, 2, COLOR_AMBER);
+    draw_string_centered_16(fb, KEY_W, 46, modes[cur], COLOR_WHITE, 2);
 
     // Small Next at bottom
-    draw_string_16(fb, KEY_W, (KEY_W - strlen(modes[next])*8)/2, 98, modes[next], COLOR_TEXT_DIM, 1);
+    draw_string_centered_16(fb, KEY_W, 86, modes[next], COLOR_TEXT_DIM, 1);
 
     flush_key(6);
 }
@@ -523,16 +580,18 @@ static void render_pattern_5(void) {
     uint16_t *fb = g_key_fbs[7];
     if (!fb) return;
 
-    draw_rect_16(fb, KEY_W, 0, 0, KEY_W, KEY_H, COLOR_CARD);
-    draw_border_16(fb, KEY_W, 2, 2, KEY_W - 4, KEY_H - 4, 2, COLOR_CARD_BORDER);
+    int is_pressed = g_key_pressed[7];
 
-    draw_string_16(fb, KEY_W, 8, 4, "#07", COLOR_INDIGO, 1);
-    draw_string_16(fb, KEY_W, KEY_W - 48, 4, "2x2", COLOR_INDIGO, 1);
+    draw_rect_16(fb, KEY_W, 0, 0, KEY_W, KEY_H, COLOR_CARD);
+    draw_border_16(fb, KEY_W, 0, 0, KEY_W, KEY_H, is_pressed ? 3 : 2, is_pressed ? COLOR_WHITE : COLOR_INDIGO);
+
+    draw_string_16(fb, KEY_W, 6, 6, "#07", COLOR_INDIGO, 1);
+    draw_badge_right_16(fb, KEY_W, 6, "2x2", COLOR_INDIGO);
 
     // 4 Quadrants
-    int qw = 54, qh = 46;
-    int qx[4] = {8, 66, 8, 66};
-    int qy[4] = {24, 24, 74, 74};
+    int qw = 54, qh = 42;
+    int qx[4] = {6, 68, 6, 68};
+    int qy[4] = {24, 24, 70, 70};
     const uint16_t *icons[4] = {icon12x12_wifi, icon12x12_ble, icon12x12_usb, icon12x12_eth};
     const char *names[4] = {"WIFI", "BLE", "USB", "ETH"};
 
@@ -545,8 +604,9 @@ static void render_pattern_5(void) {
         draw_rect_16(fb, KEY_W, qx[i], qy[i], qw, qh, qbg);
         draw_border_16(fb, KEY_W, qx[i], qy[i], qw, qh, active ? 2 : 1, qborder);
 
-        draw_icon12x12(fb, KEY_W, qx[i] + (qw - 12)/2, qy[i] + 8, icons[i], qcol, 1);
-        draw_string_16(fb, KEY_W, qx[i] + (qw - strlen(names[i])*8)/2, qy[i] + 26, names[i], qcol, 1);
+        draw_icon12x12(fb, KEY_W, qx[i] + (qw - 12)/2, qy[i] + 5, icons[i], qcol, 1);
+        int name_x = qx[i] + (qw - strlen(names[i])*8)/2;
+        draw_string_16(fb, KEY_W, name_x, qy[i] + 21, names[i], qcol, 1);
     }
 
     flush_key(7);
@@ -565,26 +625,27 @@ static void render_pattern_6(void) {
     int cur = g_pat6_icon_idx;
     int prev = (cur + 3) % 4;
     int next = (cur + 1) % 4;
+    int is_pressed = g_key_pressed[8];
 
     draw_rect_16(fb, KEY_W, 0, 0, KEY_W, KEY_H, COLOR_CARD);
-    draw_border_16(fb, KEY_W, 2, 2, KEY_W - 4, KEY_H - 4, 2, COLOR_EMERALD);
+    draw_border_16(fb, KEY_W, 0, 0, KEY_W, KEY_H, is_pressed ? 3 : 2, is_pressed ? COLOR_WHITE : COLOR_EMERALD);
 
-    draw_string_16(fb, KEY_W, 8, 6, "#08", COLOR_EMERALD, 1);
-    draw_string_16(fb, KEY_W, KEY_W - 56, 6, "H-CAR", COLOR_EMERALD, 1);
+    draw_string_16(fb, KEY_W, 6, 6, "#08", COLOR_EMERALD, 1);
+    draw_badge_right_16(fb, KEY_W, 6, "H-CAR", COLOR_EMERALD);
 
     // Left Small Prev Icon
-    draw_icon12x12(fb, KEY_W, 14, 46, icons[prev], COLOR_TEXT_DIM, 1);
+    draw_icon12x12(fb, KEY_W, 14, 40, icons[prev], COLOR_TEXT_DIM, 1);
 
     // Center Large Selected Icon (scale 2) inside bright card
-    draw_rect_16(fb, KEY_W, 44, 32, 40, 48, COLOR_EMERALD_BG);
-    draw_border_16(fb, KEY_W, 44, 32, 40, 48, 2, COLOR_EMERALD);
-    draw_icon12x12(fb, KEY_W, 52, 38, icons[cur], COLOR_WHITE, 2);
+    draw_rect_16(fb, KEY_W, 44, 26, 40, 48, COLOR_EMERALD_BG);
+    draw_border_16(fb, KEY_W, 44, 26, 40, 48, 2, COLOR_EMERALD);
+    draw_icon12x12(fb, KEY_W, 52, 34, icons[cur], COLOR_WHITE, 2);
 
     // Right Small Next Icon
-    draw_icon12x12(fb, KEY_W, KEY_W - 26, 46, icons[next], COLOR_TEXT_DIM, 1);
+    draw_icon12x12(fb, KEY_W, KEY_W - 26, 40, icons[next], COLOR_TEXT_DIM, 1);
 
     // Name Label below
-    draw_string_16(fb, KEY_W, (KEY_W - strlen(names[cur])*8)/2, 92, names[cur], COLOR_WHITE, 1);
+    draw_string_centered_16(fb, KEY_W, 86, names[cur], COLOR_WHITE, 1);
 
     flush_key(8);
 }
@@ -596,24 +657,26 @@ static void render_pattern_8(void) {
     uint16_t *fb = g_key_fbs[9];
     if (!fb) return;
 
-    draw_rect_16(fb, KEY_W, 0, 0, KEY_W, KEY_H, COLOR_CARD);
-    draw_border_16(fb, KEY_W, 2, 2, KEY_W - 4, KEY_H - 4, 2, COLOR_CYAN);
+    int is_pressed = g_key_pressed[9];
 
-    draw_string_16(fb, KEY_W, 8, 8, "#09", COLOR_CYAN, 1);
-    draw_string_16(fb, KEY_W, KEY_W - 48, 8, "CPU", COLOR_CYAN, 1);
+    draw_rect_16(fb, KEY_W, 0, 0, KEY_W, KEY_H, COLOR_CARD);
+    draw_border_16(fb, KEY_W, 0, 0, KEY_W, KEY_H, is_pressed ? 3 : 2, is_pressed ? COLOR_WHITE : COLOR_CYAN);
+
+    draw_string_16(fb, KEY_W, 6, 6, "#09", COLOR_CYAN, 1);
+    draw_badge_right_16(fb, KEY_W, 6, "CPU", COLOR_CYAN);
 
     // Big Number: e.g. " 34% "
     char numStr[16];
     snprintf(numStr, sizeof(numStr), "%2d%%", g_pat8_cpu_pct);
     uint16_t numCol = (g_pat8_cpu_pct > 70) ? COLOR_ROSE : ((g_pat8_cpu_pct > 40) ? COLOR_AMBER : COLOR_EMERALD);
-    draw_string_16(fb, KEY_W, (KEY_W - strlen(numStr)*16)/2, 44, numStr, numCol, 2);
+    draw_string_centered_16(fb, KEY_W, 40, numStr, numCol, 2);
 
     // Horizontal Level Gauge Bar
-    int bar_w = KEY_W - 24;
+    int bar_w = KEY_W - 20;
     int fill_w = (bar_w * g_pat8_cpu_pct) / 100;
-    draw_rect_16(fb, KEY_W, 12, 86, bar_w, 12, COLOR_BG);
-    draw_border_16(fb, KEY_W, 12, 86, bar_w, 12, 1, COLOR_CARD_BORDER);
-    draw_rect_16(fb, KEY_W, 14, 88, fill_w, 8, numCol);
+    draw_rect_16(fb, KEY_W, 10, 84, bar_w, 10, COLOR_BG);
+    draw_border_16(fb, KEY_W, 10, 84, bar_w, 10, 1, COLOR_CARD_BORDER);
+    draw_rect_16(fb, KEY_W, 11, 85, fill_w, 8, numCol);
 
     flush_key(9);
 }
@@ -625,26 +688,28 @@ static void render_pattern_9(void) {
     uint16_t *fb = g_key_fbs[10];
     if (!fb) return;
 
+    int is_pressed = g_key_pressed[10];
+
     draw_rect_16(fb, KEY_W, 0, 0, KEY_W, KEY_H, COLOR_CARD);
-    draw_border_16(fb, KEY_W, 2, 2, KEY_W - 4, KEY_H - 4, 2, COLOR_AMBER);
+    draw_border_16(fb, KEY_W, 0, 0, KEY_W, KEY_H, is_pressed ? 3 : 2, is_pressed ? COLOR_WHITE : COLOR_AMBER);
 
-    draw_string_16(fb, KEY_W, 8, 6, "#10", COLOR_AMBER, 1);
-    draw_string_16(fb, KEY_W, KEY_W - 56, 6, "GRAPH", COLOR_AMBER, 1);
+    draw_string_16(fb, KEY_W, 6, 6, "#10", COLOR_AMBER, 1);
+    draw_badge_right_16(fb, KEY_W, 6, "GRAPH", COLOR_AMBER);
 
-    // Sparkline Graph Frame (x: 8..118, y: 26..100 -> height 74)
-    int gx = 10, gy = 26, gw = 108, gh = 70;
+    // Sparkline Graph Frame (x: 6..121, y: 24..84 -> height 60)
+    int gx = 6, gy = 24, gw = KEY_W - 12, gh = 60;
     draw_rect_16(fb, KEY_W, gx, gy, gw, gh, COLOR_BG);
     draw_border_16(fb, KEY_W, gx, gy, gw, gh, 1, COLOR_CARD_BORDER);
 
     // Horizontal grid lines
-    for (int yline = gy + 15; yline < gy + gh; yline += 18) {
+    for (int yline = gy + 15; yline < gy + gh; yline += 15) {
         for (int x = gx + 2; x < gx + gw - 2; x += 4) {
             fb[yline * KEY_W + x] = COLOR_DARK_GRAY;
         }
     }
 
     // Render Histogram Bars
-    int bars = 30; // 30 bars, each 3px wide
+    int bars = 28;
     for (int b = 0; b < bars; b++) {
         int hist_idx = 60 - bars + b;
         int val = g_pat9_cpu_history[hist_idx];
@@ -652,7 +717,7 @@ static void render_pattern_9(void) {
         if (val > 100) val = 100;
 
         int bar_h = (val * (gh - 4)) / 100;
-        int bx = gx + 2 + b * 3 + (b / 2);
+        int bx = gx + 2 + b * 4;
         if (bx + 2 >= gx + gw) break;
 
         uint16_t bar_col = (val > 70) ? COLOR_ROSE : ((val > 40) ? COLOR_AMBER : COLOR_EMERALD);
@@ -660,11 +725,12 @@ static void render_pattern_9(void) {
             int py = gy + gh - 2 - h;
             fb[py * KEY_W + bx] = bar_col;
             fb[py * KEY_W + bx + 1] = bar_col;
+            fb[py * KEY_W + bx + 2] = bar_col;
         }
     }
 
-    // Sparkline Bottom Caption
-    draw_string_16(fb, KEY_W, 12, 104, "HIST: 60s REALTIME", COLOR_GRAY, 1);
+    // Bottom Caption (centered, NO overflow!)
+    draw_string_centered_16(fb, KEY_W, 92, "HIST: 60s", COLOR_GRAY, 1);
 
     flush_key(10);
 }
@@ -676,37 +742,34 @@ static void render_pattern_11(void) {
     uint16_t *fb = g_key_fbs[11];
     if (!fb) return;
 
-    draw_rect_16(fb, KEY_W, 0, 0, KEY_W, KEY_H, COLOR_CARD);
-    draw_border_16(fb, KEY_W, 2, 2, KEY_W - 4, KEY_H - 4, 2, COLOR_CYAN);
+    int is_pressed = g_key_pressed[11];
 
-    draw_string_16(fb, KEY_W, 8, 8, "#11", COLOR_CYAN, 1);
-    draw_string_16(fb, KEY_W, KEY_W - 48, 8, "DIAL", COLOR_CYAN, 1);
+    draw_rect_16(fb, KEY_W, 0, 0, KEY_W, KEY_H, COLOR_CARD);
+    draw_border_16(fb, KEY_W, 0, 0, KEY_W, KEY_H, is_pressed ? 3 : 2, is_pressed ? COLOR_WHITE : COLOR_CYAN);
+
+    draw_string_16(fb, KEY_W, 6, 6, "#11", COLOR_CYAN, 1);
+    draw_badge_right_16(fb, KEY_W, 6, "DIAL", COLOR_CYAN);
 
     // Rotary Gauge Icon
-    draw_icon12x12(fb, KEY_W, (KEY_W - 24)/2, 28, icon12x12_dial, COLOR_CYAN, 2);
+    draw_icon12x12(fb, KEY_W, (KEY_W - 24)/2, 22, icon12x12_dial, COLOR_CYAN, 2);
 
-    // Value display: e.g. "45%"
+    // Value display: e.g. " 45% "
     char valStr[16];
     snprintf(valStr, sizeof(valStr), "%3d%%", g_pat11_knob_val);
-    draw_string_16(fb, KEY_W, (KEY_W - strlen(valStr)*8)/2, 62, valStr, COLOR_WHITE, 1);
+    draw_string_centered_16(fb, KEY_W, 48, valStr, COLOR_WHITE, 1);
 
-    // Dial Effect Slider: | O [  ●  ] O |
-    // Track: x: 14..114 (width 100)
-    int tx = 14, ty = 84, tw = 100, th = 14;
+    // Dial Slider Track
+    int tx = 8, ty = 70, tw = KEY_W - 16, th = 14;
     draw_rect_16(fb, KEY_W, tx, ty, tw, th, COLOR_BG);
     draw_border_16(fb, KEY_W, tx, ty, tw, th, 1, COLOR_CARD_BORDER);
-
-    // Left and Right Detent Rings "O"
-    draw_string_16(fb, KEY_W, tx - 10, ty - 1, "|", COLOR_CYAN, 1);
-    draw_string_16(fb, KEY_W, tx + tw + 2, ty - 1, "|", COLOR_CYAN, 1);
 
     // Slider Knob position
     int kx = tx + 2 + ((tw - 16) * g_pat11_knob_val) / 100;
     draw_rect_16(fb, KEY_W, kx, ty + 2, 12, 10, COLOR_CYAN);
     draw_border_16(fb, KEY_W, kx, ty + 2, 12, 10, 1, COLOR_WHITE);
 
-    // Subtitle
-    draw_string_16(fb, KEY_W, 14, 106, "TURN ROTARY KNOB", COLOR_GRAY, 1);
+    // Bottom Subtitle (centered, NO overflow!)
+    draw_string_centered_16(fb, KEY_W, 92, "TURN KNOB", COLOR_GRAY, 1);
 
     flush_key(11);
 }
@@ -718,28 +781,29 @@ static void render_pattern_12(void) {
     uint16_t *fb = g_key_fbs[12];
     if (!fb) return;
 
-    static const char *msg = ">>> ANTIGRAVITY MK20 REALTIME MULTI-DISPLAY INTERACTION ENGINE <<<";
+    int is_pressed = g_key_pressed[12];
+    static const char *msg = ">>> ANTIGRAVITY MK20 REALTIME MULTI-DISPLAY INTERACTION ENGINE <<< ";
     int msg_len_px = strlen(msg) * 8;
 
     draw_rect_16(fb, KEY_W, 0, 0, KEY_W, KEY_H, COLOR_CARD);
-    draw_border_16(fb, KEY_W, 2, 2, KEY_W - 4, KEY_H - 4, 2, COLOR_INDIGO);
+    draw_border_16(fb, KEY_W, 0, 0, KEY_W, KEY_H, is_pressed ? 3 : 2, is_pressed ? COLOR_WHITE : COLOR_INDIGO);
 
-    draw_string_16(fb, KEY_W, 8, 8, "#12", COLOR_INDIGO, 1);
-    draw_string_16(fb, KEY_W, KEY_W - 56, 8, "SCROLL", COLOR_INDIGO, 1);
+    draw_string_16(fb, KEY_W, 6, 6, "#12", COLOR_INDIGO, 1);
+    draw_badge_right_16(fb, KEY_W, 6, "SCROLL", COLOR_INDIGO);
 
-    // Marquee Viewport Window (x: 8..120, y: 44..76)
-    int vx = 8, vy = 44, vw = KEY_W - 16, vh = 32;
+    // Marquee Viewport Window
+    int vx = 6, vy = 30, vw = KEY_W - 12, vh = 32;
     draw_rect_16(fb, KEY_W, vx, vy, vw, vh, COLOR_BG);
     draw_border_16(fb, KEY_W, vx, vy, vw, vh, 1, COLOR_INDIGO_BG);
 
-    // Render Scrolled Text with clipping
+    // Render Scrolled Text with strict viewport clipping
     int text_x = vx + 4 - (g_pat12_scroll_px % msg_len_px);
-    // Draw twice for seamless loop
-    draw_string_16(fb, KEY_W, text_x, vy + 8, msg, COLOR_WHITE, 1);
-    draw_string_16(fb, KEY_W, text_x + msg_len_px + 32, vy + 8, msg, COLOR_WHITE, 1);
+    draw_string_clipped_16(fb, KEY_W, text_x, vy + 8, msg, COLOR_WHITE, 1, vx + 2, vy + 2, vw - 4, vh - 4);
+    draw_string_clipped_16(fb, KEY_W, text_x + msg_len_px, vy + 8, msg, COLOR_WHITE, 1, vx + 2, vy + 2, vw - 4, vh - 4);
 
-    draw_string_16(fb, KEY_W, 14, 88, "PIXEL MARQUEE", COLOR_INDIGO, 1);
-    draw_string_16(fb, KEY_W, 14, 106, "KNOB CONTROLS", COLOR_GRAY, 1);
+    // Bottom Subtitles (centered, NO overflow!)
+    draw_string_centered_16(fb, KEY_W, 70, "MARQUEE", COLOR_INDIGO, 1);
+    draw_string_centered_16(fb, KEY_W, 90, "TURN KNOB", COLOR_GRAY, 1);
 
     flush_key(12);
 }
@@ -748,58 +812,60 @@ static void render_pattern_12(void) {
 // Auxiliary Keys: 13..20
 // =========================================================================
 static void render_aux_key(int key_idx) {
+    if (key_idx < 13 || key_idx > 20) return;
     uint16_t *fb = g_key_fbs[key_idx];
     if (!fb) return;
 
+    int is_pressed = g_key_pressed[key_idx];
     draw_rect_16(fb, KEY_W, 0, 0, KEY_W, KEY_H, COLOR_CARD);
-    draw_border_16(fb, KEY_W, 2, 2, KEY_W - 4, KEY_H - 4, 2, COLOR_CARD_BORDER);
+    draw_border_16(fb, KEY_W, 0, 0, KEY_W, KEY_H, is_pressed ? 3 : 2, is_pressed ? COLOR_WHITE : COLOR_CARD_BORDER);
 
     char numStr[16];
     snprintf(numStr, sizeof(numStr), "#%02d", key_idx);
-    draw_string_16(fb, KEY_W, 8, 8, numStr, COLOR_GRAY, 1);
+    draw_string_16(fb, KEY_W, 6, 6, numStr, COLOR_GRAY, 1);
 
     switch (key_idx) {
         case 13: // Counter
-            draw_string_16(fb, KEY_W, KEY_W - 56, 8, "COUNT", COLOR_CYAN, 1);
+            draw_badge_right_16(fb, KEY_W, 6, "COUNT", COLOR_CYAN);
             char cntStr[16];
             snprintf(cntStr, sizeof(cntStr), "%d", g_aux_counter);
-            draw_string_16(fb, KEY_W, (KEY_W - strlen(cntStr)*16)/2, 48, cntStr, COLOR_CYAN, 2);
-            draw_string_16(fb, KEY_W, 14, 88, "[CLICK TO INC]", COLOR_GRAY, 1);
+            draw_string_centered_16(fb, KEY_W, 44, cntStr, COLOR_CYAN, 2);
+            draw_string_centered_16(fb, KEY_W, 86, "+1 COUNT", COLOR_GRAY, 1);
             break;
         case 14: // Audio Test
-            draw_string_16(fb, KEY_W, KEY_W - 56, 8, "AUDIO", COLOR_EMERALD, 1);
-            draw_string_16(fb, KEY_W, 24, 48, "BEEP", COLOR_EMERALD, 2);
-            draw_string_16(fb, KEY_W, 14, 88, "[CLICK SOUND]", COLOR_GRAY, 1);
+            draw_badge_right_16(fb, KEY_W, 6, "AUDIO", COLOR_EMERALD);
+            draw_string_centered_16(fb, KEY_W, 44, "BEEP", COLOR_EMERALD, 2);
+            draw_string_centered_16(fb, KEY_W, 86, "BEEP TEST", COLOR_GRAY, 1);
             break;
         case 15: // Reset All
-            draw_string_16(fb, KEY_W, KEY_W - 56, 8, "RESET", COLOR_ROSE, 1);
-            draw_string_16(fb, KEY_W, 20, 48, "RESET", COLOR_ROSE, 2);
-            draw_string_16(fb, KEY_W, 14, 88, "[ALL DEFAULT]", COLOR_GRAY, 1);
+            draw_badge_right_16(fb, KEY_W, 6, "RESET", COLOR_ROSE);
+            draw_string_centered_16(fb, KEY_W, 44, "RESET", COLOR_ROSE, 2);
+            draw_string_centered_16(fb, KEY_W, 86, "RESET ALL", COLOR_GRAY, 1);
             break;
         case 16: // Theme
-            draw_string_16(fb, KEY_W, KEY_W - 56, 8, "THEME", COLOR_PURPLE, 1);
-            draw_string_16(fb, KEY_W, 24, 48, g_aux_theme ? "LIGHT" : "DARK ", COLOR_PURPLE, 2);
-            draw_string_16(fb, KEY_W, 14, 88, "[CLICK THEME]", COLOR_GRAY, 1);
+            draw_badge_right_16(fb, KEY_W, 6, "THEME", COLOR_PURPLE);
+            draw_string_centered_16(fb, KEY_W, 44, g_aux_theme ? "LIGHT" : "DARK ", COLOR_PURPLE, 2);
+            draw_string_centered_16(fb, KEY_W, 86, "TOGGLE THEME", COLOR_GRAY, 1);
             break;
         case 17: // Provider
-            draw_string_16(fb, KEY_W, KEY_W - 48, 8, "PROV", COLOR_INDIGO, 1);
-            draw_string_16(fb, KEY_W, 14, 48, "CLAUDE", COLOR_WHITE, 2);
-            draw_string_16(fb, KEY_W, 14, 88, "OPUS 4.6", COLOR_INDIGO, 1);
+            draw_badge_right_16(fb, KEY_W, 6, "PROV", COLOR_INDIGO);
+            draw_string_centered_16(fb, KEY_W, 44, "CLAUDE", COLOR_WHITE, 2);
+            draw_string_centered_16(fb, KEY_W, 86, "OPUS 4.6", COLOR_INDIGO, 1);
             break;
         case 18: // Model
-            draw_string_16(fb, KEY_W, KEY_W - 48, 8, "MODEL", COLOR_INDIGO, 1);
-            draw_string_16(fb, KEY_W, 14, 48, "SONNET", COLOR_WHITE, 2);
-            draw_string_16(fb, KEY_W, 14, 88, "AGENTIC", COLOR_INDIGO, 1);
+            draw_badge_right_16(fb, KEY_W, 6, "MODEL", COLOR_INDIGO);
+            draw_string_centered_16(fb, KEY_W, 44, "SONNET", COLOR_WHITE, 2);
+            draw_string_centered_16(fb, KEY_W, 86, "AGENTIC", COLOR_INDIGO, 1);
             break;
         case 19: // Plan View
-            draw_string_16(fb, KEY_W, KEY_W - 48, 8, "PLAN", COLOR_CYAN, 1);
-            draw_string_16(fb, KEY_W, 24, 48, "PLAN", COLOR_WHITE, 2);
-            draw_string_16(fb, KEY_W, 14, 88, "[ACTIVE]", COLOR_CYAN, 1);
+            draw_badge_right_16(fb, KEY_W, 6, "PLAN", COLOR_CYAN);
+            draw_string_centered_16(fb, KEY_W, 44, "PLAN", COLOR_WHITE, 2);
+            draw_string_centered_16(fb, KEY_W, 86, "[ACTIVE]", COLOR_CYAN, 1);
             break;
         case 20: // Diff View
-            draw_string_16(fb, KEY_W, KEY_W - 48, 8, "DIFF", COLOR_AMBER, 1);
-            draw_string_16(fb, KEY_W, 24, 48, "DIFF", COLOR_WHITE, 2);
-            draw_string_16(fb, KEY_W, 14, 88, "+204 -82", COLOR_EMERALD, 1);
+            draw_badge_right_16(fb, KEY_W, 6, "DIFF", COLOR_AMBER);
+            draw_string_centered_16(fb, KEY_W, 44, "DIFF", COLOR_WHITE, 2);
+            draw_string_centered_16(fb, KEY_W, 86, "+204 -82", COLOR_EMERALD, 1);
             break;
     }
 
@@ -833,11 +899,11 @@ static void render_top_display(void) {
     uint16_t *fb = g_top_fb;
 
     draw_rect_16(fb, TOP_W, 0, 0, TOP_W, TOP_H, COLOR_BG);
-    draw_border_16(fb, TOP_W, 1, 1, TOP_W - 2, TOP_H - 2, 2, COLOR_CARD_BORDER);
+    draw_border_16(fb, TOP_W, 0, 0, TOP_W, TOP_H, 2, COLOR_CARD_BORDER);
 
     // Header Title
-    draw_string_16(fb, TOP_W, 12, 8, "MK20 UI SHOWCASE", COLOR_CYAN, 1);
-    draw_string_16(fb, TOP_W, 160, 8, "12 INTERACTIVE PATTERNS", COLOR_GRAY, 1);
+    draw_string_16(fb, TOP_W, 10, 8, "MK20 UI SHOWCASE", COLOR_CYAN, 1);
+    draw_string_16(fb, TOP_W, 150, 8, "12 INTERACTIVE PATTERNS", COLOR_GRAY, 1);
 
     // Status Pill
     draw_rect_16(fb, TOP_W, TOP_W - 75, 6, 65, 18, COLOR_EMERALD);
@@ -845,8 +911,8 @@ static void render_top_display(void) {
 
     draw_rect_16(fb, TOP_W, 8, 28, TOP_W - 16, 1, COLOR_CARD_BORDER);
 
-    // PATTERN 11: Large Top Knob Dial Slider: | O [ ( VALUE ) ] O |
-    int dx = 12, dy = 36, dw = 200, dh = 58;
+    // PATTERN 11: Top Knob Dial Slider: | O [ ( VALUE ) ] O |
+    int dx = 10, dy = 34, dw = 200, dh = 58;
     draw_rect_16(fb, TOP_W, dx, dy, dw, dh, COLOR_CARD);
     draw_border_16(fb, TOP_W, dx, dy, dw, dh, 1, COLOR_CYAN);
 
@@ -870,7 +936,7 @@ static void render_top_display(void) {
     draw_border_16(fb, TOP_W, thumb_x, track_y + 2, 16, 10, 1, COLOR_WHITE);
 
     // PATTERN 8 & 9 Preview Card: Live CPU
-    int cx = 222, cy = 36, cw = 194, ch = 58;
+    int cx = 218, cy = 34, cw = TOP_W - 228, ch = 58;
     draw_rect_16(fb, TOP_W, cx, cy, cw, ch, COLOR_CARD);
     draw_border_16(fb, TOP_W, cx, cy, cw, ch, 1, COLOR_AMBER);
 
@@ -884,13 +950,13 @@ static void render_top_display(void) {
     static const char *top_marquee = "ANTIGRAVITY MK20 DUAL-CORE STANDALONE HARDWARE TWIN -- PRESS KEYS #01 TO #12 TO TEST VISUAL PATTERNS -- ROTATE DIAL TO ADJUST GAUGES -- ";
     int top_marq_len = strlen(top_marquee) * 8;
 
-    int mx = 12, my = 104, mw = TOP_W - 24, mh = 28;
+    int mx = 10, my = 100, mw = TOP_W - 20, mh = 32;
     draw_rect_16(fb, TOP_W, mx, my, mw, mh, COLOR_CARD);
     draw_border_16(fb, TOP_W, mx, my, mw, mh, 1, COLOR_CARD_BORDER);
 
     int scroll_x = mx + 4 - (g_pat12_scroll_px % top_marq_len);
-    draw_string_16(fb, TOP_W, scroll_x, my + 6, top_marquee, COLOR_WHITE, 1);
-    draw_string_16(fb, TOP_W, scroll_x + top_marq_len + 32, my + 6, top_marquee, COLOR_WHITE, 1);
+    draw_string_clipped_16(fb, TOP_W, scroll_x, my + 8, top_marquee, COLOR_WHITE, 1, mx + 2, my + 2, mw - 4, mh - 4);
+    draw_string_clipped_16(fb, TOP_W, scroll_x + top_marq_len, my + 8, top_marquee, COLOR_WHITE, 1, mx + 2, my + 2, mw - 4, mh - 4);
 
     flush_top();
 }
@@ -926,78 +992,100 @@ static void on_key_event(int row, int col, int pressed) {
     int key_idx = get_mapped_key_index(row, col);
     if (key_idx < 1 || key_idx > 20) return;
 
-    if (key_idx == 1 && pressed) {
-        // Pattern 1: Toggle Same Text
-        g_pat1_toggle = !g_pat1_toggle;
-        render_pattern_1();
-    } else if (key_idx == 2 && pressed) {
-        // Pattern 2: Toggle Different Text
-        g_pat2_toggle = !g_pat2_toggle;
-        render_pattern_2();
-    } else if (key_idx == 3) {
-        // Pattern 7: Shift-Style Momentary
-        g_pat7_shift = pressed;
-        render_pattern_7();
-    } else if (key_idx == 4 && pressed) {
-        // Pattern 10: Metronome BPM toggle
-        g_pat10_metronome_bpm = (g_pat10_metronome_bpm == 120) ? 160 : ((g_pat10_metronome_bpm == 160) ? 80 : 120);
-        render_pattern_10();
-    } else if (key_idx == 5 && pressed) {
-        // Pattern 3: Modes Vertical Uniform
-        g_pat3_mode_idx = (g_pat3_mode_idx + 1) % 4;
-        render_pattern_3();
-    } else if (key_idx == 6 && pressed) {
-        // Pattern 4: Modes Vertical Carousel
-        g_pat4_mode_idx = (g_pat4_mode_idx + 1) % 4;
-        render_pattern_4();
-    } else if (key_idx == 7 && pressed) {
-        // Pattern 5: Modes 2x2 Icon Grid
-        g_pat5_icon_idx = (g_pat5_icon_idx + 1) % 4;
-        render_pattern_5();
-    } else if (key_idx == 8 && pressed) {
-        // Pattern 6: Modes Horizontal Strip
-        g_pat6_icon_idx = (g_pat6_icon_idx + 1) % 4;
-        render_pattern_6();
-    } else if (key_idx == 9 && pressed) {
-        // Pattern 8: Force CPU re-poll
-        g_pat8_cpu_pct = read_cpu_percent();
-        render_pattern_8();
-    } else if (key_idx == 10 && pressed) {
-        // Pattern 9: Add spike to graph
-        for (int i = 0; i < 59; i++) g_pat9_cpu_history[i] = g_pat9_cpu_history[i + 1];
-        g_pat9_cpu_history[59] = 95;
-        render_pattern_9();
-    } else if (key_idx == 11 && pressed) {
-        // Pattern 11: Increment Dial
-        g_pat11_knob_val = (g_pat11_knob_val + 10) % 105;
-        render_pattern_11();
-        render_top_display();
-    } else if (key_idx == 12 && pressed) {
-        // Pattern 12: Jump Marquee Scroll
-        g_pat12_scroll_px += 24;
-        render_pattern_12();
-        render_top_display();
-    } else if (key_idx == 13 && pressed) {
-        g_aux_counter++;
-        render_aux_key(13);
-    } else if (key_idx == 14 && pressed) {
-        render_aux_key(14);
-    } else if (key_idx == 15 && pressed) {
-        // Reset all states
-        g_pat1_toggle = 0;
-        g_pat2_toggle = 1;
-        g_pat3_mode_idx = 0;
-        g_pat4_mode_idx = 0;
-        g_pat5_icon_idx = 0;
-        g_pat6_icon_idx = 0;
-        g_pat11_knob_val = 50;
-        render_all_keys();
-        render_top_display();
-    } else if (key_idx == 16 && pressed) {
-        g_aux_theme = !g_aux_theme;
-        render_aux_key(16);
-    } else {
-        render_aux_key(key_idx);
+    g_key_pressed[key_idx] = pressed;
+
+    switch (key_idx) {
+        case 1:
+            if (pressed) g_pat1_toggle = !g_pat1_toggle;
+            render_pattern_1();
+            break;
+        case 2:
+            if (pressed) g_pat2_toggle = !g_pat2_toggle;
+            render_pattern_2();
+            break;
+        case 3:
+            g_pat7_shift = pressed;
+            render_pattern_7();
+            break;
+        case 4:
+            if (pressed) {
+                g_pat10_metronome_bpm = (g_pat10_metronome_bpm == 120) ? 160 : ((g_pat10_metronome_bpm == 160) ? 80 : 120);
+            }
+            render_pattern_10();
+            break;
+        case 5:
+            if (pressed) g_pat3_mode_idx = (g_pat3_mode_idx + 1) % 4;
+            render_pattern_3();
+            break;
+        case 6:
+            if (pressed) g_pat4_mode_idx = (g_pat4_mode_idx + 1) % 4;
+            render_pattern_4();
+            break;
+        case 7:
+            if (pressed) g_pat5_icon_idx = (g_pat5_icon_idx + 1) % 4;
+            render_pattern_5();
+            break;
+        case 8:
+            if (pressed) g_pat6_icon_idx = (g_pat6_icon_idx + 1) % 4;
+            render_pattern_6();
+            break;
+        case 9:
+            if (pressed) g_pat8_cpu_pct = read_cpu_percent();
+            render_pattern_8();
+            break;
+        case 10:
+            if (pressed) {
+                for (int i = 0; i < 59; i++) g_pat9_cpu_history[i] = g_pat9_cpu_history[i + 1];
+                g_pat9_cpu_history[59] = 95;
+            }
+            render_pattern_9();
+            break;
+        case 11:
+            if (pressed) {
+                g_pat11_knob_val = (g_pat11_knob_val + 10) % 105;
+                render_top_display();
+            }
+            render_pattern_11();
+            break;
+        case 12:
+            if (pressed) {
+                g_pat12_scroll_px += 24;
+                render_top_display();
+            }
+            render_pattern_12();
+            break;
+        case 13:
+            if (pressed) g_aux_counter++;
+            render_aux_key(13);
+            break;
+        case 14:
+            render_aux_key(14);
+            break;
+        case 15:
+            if (pressed) {
+                g_pat1_toggle = 0;
+                g_pat2_toggle = 1;
+                g_pat3_mode_idx = 0;
+                g_pat4_mode_idx = 0;
+                g_pat5_icon_idx = 0;
+                g_pat6_icon_idx = 0;
+                g_pat11_knob_val = 50;
+                render_all_keys();
+                render_top_display();
+            } else {
+                render_aux_key(15);
+            }
+            break;
+        case 16:
+            if (pressed) g_aux_theme = !g_aux_theme;
+            render_aux_key(16);
+            break;
+        case 17:
+        case 18:
+        case 19:
+        case 20:
+            render_aux_key(key_idx);
+            break;
     }
 }
 
