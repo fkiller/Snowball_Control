@@ -16,7 +16,7 @@ There is no active feature request recorded beyond preparing this cross-agent ha
 
 ## Current State
 
-- `main` contains commits through `5bdba2d` (`Implement and deploy all 12 visual interaction patterns`).
+- `main` contains commits through `e2ff82c` (`feat(mk20-hud): implement rotating circular knob panel with rotating text (Pattern 11)`).
 - **MK20 Hardware Multi-Display Architecture Unlocked**:
   - **22 Independent Framebuffer Devices**:
     - `/dev/fb1` to `/dev/fb20`: 20 separate 128x128 16-bit RGB565 LCD screens (driven by individual `fb_gc9107` SPI controllers directly under each keycap).
@@ -37,7 +37,7 @@ There is no active feature request recorded beyond preparing this cross-agent ha
     - Pattern 6 (Key 8): Modes (Horizontal 3-icon strip with 2x center active icon).
     - Pattern 8 (Key 9): Real-Time Number (Live Allwinner T113 CPU % with level gauge).
     - Pattern 9 (Key 10): Real-Time Graph (Rolling 60-second CPU load sparkline chart).
-    - Pattern 11 (Key 11 & Top): Knob Dial Gauge (`| O [ VALUE ] O |` tracking rotary knob clicks).
+    - Pattern 11 (Key 11 & Top): Concentric Rotating Circular Knob Panel with Rotating Radial Text (6 modes: `CODE`, `PLAN`, `DIFF`, `TEST`, `EXEC`, `CHAT` orbiting at $R=31$, 24 rotating radial ticks, 12 o'clock needle pointer, and synchronized mini dial gauge on `/dev/fb21`).
     - Pattern 12 (Key 12 & Top): Knob Horizontal Pixel Marquee Text Scroll.
     - Keys 13..20: Counter, Audio, Reset, Theme, Provider, Model, Plan, Diff.
   - **All 4 North Star architectural foundations delivered**: Dual control planes (`COM5` and TCP `5555`), A1 host RPC, normalized agent adapters, and Linux/QMK contract.
@@ -183,8 +183,8 @@ If `adb.exe` is not in the default location, set `MK20_ADB` to its full path for
 
 - Branch: `main`
 - Upstream: `origin/main`
-- Latest implementation commit: `59cf07fea913ef8a7eb6bdc5d6e74563724b63cf` (`Initialize MK20 development tooling`)
-- Handoff documentation: the commit containing this file; local `main` is ahead of `origin/main` until pushed.
+- Latest implementation commit: `e2ff82c` (`feat(mk20-hud): implement rotating circular knob panel with rotating text (Pattern 11)`)
+- Handoff documentation: `walkthrough.md` and `HANDOFF.md`
 - Uncommitted implementation changes: none.
 - Stashes: none.
 - Local-only ignored content: Tina T113 BSP and any site-specific development configuration/backups/logs.
