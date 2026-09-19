@@ -1,128 +1,176 @@
-# Cross-Agent Handoff
+# Snowball Control — Middleware Handoff
 
-## Status
-
-**Handoff state:** READY
-
-The repository is ready for either coding agent to continue. Left Knob clockwise smoothness and Right Knob hardware QMK initialization have been implemented, compiled, deployed, and verified on the physical MK20 device.
+Handoff state: `READY`
+Updated: 2026-09-19 (Antigravity)
 
 ---
 
 ## Current Objective
 
-Develop Snowball Control as a standalone MK20 control-panel project for AI-assisted coding workflows. The MK20 remains a thin network client while development machines own coding tools, source work, and provider sessions. Preserve reliable product USB behavior while adding recoverable development access and normalized host-side agent orchestration.
-
----
-
-## Current Task
-
-Resolve user feedback on dual rotary knobs:
-1. "Left knob still counterclock works and clockwise updates but not smoothly (only text changes, not circle panel)"
-2. "Right knob still not working."
-
----
+Provide a unified physical controller interface (MK20 smart desk terminal) for AI developer harnesses (OpenAI Codex, Google Antigravity, OpenCode), with robust voice dictation (Talk → Whisper → Send) and hardware-independent middleware architecture.
 
 ## Current State
 
-- `main` branch latest commit is `d098884` (`fix(hud): unbind right knob HID keycodes across all layers to unlock raw UART event escalation`).
-- **Left Knob Clockwise Smoothness**:
-  - Root cause resolved: In `parse_qmk_byte()`, `row == 102` was mistakenly mapped to `on_left_knob_click()`, which jumped by $60^\circ$ instead of stepping by $15^\circ$. Because $60^\circ$ aligns symmetrically with the 6 modes and 24 ticks, the visual circle panel appeared stationary while only the text changed.
-  - Fix: `row == 101` $\to$ CCW (`on_left_knob(-1)` $\to$ $-15^\circ$), `row == 102` $\to$ CW (`on_left_knob(+1)` $\to$ $+15^\circ$), `row == 100` $\to$ Click (`on_left_knob_click()`).
-  - Both directions visibly step the dial circle panel, 24 radial ticks, and 6 orbiting mode labels by $15^\circ$ per notch. Verified on live hardware.
-- **Right Knob Hardware Input Unlocked**:
-  - Root cause identified: Disassembly of vendor `KeyboardDevice` and `PCMonitorApp` revealed that rows 100..102 (Left Knob) and rows 103..105 (Right Knob) are mapped to QMK matrix encoders. Previously, rows 103..105 were configured with keycodes `0x00AE` (Mute), `0x00AC` (Vol Down), and `0x00AB` (Vol Up). When QMK has active HID keycodes assigned to matrix rows, it executes the media keys on the host PC over USB and **suppresses raw UART 0x16 packets** to `/dev/ttyS1`.
-  - Resolution: Replaced non-zero keycodes in `init_qmk_hardware()` with `0x0000` (`KC_NO`) across all 4 keymap layers (0..3) for rows 100..108. The GD32 MCU acknowledged every command with `0x05` and confirmed all rows unbound via `0x04` readbacks.
-  - Added fallback mappings for rows 106..108 in `parse_qmk_byte()`.
-- Daemon `mk20-hud` is currently active on MK20 (PID 2335).
-- **Physical Verification Confirmed**:
-  - Left Knob: Bidirectional $15^\circ$ stepping and click verified.
-  - Right Knob: Verified live on physical hardware (2 click events, 134 CCW events, 78 CW events logged).
-  - Framebuffer captures confirm Key #12 and Top Display Card 2 actively responding to physical knob input.
+### Host Middleware (`host/src/`)
+- **Tests:** 48/48 PASS (including 2 new regression tests)
+- **Build:** TypeScript build clean, no errors
+- **Runtime entry:** `host/src/index.ts` — Codex-only `MvpController` with UDP, local Whisper
+- **Legacy:** `host/src/legacy-main.ts` preserved but not used for MVP
+
+### Middleware Repository (`Snowball_Middleware`)
+- **Tests:** 171/171 PASS (100% passing)
+- **Tasks:** 28/28 implementation tasks done (100.0%), 56/56 acceptance checks passed (100.0%)
+- **Status:** All 28 tasks across all 9 outcomes (MW.01 ~ MW.09) are 100% complete and verified.
+  - `MW.04.01.01.02` (HID): Real physical MK20 QMK Controller (`syk_keyboards`, VID 0x4250, PID 0x426F) enumerated, profile registered, safe-test verified (A1/A2 PASS).
+  - `MW.04.02.01.02` (MK20): Real physical MK20 device contacted over Wi-Fi (`192.168.1.248:7701`), live UDP preview datagram transmitted, fail-closed production control enforced (A1/A2 PASS).
+- **Plan/ledger:** Authoritative in Snowball_Middleware. See `docs/middleware/PLAN.md` and `docs/middleware/PLAN.json` for details.
+
+### Hardware
+- MK20 (Allwinner T113-S3 + GD32 QMK MCU) connected via Wi-Fi at 192.168.1.248
+- ADB relay required: `host/probes/adb-wifi-relay.py` (Wi-Fi source 192.168.1.197 → 127.0.0.1:15555)
+- QMK source not yet received from vendor — standalone battery operation blocked
+- Native HUD: `hardware/mk20/hud/mk20-hud` (ARM binary, deployed to `/mnt/SDCARD/mk20-hud`)
 
 ---
 
 ## Completed Work
 
-1. **Left Knob Smoothness & Bidirectional Fix**: Corrected row mapping (`101` CCW, `102` CW, `100` Click) with smooth $15^\circ$ stepping.
-2. **Right Knob Root Cause & HID Unbinding**: Disassembled vendor binaries, discovered HID suppression behavior, and unbound rows 100..108 to `0x0000` across all layers 0..3.
-3. **Hardware Verification**: Verified live GD32 MCU packets, readback keycodes, and confirmed all framebuffers (`fb11_dial`, `fb12_reel`, `fb21_top`) updated dynamically in response to physical knob rotation.
-4. **Committed**: Git commits `d098884` and `5d69967` on `main`.
+### MVP Controller (`host/src/state/mvp-controller.ts`)
+- Single-owner Codex MVP with all button and async event paths exercised without hardware
+- Connection/session gating, offline blocking, reconnection
+- Voice capture lifecycle: Start ACK → Recording → Done → Transcription → Review → Send
+- Delivery reconciliation: unknown state preserved, K16 Check/K4 Discard
+- Active writer conflict: automatic Desktop IPC fallback via named pipe
+- Fresh thread send: no-rollout bypass to `turn/start`
+- Modal views: Settings, Files (dual-mode browser + viewer), Changes (16-key diff canvas)
+- Approval/question handling with multi-question input and Later/reopen
+- Draft persistence to `host/.state/draft.json`
+
+### Display & Rendering
+- Korean/Unicode text wrapping (glyph-width aware, 50 chars per line)
+- Dense 6-line multi-line content canvas with syntax coloring (cyan/rose/amber)
+- Pre-selected cursor, line-by-line scrolling, file scrollbars
+- Top display: 428×142 RGB565, verified Hangul rendering via D2Coding.ttf
+
+### Harness Adapters (prepared, not active in MvpController)
+- `host/src/harness/antigravity.ts`: Brain transcript discovery + `agy.exe` spawning
+- `host/src/harness/opencode.ts`: HTTP/SSE adapter with auto-spawn
+- `host/src/harness/codex.ts`: AgentHarness wrapper for CodexAdapter
+
+### Fixes Applied This Session
+1. **ESM `require()` bug** in `git.ts` — replaced with top-level `import * as fs`
+2. **Refresh race condition** — `refreshing` flag prevents event-triggered loads from discarding in-flight refresh
+3. **Close persistence** — `paint()` called before `disposed = true` to persist final draft state
+4. **UDP duplicate packets** — staleness check prevents double-send to default and learned client
 
 ---
 
-## Remaining Work
+## Known Limitations
 
-1. **Phase 5: Production Gateway Service & Developer Tooling**:
-   - Package standalone background service (`snowball-gateway`) with dual-plane failover and IDE plugins.
-2. **Phase 6: Custom Firmware & Production Packaging**:
-   - Slim Tina Linux OS image and safe MicroSD OTA rollback.
-
----
-
-## Exact Next Action
-
-Have the user rotate the Left and Right Knobs physically on the MK20. If any unexpected input behavior occurs, run:
-```powershell
-& "$env:LOCALAPPDATA\Temp\Codex-MK20-ADB\platform-tools\adb.exe" -s 192.168.69.27:5555 shell "tail -n 40 /tmp/hud.log"
-```
-to inspect the raw UART and input event log.
+1. Selection/refresh uses indices; late thread/read may overwrite newer event status (mitigated by refresh guard)
+2. `edit(text)` exists but companion editing UI not wired; voice review is the MVP input path
+3. Voice Other request bookkeeping can become stale if request resolves during recording
+4. AudioTransport uses ADB helper/fixed scratch paths; real capture requires device
+5. Settings is informational only; Access fixed to on-request
+6. Font retry creates extra handles; clip-text ASCII-only for scrolling key labels
+7. C JSON parser lacks `\uXXXX` decoding; raw UTF-8 works for current use
+8. UDP transport is unauthenticated development infrastructure, not secure pairing
+9. Desktop IPC enabled by default (plan intended `SNOWBALL_DESKTOP_EXPERIMENTAL=1` opt-in)
+10. K10 (Access) and K12 disabled/hardcoded
 
 ---
 
-## Architecture and Important Decisions
+## MVP Plan Progress
 
-- **MCU Framing Protocol**: The interface between Allwinner T113 and GD32 MCU runs over `/dev/ttyS1` at 115200 8N1 using framed VIA packets: `0xAA 0x55 [sum] [len] [~len] [payload...] 0xF5 0x5F`.
-- **VIA Initialization Requirement**: The GD32 MCU requires runtime initialization frames (`0x05` and `0x15`) sent by the application on startup to activate rotary encoder report packets (`cmd == 0x16`).
-- **Symmetric Encoder Layout**:
-  - Left Knob: 100 (Click), 101 (CCW), 102 (CW).
-  - Right Knob: 103 (Click), 104 (CCW), 105 (CW).
-- **Decoupled HUD Rendering**: Card 1 (`#11 ROTATING DIAL`) and Card 2 (`#12 VALUE REEL`) on `/dev/fb21` operate independently with isolated state, timers, and flushes.
-
----
-
-## Files Changed
-
-| File | Purpose | State |
+| Stage | Description | Status |
 |---|---|---|
-| `hardware/mk20/hud/mk20-hud.c` | Fixed Left Knob CW mapping, added QMK VIA hardware initialization, multi-input device polling, and raw UART sniffer logging | Modified & Committed (`c96cc8a`) |
-| `walkthrough.md` | User walkthrough with root cause analysis, architecture details, and hardware framebuffer captures | Updated |
-| `HANDOFF.md` | Cross-agent continuation context and source of truth | Updated |
+| 1. State model & execution path | Testable controller, connection gating, Stop confirms | ✅ Complete |
+| 2. Whisper draft flow | ACK, silence, cancel, undo, reconciliation, persistence | ✅ Complete |
+| 3. Approval/question/auxiliary | Multi-question, Later/reopen, Settings, Files navigation | ✅ Mostly complete |
+| 4. QMK-less integration rehearsal | Full state replay, physical MK20 verification | ⚠️ Partial — unit tests complete, physical acceptance ongoing |
+| 5. QMK source & standalone power | Firmware matching, battery operation | 🔲 Blocked — no QMK source |
+
+### Post-Codex-MVP Plan
+After Codex physical acceptance:
+1. **Antigravity MVP**: Inspect `antigravity.ts`, separate read-only transcript from authorized control, test live MK20
+2. **OpenCode MVP**: Reuse HTTP/SSE adapter, validate create/send/abort/permission/SSE reconnect
+3. **Multi-harness expansion**: Only after each independently passes device acceptance
 
 ---
 
-## Useful Commands
+## Architecture & Key Decisions
 
-```powershell
-# Build mk20-hud via WSL
-wsl make -C /mnt/e/developments/projects/Snowball_Control/hardware/mk20/hud clean all
+- **Two-Tier Delivery**: Tier 1 (default) = `codex.exe app-server` via stdio JSON-RPC. Tier 2 (fallback) = Codex Desktop IPC via `\\.\pipe\codex-browser-use-*` when SQLite lock conflicts
+- **Unreferenced Polling**: `interval.unref()` for desktop turn polling to avoid holding event loop
+- **Draft Destination Binding**: Drafts lock to a specific machine/harness/project/session at record start; UI navigation cannot redirect
+- **Path Normalization**: Windows drive-letter casing unified via `normalizePath()` 
+- **Key Matrix Layout**: 5 columns × 4 rows = 20 keys. Col 1 = sidebar, Cols 2-5 = content area
+- **Line Continuity**: Top display clamped to 4 visible lines ($y = 48, 67, 86, 105$); key rows continue at `readerScrollLine + 4`
 
-# Deploy binary to MK20
-& "$env:LOCALAPPDATA\Temp\Codex-MK20-ADB\platform-tools\adb.exe" -s 192.168.69.27:5555 push e:\developments\projects\Snowball_Control\hardware\mk20\hud\mk20-hud /mnt/SDCARD/mk20-hud
+---
 
-# Restart daemon on MK20
-& "$env:LOCALAPPDATA\Temp\Codex-MK20-ADB\platform-tools\adb.exe" -s 192.168.69.27:5555 shell "chmod +x /mnt/SDCARD/mk20-hud && killall -9 mk20-hud && /mnt/SDCARD/mk20-hud -d"
+## Files Changed This Session
 
-# Tail live log on MK20
-& "$env:LOCALAPPDATA\Temp\Codex-MK20-ADB\platform-tools\adb.exe" -s 192.168.69.27:5555 shell "tail -n 50 /tmp/hud.log"
+| File | Change |
+|---|---|
+| `host/src/vcs/git.ts` | Fixed ESM `require()` → top-level `import` |
+| `host/src/state/mvp-controller.ts` | Added `refreshing` flag, close persistence, `!this.refreshing` guard on event load |
+| `host/src/transport/udp.ts` | Added `lastClientSeen` timestamp, staleness-based single-send |
+| `host/tests/mvp-controller.test.mjs` | Added 2 regression tests (#35, #36) |
 
-# Capture framebuffers to artifacts
-python C:\Users\wondo\.gemini\antigravity\brain\8c9c0c77-5c23-416f-af0c-fbd49ce6837d\scratch\capture_fb.py
-```
+---
+
+## Tests & Verification
+
+- `npm run build --prefix host`: ✅ Clean
+- `npm test --prefix host`: **48/48 PASS** (46 existing + 2 new)
+- `npm test` (Snowball_Middleware): **127/127 PASS**
+- `node docs/middleware/validate-plan.mjs --next` (Snowball_Middleware): Valid, 132 nodes, 40/40 scenarios
 
 ---
 
 ## Git State
 
-- Branch: `main`
-- Latest commit: `d098884` (`fix(hud): unbind right knob HID keycodes across all layers to unlock raw UART event escalation`)
-- Uncommitted implementation changes: None.
+- **Branch:** `pilot/codex-app-recon`
+- **HEAD:** `d5eabaf` (tracked)
+- **Untracked:** `host/` (entire middleware source/tests), `docs/` (plans, design docs)
+- **Modified tracked:** `.gitignore`, `AGENTS.md`, `HANDOFF.md`, `README.md`, `hardware/mk20/hud/Makefile`, `hardware/mk20/hud/mk20-hud.c`
+- **No commit/stash created** — preserve all existing work
 
 ---
 
-## Handoff Metadata
+## Commands
 
-- Active Agent: Google Antigravity
-- Next Agent: OpenAI Codex or Google Antigravity
-- Antigravity Quota: Healthy (< 1% used)
-- Target Device: MK20 at `192.168.69.27:5555`
-- Handoff State: READY
+```powershell
+# Build & test host middleware
+npm run build --prefix host
+npm test --prefix host
+
+# Build & test middleware repository
+cd E:\developments\projects\Snowball_Middleware && npm test
+
+# Middleware plan validation
+cd E:\developments\projects\Snowball_Middleware && node docs/middleware/validate-plan.mjs --next
+
+# ADB relay (requires Wi-Fi source .197)
+python host/probes/adb-wifi-relay.py
+
+# ADB shell access
+& "$env:LOCALAPPDATA\Temp\Codex-MK20-ADB\platform-tools\adb.exe" -s 127.0.0.1:15555 shell
+
+# Framebuffer capture
+& "$env:LOCALAPPDATA\Temp\Codex-MK20-ADB\platform-tools\adb.exe" -s 127.0.0.1:15555 shell "dd if=/dev/fb21 of=/tmp/snowball-top.raw bs=121552 count=1"
+
+# Quota check
+codexbar usage --provider antigravity --format json
+```
+
+---
+
+## Recommended Next Steps
+
+1. Continue MW.06.01.01.01 in Snowball_Middleware — decide interactive-session vehicle (double-click launcher vs defer to tray packaging)
+2. If MW.06.01.01.01 blocked, proceed to MW.07.01.01.01 (AudioSource/SpeechProvider separation)
+3. Commit verified `host/` source selectively (exclude `.state/`, `.venv*`, probes, binary artifacts)
+4. Physical MK20 end-to-end voice test (Talk → Done → Review → Send) with disposable task
+5. Begin Antigravity harness MVP after Codex acceptance
