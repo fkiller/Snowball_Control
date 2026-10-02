@@ -34,6 +34,45 @@
 
 ---
 
+## 🎥 하드웨어 시연 및 비주얼 쇼케이스 (Visual Showcase)
+
+### 1. 계층 네비게이션 및 음성 세션 실기기 시연
+MK20에서 구동되는 브레드크럼 계층 네비게이션(`기기 > 하네스 > 프로젝트 > 세션`), 내장 마이크 음성 프롬프트 캡처, 모달 뷰(좌측 상단 타이틀 겸 Close 버튼, 열별 단축키, 4×4 그리드 캔버스), 그리고 로터리 노브 선택 동작 시연입니다:
+
+<p align="center">
+  <img src="assets/screenshots/mk20_navigation_demo.gif" width="480" alt="MK20 네비게이션 시연"><br>
+  <em>실물 하드웨어에서 동작하는 브레드크럼 네비게이션 및 모달 제어.</em><br>
+  <a href="assets/videos/mk20_navigation_demo.mp4">▶️ 고화질 전체 MP4 영상 보기</a> &nbsp;|&nbsp; <a href="https://x.com/fkiller/status/2099345561627382015">🔗 X (Twitter) 원본 글</a>
+</p>
+
+### 2. UI 엘리먼트 및 키 매트릭스 테스트
+20개 기계식 스위치 위의 개별 128×128 LCD 키캡 화면, 듀얼 로터리 엔코더 노브, 동적 명암비 반전 테마, 초저지연 프레임버퍼 렌더링 물리 테스트입니다:
+
+<p align="center">
+  <img src="assets/screenshots/mk20_ui_elements_test.gif" width="400" alt="MK20 UI 엘리먼트 테스트"><br>
+  <em>키 매트릭스 디스플레이, 다이얼 및 동적 테마 렌더링 물리 테스트.</em><br>
+  <a href="assets/videos/mk20_ui_elements_test.mp4">▶️ 고화질 전체 MP4 영상 보기</a> &nbsp;|&nbsp; <a href="https://x.com/fkiller/status/2095861881281917119">🔗 X (Twitter) 원본 글</a>
+</p>
+
+### 3. 웹 수퍼바이저 대시보드 (Web Supervisor)
+탐색된 작업공간, 세션 저널, MK20 하드웨어 연결 상태를 실시간으로 모니터링하는 로컬 루프백 제어 평면(`http://127.0.0.1:8765/`) 화면입니다:
+
+<p align="center">
+  <img src="assets/screenshots/web_supervisor_dashboard.png" width="100%" alt="Snowball 웹 수퍼바이저 대시보드">
+</p>
+
+### 4. MK20 오프라인 대기 화면 및 연결 상태
+미들웨어가 실행되지 않았거나 PC와의 네트워크 통신(UDP sync)이 끊어지면, 기기는 자동으로 **Snowball 대기 모드(Standby Mode)**로 전환됩니다:
+- **상단 디스플레이 (`/dev/fb21`)**: 좌측에 상태 안내("Host Disconnected", "Snowball Standby Mode")와 우측에 128×128 16비트 Snowball 강아지 아이콘을 렌더링합니다.
+- **10번 키 (`/dev/fb10`)**: 128×128 Snowball 아이콘이 점등되고, 나머지 키는 백라이트가 소등되어 대기 상태임을 직관적으로 표시합니다.
+- **자동 복귀**: PC 미들웨어가 시작되면 실시간 작업 세션 화면으로 즉시 전환됩니다.
+
+| 대기 모드 상단 화면 (`/dev/fb21`) | 대기 모드 10번 키 (`/dev/fb10`) | 미들웨어 연결 완료 (`/dev/fb21`) |
+| :---: | :---: | :---: |
+| <img src="assets/screenshots/standby_top_display.png" width="300" alt="대기 화면 상단 디스플레이"> | <img src="assets/screenshots/standby_key10.png" width="128" alt="대기 화면 10번 키"> | <img src="assets/screenshots/online_top_display.png" width="300" alt="연결 완료 상단 디스플레이"> |
+
+---
+
 ## 🚀 시작하기 (Getting Started)
 
 Node.js 22.12 이상과 Python 3.10 이상을 준비합니다. 미들웨어를 빌드하기 전에 Control의 공용 STT 호스트 라이브러리를 먼저 빌드합니다.
@@ -65,19 +104,6 @@ Web UI는 `http://127.0.0.1:8765/`에 로그인/PIN 없이 접근합니다. MK20
 
 ---
 
-## 📺 MK20 대기 화면 및 연결 상태 (Standby Screen)
-
-미들웨어가 실행되지 않았거나 PC와의 네트워크 통신(UDP sync)이 끊어지면, 기기는 자동으로 **Snowball 대기 모드(Standby Mode)**로 전환됩니다:
-- **상단 디스플레이 (`/dev/fb21`)**: 좌측에 상태 안내("Host Disconnected", "Snowball Standby Mode")와 우측에 128×128 16비트 Snowball 강아지 아이콘을 렌더링합니다.
-- **10번 키 (`/dev/fb10`)**: 128×128 Snowball 아이콘이 점등되고, 나머지 키는 백라이트가 소등되어 대기 상태임을 직관적으로 표시합니다.
-- **자동 복귀**: PC 미들웨어가 시작되면 실시간 작업 세션 화면으로 즉시 전환됩니다.
-
-| 대기 모드 상단 화면 (`/dev/fb21`) | 대기 모드 10번 키 (`/dev/fb10`) | 미들웨어 연결 완료 (`/dev/fb21`) |
-| :---: | :---: | :---: |
-| <img src="assets/screenshots/standby_top_display.png" width="300" alt="대기 화면 상단 디스플레이"> | <img src="assets/screenshots/standby_key10.png" width="128" alt="대기 화면 10번 키"> | <img src="assets/screenshots/online_top_display.png" width="300" alt="연결 완료 상단 디스플레이"> |
-
----
-
 ## 🧪 검사 및 테스트 (Verification & Tests)
 
 ```bash
@@ -97,12 +123,21 @@ npm test --prefix host
 
 ```text
 Snowball_Control/
-├── assets/                     # 브랜딩, 부트로더 로고 및 기기 캡처 스크린샷
+├── assets/                     # 브랜딩, 부트로더 로고, 시연 영상 및 기기 캡처 스크린샷
 │   ├── banner.png
 │   ├── icon.png
 │   ├── bootlogo.bmp            # U-Boot 로고 (160x160 24-bit BMP)
 │   ├── mk20-plus.bin           # 상단 디스플레이 부팅 리소스 (428x142 RGB565)
-│   └── screenshots/            # 실제 기기 프레임버퍼 캡처 이미지
+│   ├── screenshots/            # 실제 기기 프레임버퍼 캡처, GIF 및 웹 UI 화면
+│   │   ├── mk20_navigation_demo.gif
+│   │   ├── mk20_ui_elements_test.gif
+│   │   ├── web_supervisor_dashboard.png
+│   │   ├── standby_top_display.png
+│   │   ├── standby_key10.png
+│   │   └── online_top_display.png
+│   └── videos/                 # 원본 고화질 MP4 녹화 영상
+│       ├── mk20_navigation_demo.mp4
+│       └── mk20_ui_elements_test.mp4
 ├── docs/                       # 아키텍처 및 상세 사양서 (단일 설계 원천)
 │   ├── ARCHITECTURE.md         # 영문 아키텍처 사양서 (기본)
 │   └── ARCHITECTURE.ko.md      # 한글 아키텍처 사양서
