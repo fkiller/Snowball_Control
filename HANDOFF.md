@@ -2,9 +2,9 @@
 
 ## Status
 
-**Handoff state:** READY
+**Handoff state:** READY (Mandatory Quota Guard Triggered: Google Antigravity -> OpenAI Codex)
 
-The repository is completely prepared for either coding agent (Google Antigravity / OpenAI Codex) to continue seamlessly. The full Text-to-Speech (TTS) pipeline matching the STT architecture has been fully implemented, integrated across Host middleware, Web UI simulator, and device plugins, and verified with 100% test suite pass rate (53/53 tests in host, 13/13 tests in plugins).
+Google Antigravity reached the mandatory quota guard threshold (>90% used, ~6% remaining on 5-hour limit). All changes have been cleanly validated, tested (54/54 tests passing), committed, and documented below. OpenAI Codex can immediately continue without needing conversational history.
 
 ---
 
@@ -24,87 +24,60 @@ Implement an end-to-end Text-to-Speech (TTS) pipeline matching the existing Spee
 
 ---
 
-## Current Task
+## Recent Issue Analysis & Resolutions (User Feedback 2026-10-01)
 
-Completed full TTS pipeline implementation, verified all unit and integration test suites, updated Web UI simulator and device plugin, and verified cross-platform hardware assessment and runtime management scripts.
+### 1. "무슨 모델로 연결된거야? TTS 퀄리티 완전 구린데" (Terrible robotic quality)
+- **Root Cause**: The user did not hear Kokoro-82M. Kokoro-82M worker crashed on Windows during stdio JSON-RPC with `'utf-8' codec can't encode character '\udc81' in position 13: surrogates not allowed` due to Python's default Windows ACP encoding on `sys.stdin` and unhandled surrogate characters in the thread text.
+- Because Kokoro crashed, `LocalKokoroProvider` automatically fell back to **Windows PowerShell `System.Speech` (SAPI5 default voice: Microsoft David Desktop)**. Microsoft David is an ancient Windows XP/7-era 2000s robotic voice.
+- **Resolution**:
+  - `host/src/audio/tts_worker.py`: Added `sys.stdin.reconfigure(encoding="utf-8", errors="replace")`.
+  - Added `sanitize_tts_text()` to strip dangling surrogates, normalize non-breaking hyphens (`\u2011` -> `-`), non-breaking spaces, and typographic curly quotes.
+  - `host/src/audio/local-kokoro.ts`: Spawn Python with `-X utf8` and `PYTHONIOENCODING=utf-8`, `PYTHONUTF8=1`.
+
+### 2. "한글 세션인데 영문만 발음해." (Only pronounces English words)
+- **Root Cause**:
+  1. `LocalKokoroProvider.synthesize()` was defaulting to `lang: "en-us"`. In Kokoro's tokenizer, English mode filters out Hangul phonemes, producing phonemes only for English terms (`USB`, `Wi-Fi`).
+  2. When Kokoro crashed and fell back to Windows SAPI (Microsoft David Desktop), PowerShell `-Command` encoding mangled Korean characters and Microsoft David has no Korean phoneme engine, reading out only English words and ignoring Korean.
+- **Resolution**:
+  - `tts_worker.py`: Added `has_korean(text)` which detects Hangul syllables/jamo (`0xAC00..0xD7A3`, `0x1100..0x11FF`, `0x3130..0x318F`) and automatically sets `lang = "ko"`.
+  - `local-kokoro.ts`: Automatically sets `lang = "ko"` when text contains Korean.
+  - Verified live: Korean synthesis with Kokoro-82M produces natural, high-quality 24kHz audio (`engine: 'kokoro-onnx'`).
+
+### 3. "플레이는 MK20에서 되야지. 지금은 PC에서 들림." (Audio plays on PC, should play on MK20)
+- **Status & Architecture Context**:
+  - Currently, `AudioPlayer` (`host/src/audio/player.ts`) plays audio through the host PC's audio subsystem (PowerShell `SoundPlayer` on Windows, `afplay` on macOS, `aplay` on Linux).
+  - The MK20 hardware features an Allwinner T113 Sunxi Audio Codec with an ALSA sink (`hw:0,0`).
+  - However, the current network link between Host and MK20 (UDP 7701) only handles framebuffer display syncing and key/knob input packets. An audio streaming protocol (e.g. UDP PCM streaming daemon `pcm-stream` or ALSA network sink) is not yet deployed to the MK20 HUD firmware.
+  - The user acknowledged this can be modified later.
 
 ---
 
 ## Current State
 
 - Branch: `implement_tts_pipeline`
-- All 53 host unit/integration tests passing cleanly (`53/53 PASS`).
+- Latest commit: `b70a646 fix(tts): add UTF-8 stream sanitization, Korean auto-detection, and turn response fallback`
+- All 54 host unit/integration tests passing cleanly (`54/54 PASS`).
 - All 13 MK20 device plugin tests passing cleanly (`13/13 PASS`).
 - Hardware assessment script (`scripts/assess_tts_backend.py`) operational and verified against live hardware (`AMD Threadripper 24C/48T + NVIDIA CUDA Execution Provider` detected, simulation fallback verified).
 - Runtime check script (`scripts/ensure_tts_runtime.py`) operational with `uv` installer support (`"ok": true`).
 - Live Model Verified: `kokoro-v1.0.onnx` (80MB) and `voices-v1.0.bin` (26.9MB) downloaded to `%APPDATA%\Snowball\models\tts` and verified.
-- Live Synthesis Verified: Tested end-to-end synthesis via both `tts_worker.py` CLI and `LocalKokoroProvider` from Node with 24kHz audio generation verified.
-- Speak button (Key 12 in physical MK20 / Host; Key 17 in Web Simulator) implements identical toggle behavior with auto-speak on turn completion.
+- Live Korean Synthesis Verified: `engine: 'kokoro-onnx'`, 24kHz WAV generated in 4.8s.
+- Host Middleware daemon is currently running in the background and connected to MK20 via UDP 7701.
 
 ---
 
-## Completed Work
+## Exact Next Action for OpenAI Codex
 
-1. **Config & Hardware Assessment**:
-   - `config/tts.json`: Standardized Kokoro-82M ONNX configuration matching `config/stt.json`.
-   - `scripts/assess_tts_backend.py`: Hardware & EP probe detecting Apple Silicon CoreML, Windows CUDA/DirectML, Linux CUDA, CPU threads, and fallback simulation mode (`--simulate`).
-   - `scripts/ensure_tts_runtime.py`: Python runtime installer and model manager (`--check`, `--install`, `--download-models`).
-2. **Host Middleware Audio Layer**:
-   - `host/src/audio/tts-provider.ts`: Interface definitions (`NativeTtsProvider`, `TtsSynthesizeOptions`, `TtsSynthesizeResult`).
-   - `host/src/audio/player.ts`: Cross-platform low-latency audio player (`AudioPlayer`) using child process streaming (PowerShell `SoundPlayer`, macOS `afplay`, Linux `aplay`) with instant PID kill cancellation.
-   - `host/src/audio/tts_worker.py`: Resident stdio JSON-RPC daemon with zero-delay IPC pipe, Kokoro-82M ONNX synthesis, and audio streaming.
-   - `host/src/audio/local-kokoro.ts`: Host daemon wrapper for Kokoro-82M ONNX worker with automatic OS native fallback (PowerShell `System.Speech` / macOS `say`) for zero-crash safety.
-3. **State Management & Controller**:
-   - `host/src/state/context.ts`: Added `public autoTts = false;`, enabled Key 12 in `getDeviceState()` across session and question viewmodes (`Top: AUTO TTS`, `Main: Speak`, `Sub: Auto ON / Speaking / Off`), enabled Key 12 styling.
-   - `host/src/state/mvp-controller.ts`:
-     - Injected `readonly tts: NativeTtsProvider = new LocalKokoroProvider()`.
-     - Added `toggleAutoTts()`, `speakText()`, `stopSpeaking()`.
-     - Wired Key 12 to `toggleAutoTts()`.
-     - Wired `turn/completed` event: automatically speaks newly arrived agent response when `autoTts === true`.
-     - Wired `startVoice()` (Key 20) and `stopTask()` (Key 4) to call `stopSpeaking()` immediately so microphone does not pick up speaker audio.
-     - Wired `close()` to terminate TTS worker child process.
-4. **Web UI Simulator**:
-   - `docs/simulator/index.html`: Wired Speak button (Key 17) to `toggleAutoTts`, `speakTurn`, `stopSpeech`, and connected to `send()` turn arrival and `record()` / `stop()` audio cancellation.
-5. **Testing & Verification**:
-   - `host/tests/tts.test.mjs`: Complete unit test suite verifying toggle ON/OFF, turn auto-speech sequence, and talk interruption.
-   - Updated `host/tests/mvp-controller.test.mjs` and `host/tests/mvp-state.test.mjs` to maintain 100% test suite pass rate.
-   - Fixed venv python resolution in `host/src/audio/local-whisper.ts` and `host/tests/whisper-worker.test.mjs`.
-
----
-
-## Remaining Work
-
-1. **Physical MK20 Hardware Deployment**:
-   - Validate live UDP datagrams on physical MK20 device when Key 12 is pressed.
-2. **Merge Branch**:
-   - Merge `implement_tts_pipeline` into `main` after user review.
-
----
-
-## Exact Next Action
-
-Run the verification commands on the worktree to ensure everything builds and passes:
-```powershell
-npm test --prefix host
-npm test --prefix plugins/device-mk20
-python scripts/assess_tts_backend.py
-```
-If physical MK20 is connected via network/USB, launch host daemon:
-```powershell
-npm start --prefix host
-```
-
----
-
-## Architecture and Important Decisions
-
-- **Single Unified Model vs Multi-Model**: Kokoro-82M is small (~80MB), high quality, and runs anywhere ONNX Runtime runs. We avoided multiple model downloads (Piper/Edge-TTS) and instead adopted Execution Provider hardware acceleration:
-  - macOS: CoreML (`CoreMLExecutionProvider`) -> CPU
-  - Windows: CUDA (`CUDAExecutionProvider`) -> DirectML (`DmlExecutionProvider`) -> CPU
-  - Linux: CUDA -> CPU
-  - Emergency Native Fallback: Windows PowerShell `System.Speech` / macOS `say` for zero-crash safety.
-- **Key 12 Hardware Alignment**: In physical MK20 hardware, Row 3 is `[K20 (Talk), K16 (Send), K12 (Speak), K8 (Later/Undo), K4 (Stop)]`. Key 12 was previously disabled as "outside MVP". Enabling Key 12 aligns physical hardware with Speak functionality.
-- **Microphone Interruption Contract**: When voice recording begins (`startVoice()`), active TTS playback is aborted immediately (`this.context.isSpeaking = false; void this.tts.stop();`), while preserving `this.context.autoTts = true` so the resulting LLM response will be spoken automatically upon turn completion.
+1. Verify that the running host middleware produces high quality Korean Kokoro audio when the user presses **Speak (Key 12)** on MK20.
+2. If the user requests MK20 on-device playback:
+   - Check `hardware/mk20/contract/LINUX_QMK_CONTRACT.md` (ALSA `hw:0,0`).
+   - Check `hardware/mk20/hud/Makefile` (`pcm-stream` target).
+   - Implement audio streaming from Host to MK20 ALSA sink over UDP or network socket.
+3. Test suite verification commands:
+   ```powershell
+   npm test --prefix host
+   npm test --prefix plugins/device-mk20
+   ```
 
 ---
 
@@ -112,41 +85,17 @@ npm start --prefix host
 
 | File | Purpose | State |
 |---|---|---|
-| `config/tts.json` | TTS configuration matching `config/stt.json` | Created |
-| `scripts/assess_tts_backend.py` | Hardware EP assessment & diagnostic tool | Created |
-| `scripts/ensure_tts_runtime.py` | Python runtime dependency check & model downloader | Created |
-| `host/src/audio/tts-provider.ts` | TTS provider type definitions | Created |
-| `host/src/audio/player.ts` | Cross-platform audio player with instant PID kill | Created |
-| `host/src/audio/tts_worker.py` | Resident Kokoro-82M ONNX stdio JSON-RPC daemon | Created |
-| `host/src/audio/local-kokoro.ts` | Host Kokoro provider with OS SAPI/say emergency fallback | Created |
-| `host/src/audio/local-whisper.ts` | Enhanced venv python resolution | Modified |
-| `host/src/state/context.ts` | Added `autoTts`, Key 12 display visual | Modified |
-| `host/src/state/mvp-controller.ts` | Wired Key 12 toggle, auto-speech on turn, talk interruption | Modified |
-| `docs/simulator/index.html` | Updated Key 17 Speak toggle and auto-TTS | Modified |
-| `host/tests/tts.test.mjs` | Unit test suite for TTS toggle and auto-speech | Created |
-| `host/tests/mvp-state.test.mjs` | Updated Key 12 assertion for Speak enabled | Modified |
-| `host/tests/whisper-worker.test.mjs` | Enhanced venv resolution for whisper test | Modified |
-| `host/package.json` | Added `tts_worker.py` copy build step | Modified |
-| `HANDOFF.md` | Cross-agent continuation context and source of truth | Updated |
-
----
-
-## Tests and Verification
-
-- `npm run build --prefix host`: Clean build (code 0).
-- `node --test host/tests/tts.test.mjs`: 4/4 PASS.
-- `node --test host/tests/mvp-controller.test.mjs`: 16/16 PASS.
-- `node --test host/tests/mvp-state.test.mjs`: 8/8 PASS.
-- `node --test host/tests/integration.test.mjs`: 1/1 PASS.
-- `node --test host/tests/whisper-worker.test.mjs`: 1/1 PASS.
-- `npm test --prefix host`: 53/53 PASS.
-- `npm test --prefix plugins/device-mk20`: 13/13 PASS.
-- `python scripts/assess_tts_backend.py`: Verified live output (CUDA detected on Windows AMD64 + Threadripper 24C/48T).
+| `host/src/audio/local-kokoro.ts` | Added `-X utf8`, UTF-8 env, text sanitization, Korean auto-detection | Committed (`b70a646`) |
+| `host/src/audio/tts_worker.py` | Added stdin UTF-8 reconfigure, text sanitization, Korean auto-detection | Committed (`b70a646`) |
+| `host/src/state/mvp-controller.ts` | Turn fallback to find latest completed agent turn when last turn failed | Committed (`b70a646`) |
+| `host/tests/tts.test.mjs` | Added unit test for turn fallback when latest turn is failed | Committed (`b70a646`) |
+| `HANDOFF.md` | Complete cross-agent handoff context and root-cause analysis | Updated |
 
 ---
 
 ## Constraints
 
-- Zero Residue: All models downloaded to `<userDataDir>/models/tts/` for clean uninstallation.
-- Toggle Contract: Speak button is strictly a stateful toggle.
-- Non-blocking Audio: Audio player and TTS worker must never block event loop or fail to terminate cleanly on abort.
+- **Single Unified Model**: Kokoro-82M ONNX (~80MB) across all platforms.
+- **Toggle Contract**: Speak button (Key 12) is stateful toggle.
+- **Interruption Guarantee**: Talk (Key 20) and Stop (Key 4) immediately cancel active TTS playback.
+- **Zero Residue**: Model stored in `%APPDATA%\Snowball\models\tts`.
