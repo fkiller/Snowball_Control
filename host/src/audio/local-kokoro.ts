@@ -158,6 +158,7 @@ export class LocalKokoroProvider implements NativeTtsProvider {
     const targetVoice = options?.voice || "af_bella";
 
     const tmpWav = path.join(os.tmpdir(), `snowball_tts_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.wav`);
+    const timeoutMs = Math.max(60000, cleanText.length * 150);
 
     // 1. Try Kokoro-82M ONNX via resident daemon
     try {
@@ -170,7 +171,7 @@ export class LocalKokoroProvider implements NativeTtsProvider {
           speed: options?.speed || 1.0,
           lang: targetLang,
         },
-        60000
+        timeoutMs
       );
       return {
         wavPath: res.wav_path,
@@ -186,7 +187,7 @@ export class LocalKokoroProvider implements NativeTtsProvider {
     // 2. Hardware / OS Native Fallback
     if (process.platform === "win32") {
       try {
-        await this.synthesizeViaWindowsSapi(cleanText, tmpWav);
+        await this.synthesizeViaWindowsSapi(cleanText, tmpWav, hasKorean);
         return {
           wavPath: tmpWav,
           durationMs: 1500,
@@ -215,13 +216,20 @@ export class LocalKokoroProvider implements NativeTtsProvider {
     return { wavPath: "", durationMs: 0, sampleRate: 24000, text: cleanText, engine: "mock" };
   }
 
-  private async synthesizeViaWindowsSapi(text: string, outWav: string): Promise<void> {
+  private async synthesizeViaWindowsSapi(text: string, outWav: string, hasKorean = false): Promise<void> {
+    const tmpTxt = outWav.replace(/\.wav$/i, ".txt");
+    await fs.promises.writeFile(tmpTxt, text, "utf8");
     return new Promise((resolve, reject) => {
       const psScript = `
         Add-Type -AssemblyName System.Speech;
         $synth = New-Object System.Speech.Synthesis.SpeechSynthesizer;
+        if ('${hasKorean ? "1" : "0"}' -eq '1') {
+          $ko = $synth.GetInstalledVoices() | Where-Object { $_.VoiceInfo.Culture.Name -like 'ko*' -and $_.Enabled } | Select-Object -First 1;
+          if ($ko) { $synth.SelectVoice($ko.VoiceInfo.Name); }
+        }
         $synth.SetOutputToWaveFile('${outWav.replace(/'/g, "''")}');
-        $synth.Speak('${text.replace(/'/g, "''").replace(/[\r\n]+/g, " ")}');
+        $raw = [IO.File]::ReadAllText('${tmpTxt.replace(/'/g, "''")}', [Text.Encoding]::UTF8);
+        $synth.Speak($raw);
         $synth.Dispose();
       `;
       const cleanCmd = psScript.split(/\r?\n/).map((s) => s.trim()).filter(Boolean).join(" ");
@@ -230,10 +238,14 @@ export class LocalKokoroProvider implements NativeTtsProvider {
       });
 
       proc.on("exit", (code) => {
+        try { fs.unlinkSync(tmpTxt); } catch {}
         if (code === 0 && fs.existsSync(outWav)) resolve();
         else reject(new Error(`PowerShell SAPI exited with code ${code}`));
       });
-      proc.on("error", reject);
+      proc.on("error", (err) => {
+        try { fs.unlinkSync(tmpTxt); } catch {}
+        reject(err);
+      });
     });
   }
 

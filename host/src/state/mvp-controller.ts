@@ -44,6 +44,22 @@ export function turnContainsUserPrompt(turn: any, prompt: string): boolean {
   });
 }
 
+export function extractSpokenAgentResponse(rawText: string): string {
+  if (!rawText) return "";
+  const clean = rawText.trim();
+  // If the agent response consists of multiple messages joined by newlines,
+  // extract the final concluding message rather than all intermediate tool/thought messages
+  const msgs = clean.split(/\n(?=[^\s])/).map(m => m.trim()).filter(Boolean);
+  const target = msgs.length > 0 ? msgs[msgs.length - 1] : clean;
+  // Cap length to 500 characters so synthesis remains instant and natural
+  if (target.length > 500) {
+    const end = target.slice(0, 500).search(/[.!?]\s+(?=[^\s])/);
+    if (end > 100) return target.slice(0, end + 1).trim();
+    return target.slice(0, 500).trim();
+  }
+  return target;
+}
+
 export interface MvpDesktopClient {
   isConnected: boolean;
   connect(): Promise<boolean>;
@@ -252,7 +268,8 @@ export class MvpController {
             const turns = this.context.currentTurns;
             const latest = turns.length > 0 ? turns[turns.length - 1] : null;
             if (latest?.agentResponse) {
-              void this.speakText(latest.agentResponse);
+              const text = extractSpokenAgentResponse(latest.agentResponse);
+              if (text) void this.speakText(text);
             }
           }
         }).catch(e => this.info("Read failed", String(e)));
@@ -266,7 +283,8 @@ export class MvpController {
       this.clearNotice();
       const turns = this.context.currentTurns;
       const latestWithResponse = turns.slice().reverse().find(t => t.agentResponse && t.agentResponse.trim());
-      const text = latestWithResponse?.agentResponse || this.context.getCurrentSession().preview;
+      const rawText = latestWithResponse?.agentResponse || this.context.getCurrentSession().preview;
+      const text = extractSpokenAgentResponse(rawText);
       if (text && text.trim()) {
         await this.speakText(text);
       } else {
