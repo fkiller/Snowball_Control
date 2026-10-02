@@ -15,7 +15,9 @@
 .env.*
 !.env.example
 .venv/
+.venv*/
 node_modules/
+host/.state/
 dist/
 build/
 coverage/
@@ -23,6 +25,20 @@ coverage/
 __pycache__/
 *.py[cod]
 /hardware/mk20/hud/mk20-hud
+/hardware/mk20/hud/pcm-stream
+/hardware/mk20/hud/.deps/
+/hardware/mk20/hud/font-probe
+/hardware/mk20/hud/KeyboardDevice
+/hardware/mk20/hud/input-sniff
+/hardware/mk20/hud/test-all-fbs
+/hardware/mk20/hud/test_uart
+/hardware/mk20/hud/test-knob-chord
+/hardware/mk20/hud/*.raw
+/hardware/mk20/hud/*.ppm
+/hardware/mk20/hud/*.png
+/hardware/mk20/*.zip
+*.o
+*.so
 
 # Editors and operating systems.
 .vscode/

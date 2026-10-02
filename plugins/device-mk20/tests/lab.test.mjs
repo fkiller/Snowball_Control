@@ -21,6 +21,14 @@ test('renderer handles UTF-8 byte bounds and unsafe legacy delimiters; rejects o
   assert.throws(()=>encodeLegacyPreview({...view,keys:[{id:1},{id:1}]},1));
   assert.throws(()=>encodeLegacyPreview({...view,keys:Array.from({length:20},(_,i)=>({id:i+1,top:'x'.repeat(15),main:'x'.repeat(23),sub:'x'.repeat(23)}))},1),/datagram_capacity/);
 });
+test('rich lab previews stay bounded and reject invalid firmware color/index fields',()=>{
+  const key=id=>({id,flags:32,items:Array(8).fill('x'.repeat(23)),colors:[0,1,2,3,4,5,0,1],activeItem:0,total:8});
+  const rich=encodeLegacyPreview({...view,mode:'changes',keys:Array.from({length:8},(_,i)=>key(i+1))},1);
+  assert.ok(rich.length>1400 && rich.length<=4096);
+  assert.throws(()=>encodeLegacyPreview({...view,mode:'changes',keys:Array.from({length:20},(_,i)=>key(i+1))},1),/datagram_capacity/);
+  for(const bad of [{colors:[{type:'key'}]},{colors:[6]},{activeItem:-1},{total:256}])
+    assert.throws(()=>encodeLegacyPreview({...view,keys:[{id:1,main:'x',...bad}]},1),/invalid_key/);
+});
 test('real loopback lab preview stays on pinned peer and spoofed sender cannot retarget it',async t=>{
   const peer=dgram.createSocket('udp4');const spoof=dgram.createSocket('udp4');peer.bind(0,'127.0.0.1');spoof.bind(0,'127.0.0.1');await Promise.all([once(peer,'listening'),once(spoof,'listening')]);t.after(()=>{peer.close();spoof.close();});
   const transport=new Mk20LabTransport({labEnabled:true,localAddress:'127.0.0.1',targetAddress:'127.0.0.1',targetPort:peer.address().port});t.after(()=>transport.close());const started=await transport.start();assert.equal(started.controllable,false);

@@ -8,7 +8,7 @@ LOG="/mnt/SDCARD/dev-access.log"
 IP_FILE="/mnt/SDCARD/current_ip.txt"
 WPA_CONF="/etc/wpa_supplicant.conf"
 
-# Default fallback credentials if config is missing
+# Default fallback credentials if config is missing (override via /mnt/SDCARD/dev-access.conf)
 WIFI_SSID="YOUR_WIFI_SSID"
 WIFI_PSK="YOUR_WIFI_PSK"
 DEV_PC_MAC="AA:BB:CC:DD:EE:FF"

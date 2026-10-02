@@ -40,19 +40,57 @@ export function encodeLegacyPreview(view, sequence) {
   requireThat(int(view.scroll,0,1_000_000) && int(view.totalLines,0,1_000_000) && int(view.volume,0,100) && typeof view.muted === 'boolean', 'invalid_view');
   const ids = new Set(); const keys = view.keys.map(key=>{
     requireThat(int(key.id,1,20) && !ids.has(key.id) && int(key.flags ?? 0,0,63), 'invalid_key');ids.add(key.id);
-    return {id:key.id,top:text(key.top ?? '',15),main:text(key.main ?? '',23),sub:text(key.sub ?? '',23),flags:key.flags ?? 0};
+    const k = {id:key.id,main:text(key.main ?? '',23),flags:key.flags ?? 0};
+    if (key.top) k.top = text(key.top, 15);
+    if (key.sub) k.sub = text(key.sub, 23);
+    if (Array.isArray(key.items)) k.items = key.items.slice(0,8).map(it => text(it, 23));
+    if (key.activeItem !== undefined) { requireThat(int(key.activeItem,0,255), 'invalid_key'); k.activeItem = key.activeItem; }
+    if (key.total !== undefined) { requireThat(int(key.total,0,255), 'invalid_key'); k.total = key.total; }
+    if (key.colors !== undefined) {
+      requireThat(Array.isArray(key.colors) && key.colors.slice(0,8).every(color => int(color,0,5)), 'invalid_key');
+      k.colors = key.colors.slice(0,8);
+    }
+    return k;
   });
   const packet={type:'v2_sync',seq:sequence,viewMode:text(view.mode ?? 'lab',15),topTitle:text(view.title,63),topSubtitle:text(view.subtitle ?? '',63),topBody:view.lines.map(line=>text(line,168)).join('\n'),topScroll:view.scroll,topTotalLines:view.totalLines,volume:view.volume,isMuted:view.muted,keys};
-  const encoded=Buffer.from(JSON.stringify(packet)); requireThat(encoded.length <= 1400, 'datagram_capacity'); return encoded;
+  if (view.skinId !== undefined) {
+    requireThat(typeof view.skinId === 'string' && /^[a-z0-9][a-z0-9-_]{1,31}$/.test(view.skinId), 'invalid_skin_id');
+    packet.skinId = view.skinId;
+  }
+  if (view.skinName !== undefined) {
+    packet.skinName = text(view.skinName, 31);
+  }
+  const maxCapacity = (view.mode === 'workspace' || view.mode === 'changes' || view.keys.some(k => (k.flags & 32) || (k.items && k.items.length > 0))) ? 4096 : 1400;
+  const encoded=Buffer.from(JSON.stringify(packet)); requireThat(encoded.length <= maxCapacity, 'datagram_capacity'); return encoded;
 }
+
+export * from './skin.mjs';
+import { DeviceSkinManager } from './skin.mjs';
 
 /** Explicit lab-only transport. It cannot grant core Controller permissions. */
 export class Mk20LabTransport extends EventEmitter {
   #socket; #starting=false; #generation=0; #sequence=0; #lastSequence=-1; #window=Date.now(); #count=0;
-  constructor({labEnabled=false,localAddress,targetAddress,targetPort=7701,localPort=0}) {
+  skinManager;
+  constructor({labEnabled=false,localAddress,targetAddress,targetPort=7701,localPort=0,skinManager}) {
     super();requireThat(labEnabled === true,'lab_opt_in_required');
     requireThat(local(localAddress)&&local(targetAddress)&&int(targetPort,1,65535)&&int(localPort,0,65535),'invalid_endpoint');
     this.endpoint=Object.freeze({localAddress,targetAddress,targetPort,localPort});
+    this.skinManager = skinManager || new DeviceSkinManager();
+  }
+  listSkins() { return this.skinManager.listSkins(); }
+  getActiveSkin() { return this.skinManager.getActiveSkin(); }
+  setSkin(id) {
+    const res = this.skinManager.setActiveSkin(id);
+    this.emit('lab.skin', res);
+    return res;
+  }
+  cycleSkin(delta = 1) {
+    const res = this.skinManager.cycleSkin(delta);
+    this.emit('lab.skin', res);
+    return res;
+  }
+  registerSkin(definition) {
+    return this.skinManager.registerSkin(definition);
   }
   async start() {
     requireThat(!this.#socket&&!this.#starting,'already_started');this.#starting=true;const generation=++this.#generation;
@@ -72,7 +110,8 @@ export class Mk20LabTransport extends EventEmitter {
   }
   async preview(view) {
     const socket=this.#socket;requireThat(socket&&!this.#starting,'not_running');
-    const bytes=encodeLegacyPreview(view,++this.#sequence);
+    const enriched = (view && view.skinId) ? view : this.skinManager.applyToPreview(view);
+    const bytes=encodeLegacyPreview(enriched,++this.#sequence);
     await new Promise((resolve,reject)=>socket.send(bytes,this.endpoint.targetPort,this.endpoint.targetAddress,error=>error?reject(new Mk20Fault('preview_failed')):resolve()));
     return {sentBytes:bytes.length,delivery:'unacknowledged_lab'};
   }

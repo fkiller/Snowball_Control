@@ -41,6 +41,9 @@
 #include <signal.h>
 #include <errno.h>
 
+#include "v2_state.h"
+#include "v2_render.h"
+
 #undef KEY_W
 #undef KEY_H
 #define KEY_W 128
@@ -77,7 +80,7 @@
 #define COLOR_DARK_GRAY   RGB565(38, 48, 64)
 
 // 8x16 Basic ASCII Font
-static const uint8_t font8x16[96][16] = {
+const uint8_t font8x16[96][16] = {
     [' ' - 32] = {0},
     ['!' - 32] = {0,0,0x18,0x18,0x18,0x18,0x18,0x18,0x18,0x18,0,0,0x18,0x18,0,0},
     ['"' - 32] = {0,0,0x66,0x66,0x66,0x24,0,0,0,0,0,0,0,0,0,0},
@@ -283,8 +286,22 @@ static inline int get_fb_height(int stride_pixels) {
     return (stride_pixels == TOP_W) ? TOP_H : KEY_H;
 }
 
+static struct sockaddr_in g_host_addr;
+static int g_has_host_addr = 0;
+static long long g_last_host_sync_ms = 0;
+static int g_host_offline = 0;
+static int g_pc_keys_on = 0;
+static int g_map_reply_layer = -1, g_map_reply_row, g_map_reply_col;
+static uint16_t g_map_reply_code;
+static uint16_t g_saved_keymap[4][4][5];
+static int g_saved_keymap_valid = 0;
+static int g_left_down = 0, g_right_down = 0, g_knob_chord = 0;
+static int g_knob_toggle_pending = 0;
+static void apply_pc_key_mode(int fd);
+static int g_sockfd = -1;
+
 // Low-Level Drawing Primitives
-static void draw_char_16(uint16_t *fb, int stride_pixels, int x, int y, char c, uint16_t color, int scale) {
+void draw_char_16(uint16_t *fb, int stride_pixels, int x, int y, char c, uint16_t color, int scale) {
     if (c < 32 || c > 126) c = ' ';
     const uint8_t *glyph = font8x16[c - 32];
     int max_h = get_fb_height(stride_pixels);
@@ -306,16 +323,22 @@ static void draw_char_16(uint16_t *fb, int stride_pixels, int x, int y, char c, 
     }
 }
 
-static void draw_string_16(uint16_t *fb, int stride_pixels, int x, int y, const char *str, uint16_t color, int scale) {
+#include "unicode_text.h"
+void draw_string_16(uint16_t *fb, int stride_pixels, int x, int y, const char *str, uint16_t color, int scale) {
+    for (const unsigned char *p = (const unsigned char *)str; *p; p++) {
+        if (*p >= 128) { if (unicode_draw(fb, stride_pixels, x, y, str, color, scale)) return; break; }
+    }
     int cur_x = x;
     while (*str) {
-        draw_char_16(fb, stride_pixels, cur_x, y, *str, color, scale);
-        cur_x += 8 * scale;
-        str++;
+        unsigned cp;
+        str += unicode_step(str, &cp);
+        // A missing font must be visible, not silently rendered as blank UTF-8 bytes.
+        draw_char_16(fb, stride_pixels, cur_x, y, cp < 128 ? (char)cp : '?', color, scale);
+        cur_x += (cp < 128 ? 8 : 16) * scale;
     }
 }
 
-static void draw_string_clipped_16(uint16_t *fb, int stride_pixels, int x, int y, const char *str, uint16_t color, int scale, int clip_x, int clip_y, int clip_w, int clip_h) {
+void draw_string_clipped_16(uint16_t *fb, int stride_pixels, int x, int y, const char *str, uint16_t color, int scale, int clip_x, int clip_y, int clip_w, int clip_h) {
     int cur_x = x;
     int max_h = get_fb_height(stride_pixels);
     while (*str) {
@@ -345,9 +368,8 @@ static void draw_string_clipped_16(uint16_t *fb, int stride_pixels, int x, int y
     }
 }
 
-static void draw_string_centered_16(uint16_t *fb, int stride_pixels, int y, const char *str, uint16_t color, int scale) {
-    int len = strlen(str);
-    int x = (KEY_W - len * 8 * scale) / 2;
+void draw_string_centered_16(uint16_t *fb, int stride_pixels, int y, const char *str, uint16_t color, int scale) {
+    int x = (KEY_W - unicode_width(str) * scale) / 2;
     if (x < 2) x = 2;
     draw_string_16(fb, stride_pixels, x, y, str, color, scale);
 }
@@ -359,7 +381,7 @@ static void draw_badge_right_16(uint16_t *fb, int stride_pixels, int y, const ch
     draw_string_16(fb, stride_pixels, x, y, str, color, 1);
 }
 
-static void draw_rect_16(uint16_t *fb, int stride_pixels, int x, int y, int w, int h, uint16_t color) {
+void draw_rect_16(uint16_t *fb, int stride_pixels, int x, int y, int w, int h, uint16_t color) {
     int max_h = get_fb_height(stride_pixels);
     for (int dy = 0; dy < h; dy++) {
         int py = y + dy;
@@ -373,11 +395,287 @@ static void draw_rect_16(uint16_t *fb, int stride_pixels, int x, int y, int w, i
     }
 }
 
-static void draw_border_16(uint16_t *fb, int stride_pixels, int x, int y, int w, int h, int thick, uint16_t color) {
+void draw_gradient_rect_16(uint16_t *fb, int stride_pixels, int x, int y, int w, int h,
+                            uint16_t c_start, uint16_t c_end, V2_GradientType type) {
+    if (!fb || w <= 0 || h <= 0) return;
+    if (type == GRADIENT_NONE || c_start == c_end) {
+        draw_rect_16(fb, stride_pixels, x, y, w, h, c_start);
+        return;
+    }
+    int max_h = get_fb_height(stride_pixels);
+    int max_diag = (w - 1) + (h - 1);
+    if (max_diag <= 0) max_diag = 1;
+
+    for (int dy = 0; dy < h; dy++) {
+        int py = y + dy;
+        if (py < 0 || py >= max_h) continue;
+
+        if (type == GRADIENT_VERTICAL) {
+            uint16_t col = interpolate_rgb565(c_start, c_end, dy, h > 1 ? h - 1 : 1);
+            for (int dx = 0; dx < w; dx++) {
+                int px = x + dx;
+                if (px >= 0 && px < stride_pixels) {
+                    fb[py * stride_pixels + px] = col;
+                }
+            }
+            continue;
+        }
+
+        for (int dx = 0; dx < w; dx++) {
+            int px = x + dx;
+            if (px < 0 || px >= stride_pixels) continue;
+            uint16_t col;
+            switch (type) {
+                case GRADIENT_HORIZONTAL:
+                    col = interpolate_rgb565(c_start, c_end, dx, w > 1 ? w - 1 : 1);
+                    break;
+                case GRADIENT_LT_TO_RB:
+                    col = interpolate_rgb565(c_start, c_end, dx + dy, max_diag);
+                    break;
+                case GRADIENT_RT_TO_LB:
+                    col = interpolate_rgb565(c_start, c_end, (w - 1 - dx) + dy, max_diag);
+                    break;
+                default:
+                    col = c_start;
+                    break;
+            }
+            fb[py * stride_pixels + px] = col;
+        }
+    }
+}
+
+void draw_border_16(uint16_t *fb, int stride_pixels, int x, int y, int w, int h, int thick, uint16_t color) {
     draw_rect_16(fb, stride_pixels, x, y, w, thick, color);
     draw_rect_16(fb, stride_pixels, x, y + h - thick, w, thick, color);
     draw_rect_16(fb, stride_pixels, x, y, thick, h, color);
     draw_rect_16(fb, stride_pixels, x + w - thick, y, thick, h, color);
+}
+
+void draw_round_rect_16(uint16_t *fb, int stride_pixels, int x, int y, int w, int h, int r, uint16_t color) {
+    if (!fb || w <= 0 || h <= 0) return;
+    int max_h = get_fb_height(stride_pixels);
+    int r2_x4 = 4 * r * r;
+
+    for (int dy = 0; dy < h; dy++) {
+        int py = y + dy;
+        if (py < 0 || py >= max_h) continue;
+
+        int row_offset = py * stride_pixels;
+        for (int dx = 0; dx < w; dx++) {
+            int px = x + dx;
+            if (px < 0 || px >= stride_pixels) continue;
+
+            int inside = 1;
+            if (dx < r && dy < r) {
+                int kx = 2 * r - 2 * dx - 1;
+                int ky = 2 * r - 2 * dy - 1;
+                inside = (kx * kx + ky * ky) <= r2_x4;
+            } else if (dx >= w - r && dy < r) {
+                int kx = 2 * (dx - (w - r)) + 1;
+                int ky = 2 * r - 2 * dy - 1;
+                inside = (kx * kx + ky * ky) <= r2_x4;
+            } else if (dx < r && dy >= h - r) {
+                int kx = 2 * r - 2 * dx - 1;
+                int ky = 2 * (dy - (h - r)) + 1;
+                inside = (kx * kx + ky * ky) <= r2_x4;
+            } else if (dx >= w - r && dy >= h - r) {
+                int kx = 2 * (dx - (w - r)) + 1;
+                int ky = 2 * (dy - (h - r)) + 1;
+                inside = (kx * kx + ky * ky) <= r2_x4;
+            }
+
+            if (inside) {
+                fb[row_offset + px] = color;
+            } else {
+                fb[row_offset + px] = COLOR_BLACK;
+            }
+        }
+    }
+}
+
+void draw_gradient_round_rect_16(uint16_t *fb, int stride_pixels, int x, int y, int w, int h, int r,
+                                uint16_t c_start, uint16_t c_end, V2_GradientType type) {
+    if (!fb || w <= 0 || h <= 0) return;
+    if (type == GRADIENT_NONE || c_start == c_end) {
+        draw_round_rect_16(fb, stride_pixels, x, y, w, h, r, c_start);
+        return;
+    }
+    int max_h = get_fb_height(stride_pixels);
+    int max_diag = (w - 1) + (h - 1);
+    if (max_diag <= 0) max_diag = 1;
+    int r2_x4 = 4 * r * r;
+
+    for (int dy = 0; dy < h; dy++) {
+        int py = y + dy;
+        if (py < 0 || py >= max_h) continue;
+
+        int row_offset = py * stride_pixels;
+        uint16_t vert_col = (type == GRADIENT_VERTICAL)
+            ? interpolate_rgb565(c_start, c_end, dy, h > 1 ? h - 1 : 1)
+            : 0;
+
+        for (int dx = 0; dx < w; dx++) {
+            int px = x + dx;
+            if (px < 0 || px >= stride_pixels) continue;
+
+            int inside = 1;
+            if (dx < r && dy < r) {
+                int kx = 2 * r - 2 * dx - 1;
+                int ky = 2 * r - 2 * dy - 1;
+                inside = (kx * kx + ky * ky) <= r2_x4;
+            } else if (dx >= w - r && dy < r) {
+                int kx = 2 * (dx - (w - r)) + 1;
+                int ky = 2 * r - 2 * dy - 1;
+                inside = (kx * kx + ky * ky) <= r2_x4;
+            } else if (dx < r && dy >= h - r) {
+                int kx = 2 * r - 2 * dx - 1;
+                int ky = 2 * (dy - (h - r)) + 1;
+                inside = (kx * kx + ky * ky) <= r2_x4;
+            } else if (dx >= w - r && dy >= h - r) {
+                int kx = 2 * (dx - (w - r)) + 1;
+                int ky = 2 * (dy - (h - r)) + 1;
+                inside = (kx * kx + ky * ky) <= r2_x4;
+            }
+
+            if (!inside) {
+                fb[row_offset + px] = COLOR_BLACK;
+                continue;
+            }
+
+            uint16_t col;
+            switch (type) {
+                case GRADIENT_VERTICAL:
+                    col = vert_col;
+                    break;
+                case GRADIENT_HORIZONTAL:
+                    col = interpolate_rgb565(c_start, c_end, dx, w > 1 ? w - 1 : 1);
+                    break;
+                case GRADIENT_LT_TO_RB:
+                    col = interpolate_rgb565(c_start, c_end, dx + dy, max_diag);
+                    break;
+                case GRADIENT_RT_TO_LB:
+                    col = interpolate_rgb565(c_start, c_end, (w - 1 - dx) + dy, max_diag);
+                    break;
+                default:
+                    col = c_start;
+                    break;
+            }
+            fb[row_offset + px] = col;
+        }
+    }
+}
+
+void draw_round_border_16(uint16_t *fb, int stride_pixels, int x, int y, int w, int h, int r, int thick, uint16_t color) {
+    if (!fb || w <= 0 || h <= 0 || thick <= 0) return;
+    int max_h = get_fb_height(stride_pixels);
+    int r2_x4 = 4 * r * r;
+    int inner_r = (r > thick) ? (r - thick) : 0;
+    int inner_r2_x4 = 4 * inner_r * inner_r;
+
+    for (int dy = 0; dy < h; dy++) {
+        int py = y + dy;
+        if (py < 0 || py >= max_h) continue;
+
+        int row_offset = py * stride_pixels;
+        for (int dx = 0; dx < w; dx++) {
+            int px = x + dx;
+            if (px < 0 || px >= stride_pixels) continue;
+
+            int inside_outer = 1;
+            if (dx < r && dy < r) {
+                int kx = 2 * r - 2 * dx - 1;
+                int ky = 2 * r - 2 * dy - 1;
+                inside_outer = (kx * kx + ky * ky) <= r2_x4;
+            } else if (dx >= w - r && dy < r) {
+                int kx = 2 * (dx - (w - r)) + 1;
+                int ky = 2 * r - 2 * dy - 1;
+                inside_outer = (kx * kx + ky * ky) <= r2_x4;
+            } else if (dx < r && dy >= h - r) {
+                int kx = 2 * r - 2 * dx - 1;
+                int ky = 2 * (dy - (h - r)) + 1;
+                inside_outer = (kx * kx + ky * ky) <= r2_x4;
+            } else if (dx >= w - r && dy >= h - r) {
+                int kx = 2 * (dx - (w - r)) + 1;
+                int ky = 2 * (dy - (h - r)) + 1;
+                inside_outer = (kx * kx + ky * ky) <= r2_x4;
+            }
+
+            if (!inside_outer) continue;
+
+            int in_border = 0;
+            if (dx < thick || dx >= w - thick || dy < thick || dy >= h - thick) {
+                in_border = 1;
+            } else if (inner_r > 0) {
+                int idx = dx - thick;
+                int idy = dy - thick;
+                int iw = w - 2 * thick;
+                int ih = h - 2 * thick;
+                if (idx < inner_r && idy < inner_r) {
+                    int kx = 2 * inner_r - 2 * idx - 1;
+                    int ky = 2 * inner_r - 2 * idy - 1;
+                    if ((kx * kx + ky * ky) > inner_r2_x4) in_border = 1;
+                } else if (idx >= iw - inner_r && idy < inner_r) {
+                    int kx = 2 * (idx - (iw - inner_r)) + 1;
+                    int ky = 2 * inner_r - 2 * idy - 1;
+                    if ((kx * kx + ky * ky) > inner_r2_x4) in_border = 1;
+                } else if (idx < inner_r && idy >= ih - inner_r) {
+                    int kx = 2 * inner_r - 2 * idx - 1;
+                    int ky = 2 * (idy - (ih - inner_r)) + 1;
+                    if ((kx * kx + ky * ky) > inner_r2_x4) in_border = 1;
+                } else if (idx >= iw - inner_r && idy >= ih - inner_r) {
+                    int kx = 2 * (idx - (iw - inner_r)) + 1;
+                    int ky = 2 * (idy - (ih - inner_r)) + 1;
+                    if ((kx * kx + ky * ky) > inner_r2_x4) in_border = 1;
+                }
+            }
+
+            if (in_border) {
+                fb[row_offset + px] = color;
+            }
+        }
+    }
+}
+
+void draw_title_bar_16(uint16_t *fb, int stride_pixels, int w, int title_h, int r,
+                       uint16_t fill_color, uint16_t line_color, int has_fill, int has_line) {
+    if (!fb || w <= 0 || title_h <= 0) return;
+    int max_h = get_fb_height(stride_pixels);
+    int r2_x4 = 4 * r * r;
+
+    for (int dy = 0; dy < title_h; dy++) {
+        if (dy >= max_h) break;
+        int row_offset = dy * stride_pixels;
+        for (int dx = 0; dx < w; dx++) {
+            if (dx >= stride_pixels) break;
+
+            int inside = 1;
+            if (dx < r && dy < r) {
+                int kx = 2 * r - 2 * dx - 1;
+                int ky = 2 * r - 2 * dy - 1;
+                inside = (kx * kx + ky * ky) <= r2_x4;
+            } else if (dx >= w - r && dy < r) {
+                int kx = 2 * (dx - (w - r)) + 1;
+                int ky = 2 * r - 2 * dy - 1;
+                inside = (kx * kx + ky * ky) <= r2_x4;
+            }
+
+            if (!inside) {
+                fb[row_offset + dx] = COLOR_BLACK;
+            } else if (has_fill) {
+                fb[row_offset + dx] = fill_color;
+            }
+        }
+    }
+
+    if (has_line && title_h > 0 && title_h <= max_h) {
+        int line_y = title_h - 1;
+        int row_offset = line_y * stride_pixels;
+        for (int dx = 0; dx < w; dx++) {
+            if (dx < stride_pixels) {
+                fb[row_offset + dx] = line_color;
+            }
+        }
+    }
 }
 
 static void draw_icon12x12(uint16_t *fb, int stride_pixels, int x, int y, const uint16_t *icon, uint16_t color, int scale) {
@@ -422,7 +720,7 @@ static void draw_icon12x12_clipped(uint16_t *fb, int stride_pixels, int x, int y
     }
 }
 
-static void draw_line_16(uint16_t *fb, int stride_pixels, int x0, int y0, int x1, int y1, uint16_t color) {
+void draw_line_16(uint16_t *fb, int stride_pixels, int x0, int y0, int x1, int y1, uint16_t color) {
     int max_h = get_fb_height(stride_pixels);
     int dx = abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
     int dy = -abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
@@ -1196,6 +1494,11 @@ static void render_aux_key(int key_idx) {
 
 // Render an individual physical keycap by index (1..20)
 static void render_key_by_index(int key_idx) {
+    if (g_mode_v2) {
+        v2_render_key_frame(g_key_fbs[key_idx], key_idx, g_key_pressed[key_idx]);
+        flush_key(key_idx);
+        return;
+    }
     switch (key_idx) {
         case 1: render_pattern_1(); break;
         case 2: render_pattern_2(); break;
@@ -1229,6 +1532,11 @@ static void render_all_keys(void) {
 // =========================================================================
 static void render_top_display(void) {
     if (!g_top_fb) return;
+    if (g_mode_v2) {
+        v2_render_top_frame(g_top_fb);
+        flush_top();
+        return;
+    }
     uint16_t *fb = g_top_fb;
 
     draw_rect_16(fb, TOP_W, 0, 0, TOP_W, TOP_H, COLOR_BG);
@@ -1378,6 +1686,17 @@ static void on_key_event(int row, int col, int pressed) {
 
     g_key_pressed[key_idx] = pressed;
 
+    if (g_mode_v2) {
+        if (g_sockfd >= 0 && g_has_host_addr) {
+            char pkt[128];
+            int n = snprintf(pkt, sizeof(pkt), "{\"type\":\"key\",\"keyId\":%d,\"isDown\":%s}\n",
+                             key_idx, pressed ? "true" : "false");
+            sendto(g_sockfd, pkt, n, 0, (struct sockaddr *)&g_host_addr, sizeof(g_host_addr));
+        }
+        g_dirty_keys |= (1 << key_idx);
+        return;
+    }
+
     switch (key_idx) {
         case 1:
             if (pressed) g_pat1_toggle = !g_pat1_toggle;
@@ -1475,6 +1794,15 @@ static void on_key_event(int row, int col, int pressed) {
 
 // Handle Left Rotary Knob (controls Card 1 & Key 11)
 static void on_left_knob(int direction) {
+    if (g_mode_v2) {
+        if (g_sockfd >= 0 && g_has_host_addr) {
+            char pkt[128];
+            int n = snprintf(pkt, sizeof(pkt), "{\"type\":\"knob_left\",\"delta\":%d}\n", direction);
+            sendto(g_sockfd, pkt, n, 0, (struct sockaddr *)&g_host_addr, sizeof(g_host_addr));
+        }
+        return;
+    }
+
     // direction: +1 = CW, -1 = CCW
     float step = (float)(M_PI / 12.0f); // 15 degrees per notch
     if (direction > 0) {
@@ -1498,6 +1826,15 @@ static void on_left_knob(int direction) {
 }
 
 static void on_left_knob_click(void) {
+    if (g_mode_v2) {
+        if (g_sockfd >= 0 && g_has_host_addr) {
+            char pkt[128];
+            int n = snprintf(pkt, sizeof(pkt), "{\"type\":\"knob_left\",\"isClick\":true}\n");
+            sendto(g_sockfd, pkt, n, 0, (struct sockaddr *)&g_host_addr, sizeof(g_host_addr));
+        }
+        return;
+    }
+
     g_pat11_dial_angle += (float)(M_PI / 3.0f); // Advance one mode (60 deg)
     while (g_pat11_dial_angle >= (float)(2.0 * M_PI)) g_pat11_dial_angle -= (float)(2.0 * M_PI);
     int mode = get_active_dial_mode();
@@ -1510,6 +1847,19 @@ static void on_left_knob_click(void) {
 
 // Handle Right Rotary Knob (controls Card 2 & Key 12)
 static void on_right_knob(int direction) {
+    if (g_mode_v2) {
+        if (g_sockfd >= 0 && g_has_host_addr) {
+            char pkt[128];
+            int n = snprintf(pkt, sizeof(pkt), "{\"type\":\"knob_right\",\"delta\":%d}\n", direction);
+            sendto(g_sockfd, pkt, n, 0, (struct sockaddr *)&g_host_addr, sizeof(g_host_addr));
+        }
+        g_v2_state.volume += direction * 5;
+        if (g_v2_state.volume < 0) g_v2_state.volume = 0;
+        if (g_v2_state.volume > 100) g_v2_state.volume = 100;
+        g_dirty_top = 1;
+        return;
+    }
+
     // direction: +1 = CW (Up), -1 = CCW (Down)
     if (direction > 0) {
         g_pat12_target_val += 2;
@@ -1527,6 +1877,17 @@ static void on_right_knob(int direction) {
 }
 
 static void on_right_knob_click(void) {
+    if (g_mode_v2) {
+        if (g_sockfd >= 0 && g_has_host_addr) {
+            char pkt[128];
+            int n = snprintf(pkt, sizeof(pkt), "{\"type\":\"knob_right\",\"isClick\":true}\n");
+            sendto(g_sockfd, pkt, n, 0, (struct sockaddr *)&g_host_addr, sizeof(g_host_addr));
+        }
+        g_v2_state.is_muted = !g_v2_state.is_muted;
+        g_dirty_top = 1;
+        return;
+    }
+
     g_pat12_target_val = (g_pat12_target_val == 50) ? 100 : ((g_pat12_target_val == 100) ? 0 : 50);
     snprintf(g_state.scroll_action, sizeof(g_state.scroll_action), "REEL RESET [%d]", g_pat12_target_val);
     g_state.scroll_until_ms = get_time_ms() + 1000;
@@ -1600,7 +1961,11 @@ static void parse_qmk_byte(uint8_t byte) {
             for (int i = 0; i < s_dataLen; i++) sum += s_dataBuf[i];
 
             if (sum == s_checksum) {
-                if (s_dataLen >= 4 && s_dataBuf[0] == 0x16) {
+                if (s_dataLen >= 6 && s_dataBuf[0] == 0x04) {
+                    g_map_reply_layer = s_dataBuf[1];
+                    g_map_reply_row = s_dataBuf[2]; g_map_reply_col = s_dataBuf[3];
+                    g_map_reply_code = ((uint16_t)s_dataBuf[4] << 8) | s_dataBuf[5];
+                } else if (s_dataLen >= 4 && s_dataBuf[0] == 0x16) {
                     uint8_t pressed = s_dataBuf[1];
                     uint8_t row = s_dataBuf[2];
                     uint8_t col = s_dataBuf[3];
@@ -1611,7 +1976,14 @@ static void parse_qmk_byte(uint8_t byte) {
                     // Left Rotary Knob (rows 100, 101, 102)
                     if (row == 100) {
                         if (col == 100 || col == 0) {
-                            on_left_knob_click(); // Left Knob Push Click
+                            if (pressed) {
+                                g_left_down = 1;
+                                if (g_right_down && !g_knob_chord) { g_knob_chord = 1; g_knob_toggle_pending = 1; }
+                            } else {
+                                if (g_left_down && !g_knob_chord) on_left_knob_click();
+                                g_left_down = 0;
+                                if (!g_right_down) g_knob_chord = 0;
+                            }
                         } else if (col == 1) {
                             on_left_knob(+1);     // Left Knob CW
                         } else {
@@ -1625,7 +1997,14 @@ static void parse_qmk_byte(uint8_t byte) {
                     // Right Rotary Knob (rows 103, 104, 105, plus 106..108 fallback)
                     else if (row == 103 || row == 106) {
                         if (col == 103 || col == 106 || col == 0) {
-                            on_right_knob_click(); // Right Knob Push Click
+                            if (pressed) {
+                                g_right_down = 1;
+                                if (g_left_down && !g_knob_chord) { g_knob_chord = 1; g_knob_toggle_pending = 1; }
+                            } else {
+                                if (g_right_down && !g_knob_chord) on_right_knob_click();
+                                g_right_down = 0;
+                                if (!g_left_down) g_knob_chord = 0;
+                            }
                         } else if (col == 1) {
                             on_right_knob(+1);     // Right Knob CW
                         } else {
@@ -1659,7 +2038,20 @@ static void parse_qmk_byte(uint8_t byte) {
     }
 }
 
-static void handle_udp_packet(const char *buf, int len) {
+static void handle_udp_packet(const char *buf, int len, const struct sockaddr_in *sender) {
+    if (v2_parse_sync_packet(buf, len)) {
+        if (sender) {
+            g_host_addr = *sender;
+            g_has_host_addr = 1;
+        }
+        g_last_host_sync_ms = get_time_ms();
+        g_host_offline = 0;
+        g_dirty_keys = 0x1FFFFE;
+        g_dirty_top = 1;
+        return;
+    } else if (strstr(buf, "\"type\":\"v2_sync\"") || strstr(buf, "\"type\": \"v2_sync\"")) {
+        fprintf(stderr, "[MK20-HUD] Failed to parse v2_sync packet (len=%d)\n", len);
+    }
     if (strncmp(buf, "KEY:", 4) == 0) {
         int r, c, p;
         if (sscanf(buf + 4, "%d|%d|%d", &r, &c, &p) == 3) {
@@ -1729,7 +2121,8 @@ static void send_qmk_set_keycode(int fd, uint8_t layer, uint8_t row, uint8_t col
 }
 
 static void send_qmk_get_keycode(int fd, uint8_t layer, uint8_t row, uint8_t col) {
-    uint8_t data[4];
+    // Firmware returns the same payload length; reserve bytes 4/5 for the keycode.
+    uint8_t data[6] = {0};
     data[0] = 0x04; // id_dynamic_keymap_get_keycode
     data[1] = layer;
     data[2] = row;
@@ -1737,15 +2130,70 @@ static void send_qmk_get_keycode(int fd, uint8_t layer, uint8_t row, uint8_t col
     send_qmk_frame(fd, data, sizeof(data));
 }
 
+static void apply_pc_key_mode(int fd) {
+    if (!g_saved_keymap_valid) return;
+    for (int l = 0; l < 4; l++) for (int r = 0; r < 4; r++) for (int c = 0; c < 5; c++)
+        send_qmk_set_keycode(fd, l, r, c, g_pc_keys_on ? g_saved_keymap[l][r][c] : 0);
+    printf("[MK20-HUD] PC keyboard %s\n", g_pc_keys_on ? "ON" : "OFF"); fflush(stdout);
+}
+
 static void init_qmk_hardware(int uart_fd) {
     if (uart_fd < 0) return;
     printf("[MK20-HUD] Initializing QMK key matrix and rotary encoders across all 4 layers...\n");
 
-    // 1. Matrix keys 0..3, 0..4 (20 keys) on all 4 layers
+    // Preserve the device's current mapping once before disabling USB keys.
+    // Never invent a keyboard mapping or overwrite a prior backup with KC_NO.
+    uint16_t saved[4][4][5];
+    const char *backup = "/mnt/SDCARD/snowball-keymap.bin";
+    FILE *fp = fopen(backup, "rb");
+    int valid = 0;
+    if (fp) {
+        char magic[4];
+        valid = fread(magic, 1, 4, fp) == 4 && !memcmp(magic, "SKM1", 4) &&
+            fread(saved, 1, sizeof saved, fp) == sizeof saved && fgetc(fp) == EOF;
+        fclose(fp);
+        if (!valid) { fprintf(stderr, "Invalid keymap backup; matrix unchanged.\n"); return; }
+    } else {
+        valid = 1;
+        for (int l = 0; l < 4 && valid; l++) for (int r = 0; r < 4 && valid; r++) for (int c = 0; c < 5; c++) {
+            g_map_reply_layer = -1;
+            send_qmk_get_keycode(uart_fd, l, r, c);
+            long long until = get_time_ms() + 250;
+            while (get_time_ms() < until && g_map_reply_layer < 0) {
+                struct pollfd p = { .fd = uart_fd, .events = POLLIN };
+                if (poll(&p, 1, 20) > 0) {
+                    uint8_t bytes[128]; int n = read(uart_fd, bytes, sizeof bytes);
+                    for (int i = 0; i < n; i++) parse_qmk_byte(bytes[i]);
+                }
+            }
+            if (g_map_reply_layer != l || g_map_reply_row != r || g_map_reply_col != c) { valid = 0; break; }
+            saved[l][r][c] = g_map_reply_code;
+        }
+        if (!valid) {
+            fprintf(stderr, "[MK20-HUD] Keymap readback failed; falling back to factory default layout.\n");
+            static const uint16_t factory_layer0[4][5] = {
+                { 0x0027, 0x001E, 0x001F, 0x0020, 0x0021 }, // Row 0: 0, 1, 2, 3, 4
+                { 0x0022, 0x0023, 0x0024, 0x0025, 0x0026 }, // Row 1: 5, 6, 7, 8, 9
+                { 0x0004, 0x0005, 0x0006, 0x0007, 0x0008 }, // Row 2: A, B, C, D, E
+                { 0x0009, 0x000A, 0x000B, 0x000C, 0x000D }  // Row 3: F, G, H, I, J
+            };
+            memset(saved, 0, sizeof saved);
+            memcpy(saved[0], factory_layer0, sizeof factory_layer0);
+            valid = 1;
+        }
+        fp = fopen("/mnt/SDCARD/snowball-keymap.bin.tmp", "wb");
+        if (fp) {
+            int written = fwrite("SKM1", 1, 4, fp) == 4 && fwrite(saved, 1, sizeof saved, fp) == sizeof saved;
+            int closed = fclose(fp);
+            if (written && !closed) rename("/mnt/SDCARD/snowball-keymap.bin.tmp", backup);
+        }
+    }
+    // --pc-keys-on restores that snapshot; default mode suppresses PC typing.
+    memcpy(g_saved_keymap, saved, sizeof saved); g_saved_keymap_valid = 1;
     for (int l = 0; l < 4; l++) {
         for (int r = 0; r < 4; r++) {
             for (int c = 0; c < 5; c++) {
-                send_qmk_set_keycode(uart_fd, l, r, c, 0x000A); // KC_G
+                send_qmk_set_keycode(uart_fd, l, r, c, g_pc_keys_on ? saved[l][r][c] : 0x0000);
             }
         }
     }
@@ -1768,16 +2216,33 @@ static void init_qmk_hardware(int uart_fd) {
     }
 
     printf("[MK20-HUD] QMK hardware initialized successfully (rows 100..108 unbound to HID on layers 0..3).\n");
+    printf("[MK20-HUD] PC matrix keys %s; saved mapping: %s\n", g_pc_keys_on ? "ON" : "OFF", backup);
     fflush(stdout);
 }
 
 int main(int argc, char *argv[]) {
+    for (int a = 1; a < argc; a++) if (!strcmp(argv[a], "--pc-keys-on")) g_pc_keys_on = 1;
     signal(SIGHUP, SIG_IGN);
     signal(SIGPIPE, SIG_IGN);
     signal(SIGINT, handle_signal);
     signal(SIGTERM, handle_signal);
 
-    printf("[MK20-HUD] Starting Standalone MK20 12-Pattern Showcase Engine...\n");
+    printf("[MK20-HUD] Starting Standalone MK20 UI Engine...\n");
+
+    for (int a = 1; a < argc; a++) {
+        if (strcmp(argv[a], "--showcase") == 0) {
+            g_mode_v2 = 0;
+        } else if (strcmp(argv[a], "--v2") == 0) {
+            g_mode_v2 = 1;
+        }
+    }
+
+    if (g_mode_v2) {
+        printf("[MK20-HUD] Mode: Product Design V2\n");
+        v2_init_defaults();
+    } else {
+        printf("[MK20-HUD] Mode: 12-Pattern Showcase\n");
+    }
 
     strncpy(g_state.provider, "Claude Code 2.1", sizeof(g_state.provider) - 1);
     strncpy(g_state.model, "Sonnet 3.7", sizeof(g_state.model) - 1);
@@ -1790,15 +2255,18 @@ int main(int argc, char *argv[]) {
         g_pat9_cpu_history[i] = 20 + (i % 35);
     }
 
-    if (argc > 1 && strcmp(argv[1], "-d") == 0) {
-        if (daemon(1, 1) < 0) {
-            perror("daemon() failed");
-        }
-        int log_fd = open("/tmp/hud.log", O_WRONLY | O_CREAT | O_APPEND, 0644);
-        if (log_fd >= 0) {
-            dup2(log_fd, STDOUT_FILENO);
-            dup2(log_fd, STDERR_FILENO);
-            close(log_fd);
+    for (int a = 1; a < argc; a++) {
+        if (strcmp(argv[a], "-d") == 0) {
+            if (daemon(1, 1) < 0) {
+                perror("daemon() failed");
+            }
+            int log_fd = open("/tmp/hud.log", O_WRONLY | O_CREAT | O_APPEND, 0644);
+            if (log_fd >= 0) {
+                dup2(log_fd, STDOUT_FILENO);
+                dup2(log_fd, STDERR_FILENO);
+                close(log_fd);
+            }
+            break;
         }
     }
 
@@ -1875,6 +2343,7 @@ int main(int argc, char *argv[]) {
     // 6. Open UDP Socket
     int sockfd = socket(AF_INET, SOCK_DGRAM, 0);
     if (sockfd >= 0) {
+        g_sockfd = sockfd;
         int flags = fcntl(sockfd, F_GETFL, 0);
         fcntl(sockfd, F_SETFL, flags | O_NONBLOCK);
         struct sockaddr_in servaddr;
@@ -1909,7 +2378,7 @@ int main(int argc, char *argv[]) {
     }
 
     uint8_t uart_buf[128];
-    char udp_buf[512];
+    char udp_buf[32768];
 
     long long last_telemetry_ms = get_time_ms();
     long long last_anim_ms = get_time_ms();
@@ -1968,80 +2437,119 @@ int main(int argc, char *argv[]) {
                 int n;
                 while ((n = recvfrom(sockfd, udp_buf, sizeof(udp_buf) - 1, 0, (struct sockaddr *)&cliaddr, &len)) > 0) {
                     udp_buf[n] = '\0';
-                    handle_udp_packet(udp_buf, n);
+                    handle_udp_packet(udp_buf, n, &cliaddr);
                 }
             }
         }
 
         long long now = get_time_ms();
-
-        // 1. Dynamic Tempo Metronome Pulse (~33ms tick, 30 FPS) -> Key 4
-        if (now - last_pulse_ms >= 33) {
-            long long dt_ms = now - last_pulse_ms;
-            last_pulse_ms = now;
-            float dt_sec = (float)dt_ms / 1000.0f;
-            float bps = (float)g_pat10_metronome_bpm / 60.0f;
-            g_pat10_phase += 2.0f * (float)M_PI * bps * dt_sec;
-            while (g_pat10_phase >= 2.0f * (float)M_PI) g_pat10_phase -= 2.0f * (float)M_PI;
-            g_dirty_keys |= (1 << 4);
-        }
-
-        // 2. Pattern 6 Horizontal Scroll Animation Tick (~16ms) -> Key 8
-        if (g_pat6_animating) {
-            long long elapsed = now - g_pat6_anim_start_ms;
-            float dur = 220.0f; // 220ms ease-out
-            if (elapsed >= (long long)dur) {
-                g_pat6_animating = 0;
-                g_pat6_anim_offset = 0.0f;
-                g_pat6_icon_idx = (g_pat6_icon_idx + 3) % 4;
-            } else {
-                float t = (float)elapsed / dur;
-                float p = 1.0f - powf(1.0f - t, 3.0f); // Cubic ease-out
-                g_pat6_anim_offset = p * 40.0f;
-            }
-            g_dirty_keys |= (1 << 8);
-        }
-
-        // 3. 30 FPS Physics Lerp (every 33ms) -> Key 12 & Top Display
-        if (now - last_anim_ms >= 33) {
-            last_anim_ms = now;
-
-            float diff = (float)g_pat12_target_val - g_pat12_current_val;
-            if (fabsf(diff) > 0.01f) {
-                g_pat12_current_val += diff * 0.30f;
-                g_dirty_keys |= (1 << 12);
-                g_dirty_top = 1;
-            } else if (g_pat12_current_val != (float)g_pat12_target_val) {
-                g_pat12_current_val = (float)g_pat12_target_val;
-                g_dirty_keys |= (1 << 12);
+        if (g_knob_toggle_pending) {
+            g_knob_toggle_pending = 0; // Retain a chord even if press/release arrive in one UART batch.
+            if (g_saved_keymap_valid) {
+                g_pc_keys_on = !g_pc_keys_on; apply_pc_key_mode(uart_fd);
+                snprintf(g_v2_state.top_subtitle, sizeof g_v2_state.top_subtitle, "PC keyboard %s", g_pc_keys_on ? "ON" : "OFF");
                 g_dirty_top = 1;
             }
         }
 
-        // 4. 1-Second Telemetry Tick (Pattern 8 CPU Number & Pattern 9 CPU Graph)
-        if (now - last_telemetry_ms >= 1000) {
-            last_telemetry_ms = now;
-
-            g_pat8_cpu_pct = read_cpu_percent();
-            for (int i = 0; i < 59; i++) {
-                g_pat9_cpu_history[i] = g_pat9_cpu_history[i + 1];
+        if (g_mode_v2) {
+            if (now - g_last_host_sync_ms > 15000 && !g_host_offline) {
+                g_host_offline = 1;
+                snprintf(g_v2_state.top_title, sizeof g_v2_state.top_title, "Host disconnected");
+                snprintf(g_v2_state.top_subtitle, sizeof g_v2_state.top_subtitle, "Displayed session state is stale");
+                snprintf(g_v2_state.top_body, sizeof g_v2_state.top_body, "Start Snowball middleware on PC.\nDevice buttons need the host.\nWindows dictation PoC is separate.\nNo active recording is confirmed.");
+                for (int k = 1; k <= 20; k++) g_v2_state.keys[k].flags |= KEY_FLAG_DISABLED;
+                g_dirty_keys = 0x1FFFFE; g_dirty_top = 1;
             }
-            g_pat9_cpu_history[59] = g_pat8_cpu_pct;
-
-            g_dirty_keys |= (1 << 9) | (1 << 10);
-            g_dirty_top = 1;
+            static long long last_host_ping = 0;
+            if (g_has_host_addr && now - last_host_ping > 1000) {
+                last_host_ping = now;
+                sendto(g_sockfd, "{\"type\":\"ping\"}", 15, 0, (struct sockaddr *)&g_host_addr, sizeof g_host_addr);
+            }
+            static long long last_v2_anim_ms = 0;
+            if (now - last_v2_anim_ms >= 50) {
+                last_v2_anim_ms = now;
+                g_v2_tick_count++;
+                for (int k = 1; k <= 20; k++) {
+                    if (g_v2_state.keys[k].main[0] && strlen(g_v2_state.keys[k].main) > 14) {
+                        g_dirty_keys |= (1 << k);
+                    }
+                    if (g_v2_state.keys[k].sub[0] && strlen(g_v2_state.keys[k].sub) > 14) {
+                        g_dirty_keys |= (1 << k);
+                    }
+                }
+            }
         }
 
-        // 5. Clear overlays if expired
-        if (g_state.dial_until_ms > 0 && now >= g_state.dial_until_ms) {
-            g_state.dial_until_ms = 0;
-            g_state.dial_action[0] = '\0';
-            g_dirty_top = 1;
-        }
-        if (g_state.scroll_until_ms > 0 && now >= g_state.scroll_until_ms) {
-            g_state.scroll_until_ms = 0;
-            g_state.scroll_action[0] = '\0';
-            g_dirty_top = 1;
+        if (!g_mode_v2) {
+            // 1. Dynamic Tempo Metronome Pulse (~33ms tick, 30 FPS) -> Key 4
+            if (now - last_pulse_ms >= 33) {
+                long long dt_ms = now - last_pulse_ms;
+                last_pulse_ms = now;
+                float dt_sec = (float)dt_ms / 1000.0f;
+                float bps = (float)g_pat10_metronome_bpm / 60.0f;
+                g_pat10_phase += 2.0f * (float)M_PI * bps * dt_sec;
+                while (g_pat10_phase >= 2.0f * (float)M_PI) g_pat10_phase -= 2.0f * (float)M_PI;
+                g_dirty_keys |= (1 << 4);
+            }
+
+            // 2. Pattern 6 Horizontal Scroll Animation Tick (~16ms) -> Key 8
+            if (g_pat6_animating) {
+                long long elapsed = now - g_pat6_anim_start_ms;
+                float dur = 220.0f; // 220ms ease-out
+                if (elapsed >= (long long)dur) {
+                    g_pat6_animating = 0;
+                    g_pat6_anim_offset = 0.0f;
+                    g_pat6_icon_idx = (g_pat6_icon_idx + 3) % 4;
+                } else {
+                    float t = (float)elapsed / dur;
+                    float p = 1.0f - powf(1.0f - t, 3.0f); // Cubic ease-out
+                    g_pat6_anim_offset = p * 40.0f;
+                }
+                g_dirty_keys |= (1 << 8);
+            }
+
+            // 3. 30 FPS Physics Lerp (every 33ms) -> Key 12 & Top Display
+            if (now - last_anim_ms >= 33) {
+                last_anim_ms = now;
+
+                float diff = (float)g_pat12_target_val - g_pat12_current_val;
+                if (fabsf(diff) > 0.01f) {
+                    g_pat12_current_val += diff * 0.30f;
+                    g_dirty_keys |= (1 << 12);
+                    g_dirty_top = 1;
+                } else if (g_pat12_current_val != (float)g_pat12_target_val) {
+                    g_pat12_current_val = (float)g_pat12_target_val;
+                    g_dirty_keys |= (1 << 12);
+                    g_dirty_top = 1;
+                }
+            }
+
+            // 4. 1-Second Telemetry Tick (Pattern 8 CPU Number & Pattern 9 CPU Graph)
+            if (now - last_telemetry_ms >= 1000) {
+                last_telemetry_ms = now;
+
+                g_pat8_cpu_pct = read_cpu_percent();
+                for (int i = 0; i < 59; i++) {
+                    g_pat9_cpu_history[i] = g_pat9_cpu_history[i + 1];
+                }
+                g_pat9_cpu_history[59] = g_pat8_cpu_pct;
+
+                g_dirty_keys |= (1 << 9) | (1 << 10);
+                g_dirty_top = 1;
+            }
+
+            // 5. Clear overlays if expired
+            if (g_state.dial_until_ms > 0 && now >= g_state.dial_until_ms) {
+                g_state.dial_until_ms = 0;
+                g_state.dial_action[0] = '\0';
+                g_dirty_top = 1;
+            }
+            if (g_state.scroll_until_ms > 0 && now >= g_state.scroll_until_ms) {
+                g_state.scroll_until_ms = 0;
+                g_state.scroll_action[0] = '\0';
+                g_dirty_top = 1;
+            }
         }
 
         // Batch flush all dirty keys

@@ -26,7 +26,7 @@ function Get-HostNetworkIdentity {
     $mac = if ($wifiNic) { ($wifiNic.MacAddress -replace '-', ':') } else { 'AA:BB:CC:DD:EE:FF' }
     $ipObj = Get-NetIPAddress -AddressFamily IPv4 -InterfaceIndex $wifiNic.InterfaceIndex -ErrorAction SilentlyContinue |
         Where-Object { $_.IPAddress -notmatch '^169\.254' } | Select-Object -First 1
-    $ip = if ($ipObj) { $ipObj.IPAddress } else { '192.168.69.28' }
+    $ip = if ($ipObj) { $ipObj.IPAddress } else { '192.168.1.100' }
 
     return [pscustomobject]@{
         HostName = $computerName
