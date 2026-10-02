@@ -36,7 +36,9 @@ Completed full TTS pipeline implementation, verified all unit and integration te
 - All 53 host unit/integration tests passing cleanly (`53/53 PASS`).
 - All 13 MK20 device plugin tests passing cleanly (`13/13 PASS`).
 - Hardware assessment script (`scripts/assess_tts_backend.py`) operational and verified against live hardware (`AMD Threadripper 24C/48T + NVIDIA CUDA Execution Provider` detected, simulation fallback verified).
-- Runtime check script (`scripts/ensure_tts_runtime.py`) operational.
+- Runtime check script (`scripts/ensure_tts_runtime.py`) operational with `uv` installer support (`"ok": true`).
+- Live Model Verified: `kokoro-v1.0.onnx` (80MB) and `voices-v1.0.bin` (26.9MB) downloaded to `%APPDATA%\Snowball\models\tts` and verified.
+- Live Synthesis Verified: Tested end-to-end synthesis via both `tts_worker.py` CLI and `LocalKokoroProvider` from Node with 24kHz audio generation verified.
 - Speak button (Key 12 in physical MK20 / Host; Key 17 in Web Simulator) implements identical toggle behavior with auto-speak on turn completion.
 
 ---
