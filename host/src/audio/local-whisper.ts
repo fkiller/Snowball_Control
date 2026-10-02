@@ -197,7 +197,7 @@ export class LocalWhisperProvider implements NativeVoiceProvider {
             resolve({ ok: false, status: "error", error: lastJson.error || stderr || `Exit code ${code}` });
           }
         } catch {
-          resolve({ ok: code === 0, status: code === 0 ? "ready" : "error", error: stderr || `Exit code ${code}` });
+          resolve({ ok: false, status: "error", error: stderr || `Model download returned no valid acknowledgement (exit ${code})` });
         }
       });
 
