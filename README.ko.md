@@ -58,7 +58,7 @@ MK20에서 구동되는 브레드크럼 계층 네비게이션(`기기 > 하네�
 탐색된 작업공간, 세션 저널, MK20 하드웨어 연결 상태를 실시간으로 모니터링하는 로컬 루프백 제어 평면(`http://127.0.0.1:8765/`) 화면입니다:
 
 <p align="center">
-  <img src="assets/screenshots/web_supervisor_dashboard.png" width="100%" alt="Snowball 웹 수퍼바이저 대시보드">
+  <img src="assets/screenshots/web_supervisor_dashboard_ko.png" width="100%" alt="Snowball 웹 수퍼바이저 대시보드">
 </p>
 
 ### 4. MK20 오프라인 대기 화면 및 연결 상태
@@ -131,7 +131,8 @@ Snowball_Control/
 │   ├── screenshots/            # 실제 기기 프레임버퍼 캡처, GIF 및 웹 UI 화면
 │   │   ├── mk20_navigation_demo.gif
 │   │   ├── mk20_ui_elements_test.gif
-│   │   ├── web_supervisor_dashboard.png
+│   │   ├── web_supervisor_dashboard_ko.png
+│   │   ├── web_supervisor_dashboard_en.png
 │   │   ├── standby_top_display.png
 │   │   ├── standby_key10.png
 │   │   └── online_top_display.png

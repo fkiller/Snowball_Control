@@ -59,7 +59,7 @@ Physical testing of the 20 mechanical key switches with individual 128×128 LCD 
 The local-loopback control plane (`http://127.0.0.1:8765/`) visualizing detected workspaces, session journals, and MK20 hardware status in real-time:
 
 <p align="center">
-  <img src="assets/screenshots/web_supervisor_dashboard.png" width="100%" alt="Snowball Web Supervisor Dashboard">
+  <img src="assets/screenshots/web_supervisor_dashboard_en.png" width="100%" alt="Snowball Web Supervisor Dashboard">
 </p>
 
 ### 4. MK20 Offline Standby Screen & Status
@@ -134,7 +134,8 @@ Snowball_Control/
 │   ├── screenshots/            # Live hardware captures, GIFs & Web UI dashboard
 │   │   ├── mk20_navigation_demo.gif
 │   │   ├── mk20_ui_elements_test.gif
-│   │   ├── web_supervisor_dashboard.png
+│   │   ├── web_supervisor_dashboard_en.png
+│   │   ├── web_supervisor_dashboard_ko.png
 │   │   ├── standby_top_display.png
 │   │   ├── standby_key10.png
 │   │   └── online_top_display.png
