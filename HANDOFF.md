@@ -50,12 +50,25 @@ Implement an end-to-end Text-to-Speech (TTS) pipeline matching the existing Spee
   - However, the current network link between Host and MK20 (UDP 7701) only handles framebuffer display syncing and key/knob input packets. An audio streaming protocol (e.g. UDP PCM streaming daemon `pcm-stream` or ALSA network sink) is not yet deployed to the MK20 HUD firmware.
   - The user acknowledged this can be modified later.
 
+### 4. "아까랑 같아. 로보트가 영어만 읽고 있어" (Timeout Fallback on Multi-Message Turns)
+- **Root Cause Discovered in Live Log**:
+  - In `task-1499.log:334`: `[LocalKokoroProvider] Kokoro worker synthesis unavailable, falling back to OS native: TTS JSON-RPC request 'synthesize' timed out after 60000ms`.
+  - In session `01a0b081`, Turn 23 contains **14 intermediate status messages**, which were concatenated into a single **2,226-character** string.
+  - On CPU, synthesizing a 2,226-character audio stream took > 60 seconds.
+  - Because `LocalKokoroProvider` had a hardcoded 60s timeout, it cancelled Kokoro and fell back to `synthesizeViaWindowsSapi()`!
+  - In `synthesizeViaWindowsSapi()`, no voice was selected, defaulting to Windows default `Microsoft David Desktop` (English robot)!
+- **Resolution**:
+  - `host/src/state/mvp-controller.ts`: Added `extractSpokenAgentResponse()` which extracts the **concluding agent message** of the turn (173 characters in Turn 23 instead of 2,226), synthesizing in **~5-8 seconds** without any timeout!
+  - `host/src/audio/local-kokoro.ts`:
+    - Adaptive timeout: `Math.max(60000, cleanText.length * 150)`.
+    - `synthesizeViaWindowsSapi()`: If Korean text is detected, explicitly selects `Microsoft Heami Desktop` (ko-KR) via UTF-8 file input so that even an emergency fallback will never speak in robotic English.
+
 ---
 
 ## Current State
 
 - Branch: `implement_tts_pipeline`
-- Latest commit: `b70a646 fix(tts): add UTF-8 stream sanitization, Korean auto-detection, and turn response fallback`
+- Latest commit: `5efbc9c fix(tts): extract concluding turn response and add Korean voice to SAPI fallback to prevent 60s timeout`
 - All 54 host unit/integration tests passing cleanly (`54/54 PASS`).
 - All 13 MK20 device plugin tests passing cleanly (`13/13 PASS`).
 - Hardware assessment script (`scripts/assess_tts_backend.py`) operational and verified against live hardware (`AMD Threadripper 24C/48T + NVIDIA CUDA Execution Provider` detected, simulation fallback verified).
