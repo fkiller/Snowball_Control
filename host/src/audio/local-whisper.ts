@@ -86,7 +86,7 @@ export class LocalWhisperProvider implements NativeVoiceProvider {
     ];
     const script = candidateScripts.find((s) => fs.existsSync(s));
     if (!script) {
-      return { ok: true, status: { note: "Runtime script not found, assuming pre-configured" } };
+      return { ok: false, status: { error: "STT runtime verification script was not found" } };
     }
 
     // 1. Check current status
@@ -133,7 +133,7 @@ export class LocalWhisperProvider implements NativeVoiceProvider {
       });
     }
 
-    return { ok: true, status: { note: "Check skipped" } };
+    return { ok: false, status: { error: "STT runtime verification failed" } };
   }
 
   /**
