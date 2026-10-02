@@ -4,79 +4,105 @@
 
 **Handoff state:** READY
 
-The repository is ready for either coding agent to continue. Left Knob clockwise smoothness and Right Knob hardware QMK initialization have been implemented, compiled, deployed, and verified on the physical MK20 device.
+The repository is completely prepared for either coding agent (Google Antigravity / OpenAI Codex) to continue seamlessly. The full Text-to-Speech (TTS) pipeline matching the STT architecture has been fully implemented, integrated across Host middleware, Web UI simulator, and device plugins, and verified with 100% test suite pass rate (53/53 tests in host, 13/13 tests in plugins).
 
 ---
 
 ## Current Objective
 
-Develop Snowball Control as a standalone MK20 control-panel project for AI-assisted coding workflows. The MK20 remains a thin network client while development machines own coding tools, source work, and provider sessions. Preserve reliable product USB behavior while adding recoverable development access and normalized host-side agent orchestration.
+Implement an end-to-end Text-to-Speech (TTS) pipeline matching the existing Speech-to-Text (STT) architecture:
+1. Model selection (Kokoro-82M ONNX ~80MB single model across all platforms).
+2. Hardware Execution Provider fallback hierarchy (CoreML on macOS; CUDA -> DirectML -> CPU on Windows; CUDA -> CPU on Linux; OS native SAPI/macOS `say` emergency fallback).
+3. Host Middleware implementation (resident stdio JSON-RPC daemon, audio player, context state, mvp controller).
+4. Web UI Simulator (`docs/simulator/index.html`) & Device Plugin (`plugins/device-mk20`).
+5. **Auto-TTS Toggle UX Behavior**:
+   - Speak button acts as a stateful toggle.
+   - When toggled **ON**: Immediately speaks the latest LLM turn response in the current session.
+   - While remaining ON: Every subsequent completed turn automatically speaks the new LLM turn response.
+   - When toggled **OFF**: Immediately aborts active speech and disables auto-speaking.
+   - Interruption safety: When user presses Talk (Key 20) or Stop (Key 4), active speech immediately aborts to prevent mic pickup while preserving auto-TTS toggle ON state for the upcoming turn.
 
 ---
 
 ## Current Task
 
-Resolve user feedback on dual rotary knobs:
-1. "Left knob still counterclock works and clockwise updates but not smoothly (only text changes, not circle panel)"
-2. "Right knob still not working."
+Completed full TTS pipeline implementation, verified all unit and integration test suites, updated Web UI simulator and device plugin, and verified cross-platform hardware assessment and runtime management scripts.
 
 ---
 
 ## Current State
 
-- `main` branch latest commit is `d098884` (`fix(hud): unbind right knob HID keycodes across all layers to unlock raw UART event escalation`).
-- **Left Knob Clockwise Smoothness**:
-  - Root cause resolved: In `parse_qmk_byte()`, `row == 102` was mistakenly mapped to `on_left_knob_click()`, which jumped by $60^\circ$ instead of stepping by $15^\circ$. Because $60^\circ$ aligns symmetrically with the 6 modes and 24 ticks, the visual circle panel appeared stationary while only the text changed.
-  - Fix: `row == 101` $\to$ CCW (`on_left_knob(-1)` $\to$ $-15^\circ$), `row == 102` $\to$ CW (`on_left_knob(+1)` $\to$ $+15^\circ$), `row == 100` $\to$ Click (`on_left_knob_click()`).
-  - Both directions visibly step the dial circle panel, 24 radial ticks, and 6 orbiting mode labels by $15^\circ$ per notch. Verified on live hardware.
-- **Right Knob Hardware Input Unlocked**:
-  - Root cause identified: Disassembly of vendor `KeyboardDevice` and `PCMonitorApp` revealed that rows 100..102 (Left Knob) and rows 103..105 (Right Knob) are mapped to QMK matrix encoders. Previously, rows 103..105 were configured with keycodes `0x00AE` (Mute), `0x00AC` (Vol Down), and `0x00AB` (Vol Up). When QMK has active HID keycodes assigned to matrix rows, it executes the media keys on the host PC over USB and **suppresses raw UART 0x16 packets** to `/dev/ttyS1`.
-  - Resolution: Replaced non-zero keycodes in `init_qmk_hardware()` with `0x0000` (`KC_NO`) across all 4 keymap layers (0..3) for rows 100..108. The GD32 MCU acknowledged every command with `0x05` and confirmed all rows unbound via `0x04` readbacks.
-  - Added fallback mappings for rows 106..108 in `parse_qmk_byte()`.
-- Daemon `mk20-hud` is currently active on MK20 (PID 2335).
-- **Physical Verification Confirmed**:
-  - Left Knob: Bidirectional $15^\circ$ stepping and click verified.
-  - Right Knob: Verified live on physical hardware (2 click events, 134 CCW events, 78 CW events logged).
-  - Framebuffer captures confirm Key #12 and Top Display Card 2 actively responding to physical knob input.
+- Branch: `implement_tts_pipeline`
+- All 53 host unit/integration tests passing cleanly (`53/53 PASS`).
+- All 13 MK20 device plugin tests passing cleanly (`13/13 PASS`).
+- Hardware assessment script (`scripts/assess_tts_backend.py`) operational and verified against live hardware (`AMD Threadripper 24C/48T + NVIDIA CUDA Execution Provider` detected, simulation fallback verified).
+- Runtime check script (`scripts/ensure_tts_runtime.py`) operational.
+- Speak button (Key 12 in physical MK20 / Host; Key 17 in Web Simulator) implements identical toggle behavior with auto-speak on turn completion.
 
 ---
 
 ## Completed Work
 
-1. **Left Knob Smoothness & Bidirectional Fix**: Corrected row mapping (`101` CCW, `102` CW, `100` Click) with smooth $15^\circ$ stepping.
-2. **Right Knob Root Cause & HID Unbinding**: Disassembled vendor binaries, discovered HID suppression behavior, and unbound rows 100..108 to `0x0000` across all layers 0..3.
-3. **Hardware Verification**: Verified live GD32 MCU packets, readback keycodes, and confirmed all framebuffers (`fb11_dial`, `fb12_reel`, `fb21_top`) updated dynamically in response to physical knob rotation.
-4. **Committed**: Git commits `d098884` and `5d69967` on `main`.
+1. **Config & Hardware Assessment**:
+   - `config/tts.json`: Standardized Kokoro-82M ONNX configuration matching `config/stt.json`.
+   - `scripts/assess_tts_backend.py`: Hardware & EP probe detecting Apple Silicon CoreML, Windows CUDA/DirectML, Linux CUDA, CPU threads, and fallback simulation mode (`--simulate`).
+   - `scripts/ensure_tts_runtime.py`: Python runtime installer and model manager (`--check`, `--install`, `--download-models`).
+2. **Host Middleware Audio Layer**:
+   - `host/src/audio/tts-provider.ts`: Interface definitions (`NativeTtsProvider`, `TtsSynthesizeOptions`, `TtsSynthesizeResult`).
+   - `host/src/audio/player.ts`: Cross-platform low-latency audio player (`AudioPlayer`) using child process streaming (PowerShell `SoundPlayer`, macOS `afplay`, Linux `aplay`) with instant PID kill cancellation.
+   - `host/src/audio/tts_worker.py`: Resident stdio JSON-RPC daemon with zero-delay IPC pipe, Kokoro-82M ONNX synthesis, and audio streaming.
+   - `host/src/audio/local-kokoro.ts`: Host daemon wrapper for Kokoro-82M ONNX worker with automatic OS native fallback (PowerShell `System.Speech` / macOS `say`) for zero-crash safety.
+3. **State Management & Controller**:
+   - `host/src/state/context.ts`: Added `public autoTts = false;`, enabled Key 12 in `getDeviceState()` across session and question viewmodes (`Top: AUTO TTS`, `Main: Speak`, `Sub: Auto ON / Speaking / Off`), enabled Key 12 styling.
+   - `host/src/state/mvp-controller.ts`:
+     - Injected `readonly tts: NativeTtsProvider = new LocalKokoroProvider()`.
+     - Added `toggleAutoTts()`, `speakText()`, `stopSpeaking()`.
+     - Wired Key 12 to `toggleAutoTts()`.
+     - Wired `turn/completed` event: automatically speaks newly arrived agent response when `autoTts === true`.
+     - Wired `startVoice()` (Key 20) and `stopTask()` (Key 4) to call `stopSpeaking()` immediately so microphone does not pick up speaker audio.
+     - Wired `close()` to terminate TTS worker child process.
+4. **Web UI Simulator**:
+   - `docs/simulator/index.html`: Wired Speak button (Key 17) to `toggleAutoTts`, `speakTurn`, `stopSpeech`, and connected to `send()` turn arrival and `record()` / `stop()` audio cancellation.
+5. **Testing & Verification**:
+   - `host/tests/tts.test.mjs`: Complete unit test suite verifying toggle ON/OFF, turn auto-speech sequence, and talk interruption.
+   - Updated `host/tests/mvp-controller.test.mjs` and `host/tests/mvp-state.test.mjs` to maintain 100% test suite pass rate.
+   - Fixed venv python resolution in `host/src/audio/local-whisper.ts` and `host/tests/whisper-worker.test.mjs`.
 
 ---
 
 ## Remaining Work
 
-1. **Phase 5: Production Gateway Service & Developer Tooling**:
-   - Package standalone background service (`snowball-gateway`) with dual-plane failover and IDE plugins.
-2. **Phase 6: Custom Firmware & Production Packaging**:
-   - Slim Tina Linux OS image and safe MicroSD OTA rollback.
+1. **Physical MK20 Hardware Deployment**:
+   - Validate live UDP datagrams on physical MK20 device when Key 12 is pressed.
+2. **Merge Branch**:
+   - Merge `implement_tts_pipeline` into `main` after user review.
 
 ---
 
 ## Exact Next Action
 
-Have the user rotate the Left and Right Knobs physically on the MK20. If any unexpected input behavior occurs, run:
+Run the verification commands on the worktree to ensure everything builds and passes:
 ```powershell
-& "$env:LOCALAPPDATA\Temp\Codex-MK20-ADB\platform-tools\adb.exe" -s 192.168.69.27:5555 shell "tail -n 40 /tmp/hud.log"
+npm test --prefix host
+npm test --prefix plugins/device-mk20
+python scripts/assess_tts_backend.py
 ```
-to inspect the raw UART and input event log.
+If physical MK20 is connected via network/USB, launch host daemon:
+```powershell
+npm start --prefix host
+```
 
 ---
 
 ## Architecture and Important Decisions
 
-- **MCU Framing Protocol**: The interface between Allwinner T113 and GD32 MCU runs over `/dev/ttyS1` at 115200 8N1 using framed VIA packets: `0xAA 0x55 [sum] [len] [~len] [payload...] 0xF5 0x5F`.
-- **VIA Initialization Requirement**: The GD32 MCU requires runtime initialization frames (`0x05` and `0x15`) sent by the application on startup to activate rotary encoder report packets (`cmd == 0x16`).
-- **Symmetric Encoder Layout**:
-  - Left Knob: 100 (Click), 101 (CCW), 102 (CW).
-  - Right Knob: 103 (Click), 104 (CCW), 105 (CW).
-- **Decoupled HUD Rendering**: Card 1 (`#11 ROTATING DIAL`) and Card 2 (`#12 VALUE REEL`) on `/dev/fb21` operate independently with isolated state, timers, and flushes.
+- **Single Unified Model vs Multi-Model**: Kokoro-82M is small (~80MB), high quality, and runs anywhere ONNX Runtime runs. We avoided multiple model downloads (Piper/Edge-TTS) and instead adopted Execution Provider hardware acceleration:
+  - macOS: CoreML (`CoreMLExecutionProvider`) -> CPU
+  - Windows: CUDA (`CUDAExecutionProvider`) -> DirectML (`DmlExecutionProvider`) -> CPU
+  - Linux: CUDA -> CPU
+  - Emergency Native Fallback: Windows PowerShell `System.Speech` / macOS `say` for zero-crash safety.
+- **Key 12 Hardware Alignment**: In physical MK20 hardware, Row 3 is `[K20 (Talk), K16 (Send), K12 (Speak), K8 (Later/Undo), K4 (Stop)]`. Key 12 was previously disabled as "outside MVP". Enabling Key 12 aligns physical hardware with Speak functionality.
+- **Microphone Interruption Contract**: When voice recording begins (`startVoice()`), active TTS playback is aborted immediately (`this.context.isSpeaking = false; void this.tts.stop();`), while preserving `this.context.autoTts = true` so the resulting LLM response will be spoken automatically upon turn completion.
 
 ---
 
@@ -84,45 +110,41 @@ to inspect the raw UART and input event log.
 
 | File | Purpose | State |
 |---|---|---|
-| `hardware/mk20/hud/mk20-hud.c` | Fixed Left Knob CW mapping, added QMK VIA hardware initialization, multi-input device polling, and raw UART sniffer logging | Modified & Committed (`c96cc8a`) |
-| `walkthrough.md` | User walkthrough with root cause analysis, architecture details, and hardware framebuffer captures | Updated |
+| `config/tts.json` | TTS configuration matching `config/stt.json` | Created |
+| `scripts/assess_tts_backend.py` | Hardware EP assessment & diagnostic tool | Created |
+| `scripts/ensure_tts_runtime.py` | Python runtime dependency check & model downloader | Created |
+| `host/src/audio/tts-provider.ts` | TTS provider type definitions | Created |
+| `host/src/audio/player.ts` | Cross-platform audio player with instant PID kill | Created |
+| `host/src/audio/tts_worker.py` | Resident Kokoro-82M ONNX stdio JSON-RPC daemon | Created |
+| `host/src/audio/local-kokoro.ts` | Host Kokoro provider with OS SAPI/say emergency fallback | Created |
+| `host/src/audio/local-whisper.ts` | Enhanced venv python resolution | Modified |
+| `host/src/state/context.ts` | Added `autoTts`, Key 12 display visual | Modified |
+| `host/src/state/mvp-controller.ts` | Wired Key 12 toggle, auto-speech on turn, talk interruption | Modified |
+| `docs/simulator/index.html` | Updated Key 17 Speak toggle and auto-TTS | Modified |
+| `host/tests/tts.test.mjs` | Unit test suite for TTS toggle and auto-speech | Created |
+| `host/tests/mvp-state.test.mjs` | Updated Key 12 assertion for Speak enabled | Modified |
+| `host/tests/whisper-worker.test.mjs` | Enhanced venv resolution for whisper test | Modified |
+| `host/package.json` | Added `tts_worker.py` copy build step | Modified |
 | `HANDOFF.md` | Cross-agent continuation context and source of truth | Updated |
 
 ---
 
-## Useful Commands
+## Tests and Verification
 
-```powershell
-# Build mk20-hud via WSL
-wsl make -C /mnt/e/developments/projects/Snowball_Control/hardware/mk20/hud clean all
-
-# Deploy binary to MK20
-& "$env:LOCALAPPDATA\Temp\Codex-MK20-ADB\platform-tools\adb.exe" -s 192.168.69.27:5555 push e:\developments\projects\Snowball_Control\hardware\mk20\hud\mk20-hud /mnt/SDCARD/mk20-hud
-
-# Restart daemon on MK20
-& "$env:LOCALAPPDATA\Temp\Codex-MK20-ADB\platform-tools\adb.exe" -s 192.168.69.27:5555 shell "chmod +x /mnt/SDCARD/mk20-hud && killall -9 mk20-hud && /mnt/SDCARD/mk20-hud -d"
-
-# Tail live log on MK20
-& "$env:LOCALAPPDATA\Temp\Codex-MK20-ADB\platform-tools\adb.exe" -s 192.168.69.27:5555 shell "tail -n 50 /tmp/hud.log"
-
-# Capture framebuffers to artifacts
-python C:\Users\wondo\.gemini\antigravity\brain\8c9c0c77-5c23-416f-af0c-fbd49ce6837d\scratch\capture_fb.py
-```
+- `npm run build --prefix host`: Clean build (code 0).
+- `node --test host/tests/tts.test.mjs`: 4/4 PASS.
+- `node --test host/tests/mvp-controller.test.mjs`: 16/16 PASS.
+- `node --test host/tests/mvp-state.test.mjs`: 8/8 PASS.
+- `node --test host/tests/integration.test.mjs`: 1/1 PASS.
+- `node --test host/tests/whisper-worker.test.mjs`: 1/1 PASS.
+- `npm test --prefix host`: 53/53 PASS.
+- `npm test --prefix plugins/device-mk20`: 13/13 PASS.
+- `python scripts/assess_tts_backend.py`: Verified live output (CUDA detected on Windows AMD64 + Threadripper 24C/48T).
 
 ---
 
-## Git State
+## Constraints
 
-- Branch: `main`
-- Latest commit: `d098884` (`fix(hud): unbind right knob HID keycodes across all layers to unlock raw UART event escalation`)
-- Uncommitted implementation changes: None.
-
----
-
-## Handoff Metadata
-
-- Active Agent: Google Antigravity
-- Next Agent: OpenAI Codex or Google Antigravity
-- Antigravity Quota: Healthy (< 1% used)
-- Target Device: MK20 at `192.168.69.27:5555`
-- Handoff State: READY
+- Zero Residue: All models downloaded to `<userDataDir>/models/tts/` for clean uninstallation.
+- Toggle Contract: Speak button is strictly a stateful toggle.
+- Non-blocking Audio: Audio player and TTS worker must never block event loop or fail to terminate cleanly on abort.
