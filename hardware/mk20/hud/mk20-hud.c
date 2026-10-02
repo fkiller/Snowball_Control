@@ -289,7 +289,7 @@ static inline int get_fb_height(int stride_pixels) {
 static struct sockaddr_in g_host_addr;
 static int g_has_host_addr = 0;
 static long long g_last_host_sync_ms = 0;
-int g_host_offline = 0;
+int g_host_offline = 1;
 static int g_pc_keys_on = 0;
 static int g_map_reply_layer = -1, g_map_reply_row, g_map_reply_col;
 static uint16_t g_map_reply_code;

@@ -25,10 +25,18 @@ Web UI는 `http://127.0.0.1:8765/`에 로그인/PIN 없이 접근합니다. MK20
 ## MK20 준비
 
 - USB host 없이 키 입력이 멈추는 원래 QMK 문제 때문에 **수정된 MK20 QMK 업데이트가 필수**입니다. [플래싱 안내](hardware/mk20/qmk/README.md)를 따르세요.
-- **변경 전 SD 전체 백업을 권장**합니다. SD 제거만으로 공장 상태가 복원된다는 보장은 없으며 복구 절차는 아직 실물 검증 전입니다.
+- **변경 전 SD 전체 이미지 백업을 권장**합니다. Snowball 이미지를 적용하고 문제가 생기면 백업 이미지를 복원합니다. [배포·백업·복원 절차](docs/ARCHITECTURE.md#sd-이미지-배포백업복원)를 참고하세요.
 - 실제 Wi-Fi 설정은 Git에서 제외된 SD의 `dev-access.conf`에 저장하세요. [기기 연결 도구](hardware/mk20/dev-tools/README.md)를 참고하세요.
 - 현재 HUD는 Tina Linux의 C 데몬이며 상단 428×142, 키 128×128 framebuffer를 사용합니다. 빌드에는 별도로 확보한 호환 toolchain/sysroot와 FreeType 헤더가 필요합니다.
 - STT는 CUDA 또는 CPU를 사용합니다. Python 의존성과 모델은 별도로 설치해야 합니다.
+
+### MK20 대기 화면 및 연결 상태
+
+미들웨어가 실행되지 않았거나 PC와 통신이 끊어지면, 상단 디스플레이에 상태 안내와 Snowball 아이콘이 표시되고 10번 키에 Snowball 아이콘이 점등되어 대기 상태임을 알립니다. PC 미들웨어가 시작되면 실시간 세션 화면으로 자동 전환됩니다.
+
+| 대기 모드 (상단 화면) | 대기 모드 (10번 키) | 연결 완료 (세션 화면) |
+| :---: | :---: | :---: |
+| <img src="assets/screenshots/standby_top_display.png" width="300" alt="대기 화면 상단 디스플레이"> | <img src="assets/screenshots/standby_key10.png" width="128" alt="대기 화면 10번 키"> | <img src="assets/screenshots/online_top_display.png" width="300" alt="연결 완료 상단 디스플레이"> |
 
 ## 검사
 
@@ -36,4 +44,4 @@ Control `host`에서 `npm test`, `plugins/device-mk20`에서 `npm test`, 저장�
 
 ## 라이선스와 공개 범위
 
-Snowball 자체 코드는 [Apache-2.0](LICENSE)입니다. QMK 기반 펌웨어의 GPL 고지와 제조사·제3자 구성의 조건은 별개입니다. 보관한 QMK 바이너리와 일치하는 전체 소스/빌드 출처 확인이 남아 있으며, 전체 구성에 일괄 Apache 라이선스를 주장하지 않습니다. 제조사 SDK/BSP, 개인 설정, SD 백업은 이 저장소에 포함하지 않습니다.
+Snowball 자체 코드는 [Apache-2.0](LICENSE)입니다. QMK와 Allwinner T113 펌웨어 소스는 제조사로부터 직접 이메일로 제공받았습니다. QMK 기반 펌웨어의 GPL 고지와 제조사·제3자 구성의 조건은 별개입니다. 제조사 SDK/BSP, 개인 설정, SD 백업은 이 저장소에 포함하지 않습니다. 배포 대상과 빌드 기록은 [단일 설계 문서](docs/ARCHITECTURE.md)에서 관리합니다.

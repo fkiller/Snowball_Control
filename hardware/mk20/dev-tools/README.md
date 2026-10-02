@@ -50,8 +50,6 @@ The host helper combines product COM discovery and network ADB operations:
 ./mk20ctl.ps1 put -Source ./file.bin -Destination /mnt/SDCARD/file.bin
 ./mk20ctl.ps1 put -Transport Com -Source ./recovery.sh -Destination /mnt/SDCARD/lunch.sh
 ./mk20ctl.ps1 shell
-./mk20ctl.ps1 restore            # dry run
-./mk20ctl.ps1 restore -Force     # destructive factory rollback
 ```
 
 Set `MK20_ADB` when `adb.exe` is not installed at the default development
@@ -78,21 +76,12 @@ If the development PC's Wi-Fi adapter changes, update `DEV_PC_MAC` in
 - `/mnt/SDCARD/adbd-configfs.init.factory`: factory copy of the ADB init script
 - `/etc/init.d/adbd`: development copy with `ADB_TRANSPORT_PORT=5555`
 
-## Restore factory behavior
+## Snowball image backup and restore
 
-Run these commands through the network ADB shell:
-
-```sh
-cp /mnt/SDCARD/adbd-configfs.init.factory /etc/init.d/adbd
-chmod 755 /etc/init.d/adbd
-rm -f /mnt/SDCARD/lunch.sh
-/data/setusbconfig serial
-sync
-reboot
-```
-
-This removes TCP ADB persistence and returns USB ownership to the product
-serial protocol after reboot.
+Back up the entire SD card before applying the Snowball image. If an update
+fails, write the backup image back to the SD card. The deployment scope and
+procedure are maintained in the [central document](../../../docs/ARCHITECTURE.md).
+The helper's legacy factory-reset command is outside this deployment procedure.
 
 ## Source evidence
 
@@ -103,4 +92,4 @@ serial protocol after reboot.
 - `package/PCMonitorApp/setusbconfig` owns the product serial gadget mode.
 - `package/PCMonitorApp/qt_app1` executes `/mnt/SDCARD/lunch.sh` as root.
 
-변경 전 SD 전체 이미지와 파일 백업을 권장합니다. SD 제거만으로 공장 런타임 복구를 보장하지 않으며 복구 절차는 아직 실물 검증 전입니다. 현재 설계·QMK 필수 조건·Preview 보안 경계는 [중앙 문서](../../../docs/ARCHITECTURE.md)를 참고하세요.
+변경 전 SD 전체 이미지와 파일 백업을 권장합니다. 이전 SD 내용 분석 대신 우리가 배포하는 Snowball 이미지와 백업 이미지 복원을 검증합니다. 현재 설계·QMK 필수 조건·Preview 보안 경계는 [중앙 문서](../../../docs/ARCHITECTURE.md)를 참고하세요.

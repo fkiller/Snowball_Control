@@ -2,11 +2,36 @@
 #include "v2_state.h"
 #include "gfx_prims.h"
 #include "unicode_text.h"
+#include "snowball_icon.h"
 #include <stdio.h>
 #include <string.h>
 
+static void draw_bitmap_16(uint16_t *fb, int stride_pixels, int x, int y, int w, int h, const uint16_t *bitmap) {
+    if (!fb || !bitmap) return;
+    int max_h = (stride_pixels == TOP_W) ? TOP_H : KEY_H;
+    for (int row = 0; row < h; row++) {
+        int py = y + row;
+        if (py < 0 || py >= max_h) continue;
+        for (int col = 0; col < w; col++) {
+            int px = x + col;
+            if (px < 0 || px >= stride_pixels) continue;
+            fb[py * stride_pixels + px] = bitmap[row * w + col];
+        }
+    }
+}
+
 void v2_render_key_frame(uint16_t *fb, int key_idx, int pressed) {
     if (!fb || key_idx < 1 || key_idx > 20) return;
+
+    if (g_host_offline) {
+        if (key_idx == 10) {
+            memcpy(fb, g_snowball_icon_128, sizeof(g_snowball_icon_128));
+            return;
+        }
+        draw_rect_16(fb, KEY_W, 0, 0, KEY_W, KEY_H, COLOR_BLACK);
+        return;
+    }
+
     V2_Key *k = &g_v2_state.keys[key_idx];
 
     // 1. If key is disabled or completely empty, draw completely dark blank (backlight off)
@@ -218,6 +243,27 @@ void v2_render_top_frame(uint16_t *fb) {
 
     // Clear background
     draw_rect_16(fb, TOP_W, 0, 0, TOP_W, TOP_H, g_v2_theme.top_bg);
+
+    if (g_host_offline) {
+        // Draw 128x128 Snowball Icon on the right side (centered vertically: y=7, x=286)
+        draw_bitmap_16(fb, TOP_W, 286, 7, 128, 128, g_snowball_icon_128);
+
+        // Header Bar (y: 0..24) on the left side
+        draw_rect_16(fb, TOP_W, 0, 0, 276, 24, g_v2_theme.top_card);
+        draw_line_16(fb, TOP_W, 0, 24, 276, 24, g_v2_theme.top_border);
+        draw_string_16(fb, TOP_W, 12, 4, "Host Disconnected", COLOR_ROSE, 1);
+
+        // Subtitle Bar (y: 27..42)
+        draw_string_16(fb, TOP_W, 12, 27, "Waiting for host middleware...", g_v2_theme.top_dim, 1);
+        draw_line_16(fb, TOP_W, 0, 44, 276, 44, g_v2_theme.top_border);
+
+        // Body message on the left (y: 52..130)
+        draw_string_16(fb, TOP_W, 12, 54, "Snowball Standby Mode", g_v2_theme.top_accent, 1);
+        draw_string_16(fb, TOP_W, 12, 74, "Start Snowball middleware on PC", g_v2_theme.top_text, 1);
+        draw_string_16(fb, TOP_W, 12, 94, "Device buttons need host.", g_v2_theme.top_dim, 1);
+        draw_string_16(fb, TOP_W, 12, 116, "Ready for connection.", g_v2_theme.key_editing_border, 1);
+        return;
+    }
 
     // 1. Header Bar (y: 0..24)
     draw_rect_16(fb, TOP_W, 0, 0, TOP_W, 24, g_v2_theme.top_card);
