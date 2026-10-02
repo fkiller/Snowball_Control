@@ -119,12 +119,17 @@ def install_dependencies(python_bin: str = None) -> bool:
     else:
         pkgs.extend(["onnxruntime", "kokoro-onnx"])
 
-    cmd = [py, "-m", "pip", "install", "--upgrade"] + pkgs
+    uv = shutil.which("uv")
+    if uv:
+        cmd = [uv, "pip", "install", "--python", py] + pkgs
+    else:
+        cmd = [py, "-m", "pip", "install", "--upgrade"] + pkgs
+
     try:
         subprocess.check_call(cmd)
         print("[EnsureTtsRuntime] Python packages installed successfully.", flush=True)
     except subprocess.CalledProcessError as e:
-        print(f"[EnsureTtsRuntime] Pip install failed: {e}", file=sys.stderr)
+        print(f"[EnsureTtsRuntime] Package install failed: {e}", file=sys.stderr)
         return False
 
     return True

@@ -50,8 +50,38 @@ _KOKORO_INSTANCE = None
 _CURRENT_MODEL_PATH = None
 _CURRENT_VOICES_PATH = None
 
+def resolve_model_files(model_path: str = None, voices_path: str = None):
+    if model_path and os.path.isfile(model_path) and voices_path and os.path.isfile(voices_path):
+        return model_path, voices_path
+
+    candidates = []
+    if sys.platform == "win32":
+        base = os.environ.get("APPDATA") or os.path.expanduser("~")
+        candidates.append(os.path.join(base, "Snowball", "models", "tts"))
+    elif sys.platform == "darwin":
+        candidates.append(os.path.join(os.path.expanduser("~"), "Library", "Application Support", "Snowball", "models", "tts"))
+    else:
+        candidates.append(os.path.join(os.path.expanduser("~"), ".local", "share", "snowball", "models", "tts"))
+
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    candidates.extend([
+        os.path.abspath(os.path.join(script_dir, "..", "..", "..", "models", "tts")),
+        os.path.abspath(os.path.join(script_dir, "..", "..", "models", "tts")),
+        os.path.abspath(os.path.join(script_dir, "models", "tts")),
+        os.path.abspath("models/tts"),
+    ])
+
+    for c in candidates:
+        m = os.path.join(c, "kokoro-v1.0.onnx")
+        v = os.path.join(c, "voices-v1.0.bin")
+        if os.path.isfile(m) and os.path.isfile(v):
+            return m, v
+
+    return model_path or "models/tts/kokoro-v1.0.onnx", voices_path or "models/tts/voices-v1.0.bin"
+
 def get_kokoro(model_path: str, voices_path: str, device: str = "auto"):
     global _KOKORO_INSTANCE, _CURRENT_MODEL_PATH, _CURRENT_VOICES_PATH
+    model_path, voices_path = resolve_model_files(model_path, voices_path)
     if _KOKORO_INSTANCE is not None and _CURRENT_MODEL_PATH == model_path and _CURRENT_VOICES_PATH == voices_path:
         return _KOKORO_INSTANCE
 
