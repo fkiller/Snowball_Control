@@ -289,7 +289,7 @@ static inline int get_fb_height(int stride_pixels) {
 static struct sockaddr_in g_host_addr;
 static int g_has_host_addr = 0;
 static long long g_last_host_sync_ms = 0;
-static int g_host_offline = 0;
+int g_host_offline = 0;
 static int g_pc_keys_on = 0;
 static int g_map_reply_layer = -1, g_map_reply_row, g_map_reply_col;
 static uint16_t g_map_reply_code;
@@ -339,10 +339,15 @@ void draw_string_16(uint16_t *fb, int stride_pixels, int x, int y, const char *s
 }
 
 void draw_string_clipped_16(uint16_t *fb, int stride_pixels, int x, int y, const char *str, uint16_t color, int scale, int clip_x, int clip_y, int clip_w, int clip_h) {
+    for (const unsigned char *p = (const unsigned char *)str; *p; p++) {
+        if (*p >= 128 && unicode_draw_clipped(fb, stride_pixels, x, y, str, color, scale, clip_x, clip_y, clip_w, clip_h)) return;
+    }
     int cur_x = x;
     int max_h = get_fb_height(stride_pixels);
     while (*str) {
-        char c = *str;
+        unsigned codepoint;
+        str += unicode_step(str, &codepoint);
+        char c = codepoint < 128 ? (char)codepoint : '?';
         if (c < 32 || c > 126) c = ' ';
         const uint8_t *glyph = font8x16[c - 32];
         for (int row = 0; row < 16; row++) {
@@ -363,8 +368,7 @@ void draw_string_clipped_16(uint16_t *fb, int stride_pixels, int x, int y, const
                 }
             }
         }
-        cur_x += 8 * scale;
-        str++;
+        cur_x += (codepoint < 128 ? 8 : 16) * scale;
     }
 }
 

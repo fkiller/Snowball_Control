@@ -17,7 +17,8 @@
 .venv/
 .venv*/
 node_modules/
-host/.state/
+.state/
+paired_device.json
 dist/
 build/
 coverage/

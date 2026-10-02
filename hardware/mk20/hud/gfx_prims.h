@@ -5,6 +5,12 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifdef KEY_W
+#undef KEY_W
+#endif
+#ifdef KEY_H
+#undef KEY_H
+#endif
 #define KEY_W 128
 #define KEY_H 128
 #define TOP_W 428

@@ -235,51 +235,11 @@ void v2_init_defaults(void) {
     g_v2_state.is_muted = 0;
 
     // Physical Matrix Default Setup
-    // Row 0: K17 (Machine), K13 (Harness), K9 (Project), K5 (Session), K1 (New)
-    g_v2_state.keys[17] = (V2_Key){
-        .id = 17,
-        .top = "MACHINE",
-        .main = "DEV-PC",
-        .sub = "",
-        .flags = KEY_FLAG_FILLED | KEY_FLAG_LIST,
-        .item_count = 3,
-        .active_item_idx = 0,
-        .items = {"DEV-PC", "STUDIO", "SERVER"}
-    };
-    g_v2_state.keys[13] = (V2_Key){
-        .id = 13,
-        .top = "HARNESS",
-        .main = "Codex",
-        .sub = "",
-        .flags = KEY_FLAG_FILLED | KEY_FLAG_LIST,
-        .item_count = 3,
-        .active_item_idx = 0,
-        .items = {"Codex", "Antigrav", "OpenCode"}
-    };
-    g_v2_state.keys[9]  = (V2_Key){.id = 9,  .top = "PROJECT", .main = "Snowball", .sub = "", .flags = KEY_FLAG_FILLED};
-    g_v2_state.keys[5]  = (V2_Key){.id = 5,  .top = "SESSION", .main = "Dual Knob", .sub = "", .flags = KEY_FLAG_FILLED};
-    g_v2_state.keys[1]  = (V2_Key){.id = 1,  .top = "ACTION",  .main = "New", .sub = "", .flags = 0};
-
-    // Row 1: K18 (Model), K14 (Effort), K10 (Access), K6 (Files), K2 (Settings)
-    g_v2_state.keys[18] = (V2_Key){18, "MODEL",   "gpt-4o", "", KEY_FLAG_FILLED};
-    g_v2_state.keys[14] = (V2_Key){14, "EFFORT",  "medium", "", KEY_FLAG_FILLED};
-    g_v2_state.keys[10] = (V2_Key){10, "ACCESS",  "on-req", "", KEY_FLAG_FILLED};
-    g_v2_state.keys[6]  = (V2_Key){6,  "VIEW",    "Files", "", 0};
-    g_v2_state.keys[2]  = (V2_Key){2,  "SYSTEM",  "Settings", "", 0};
-
-    // Row 2: K19 (Prev), K15 (Next), K11 (Latest), K7 (Changes), K3 (Blank)
-    g_v2_state.keys[19] = (V2_Key){19, "NAV",     "Prev", "", 0};
-    g_v2_state.keys[15] = (V2_Key){15, "NAV",     "Next", "", 0};
-    g_v2_state.keys[11] = (V2_Key){11, "NAV",     "Latest", "", 0};
-    g_v2_state.keys[7]  = (V2_Key){7,  "DIFF",    "Changes", "", 0};
-    g_v2_state.keys[3]  = (V2_Key){3,  "",        "", "", KEY_FLAG_DISABLED};
-
-    // Row 3: K20 (Talk), K16 (Send), K12 (Speak), K8 (Blank), K4 (Stop)
-    g_v2_state.keys[20] = (V2_Key){20, "VOICE",   "Talk", "", 0};
-    g_v2_state.keys[16] = (V2_Key){16, "ACTION",  "Send", "", 0};
-    g_v2_state.keys[12] = (V2_Key){12, "AUDIO",   "Speak", "", 0};
-    g_v2_state.keys[8]  = (V2_Key){8,  "",        "", "", KEY_FLAG_DISABLED};
-    g_v2_state.keys[4]  = (V2_Key){4,  "ABORT",   "Stop", "", 0};
+    for (int i = 1; i <= 20; i++) {
+        g_v2_state.keys[i].id = (uint8_t)i;
+        g_v2_state.keys[i].flags = KEY_FLAG_DISABLED;
+    }
+    strcpy(g_v2_state.keys[1].main, "Waiting for host");
 }
 
 static const char *skip_whitespace(const char *p) {
@@ -316,6 +276,35 @@ static const char *find_json_object_end(const char *pos) {
     return NULL;
 }
 
+/* Consume the entire quoted value even when the display buffer is full. */
+static const char *read_display_string(const char *pos, const char *end, char *out, int cap) {
+    if (!pos || *pos != '"' || cap < 1) return NULL;
+    pos++;
+    int idx = 0;
+    while (*pos && (!end || pos < end) && *pos != '"') {
+        unsigned char value = (unsigned char)*pos++;
+        if (value == '\\') {
+            if (!*pos || (end && pos >= end)) return NULL;
+            value = (unsigned char)*pos++;
+            if (value == 'n') value = '\n';
+            else if (value == 'r') value = '\r';
+            else if (value == 't') value = '\t';
+        }
+        if (idx < cap - 1) out[idx++] = (char)value;
+    }
+    if (!*pos || (end && pos >= end)) return NULL;
+    /* Do not leave an incomplete UTF-8 character at the byte limit. */
+    if (idx) {
+        int lead = idx - 1;
+        while (lead > 0 && ((unsigned char)out[lead] & 0xc0) == 0x80) lead--;
+        unsigned char ch = (unsigned char)out[lead];
+        int width = ch >= 0xf0 ? 4 : ch >= 0xe0 ? 3 : ch >= 0xc0 ? 2 : 1;
+        if (idx - lead < width) idx = lead;
+    }
+    out[idx] = '\0';
+    return pos + 1;
+}
+
 static int parse_string_field_bounded(const char *json, const char *end, const char *key, char *out, int max_len) {
     char needle[64];
     snprintf(needle, sizeof(needle), "\"%s\"", key);
@@ -336,33 +325,7 @@ static int parse_string_field_bounded(const char *json, const char *end, const c
     }
     if (!found) return 0;
 
-    pos = skip_whitespace(found);
-    if (*pos != '\"') return 0;
-    pos++;
-
-    int idx = 0;
-    while (*pos && *pos != '\"' && (!end || pos < end) && idx < max_len - 1) {
-        if (*pos == '\\') {
-            pos++;
-            if (!*pos) break;
-            if (*pos == 'n') {
-                out[idx++] = '\n';
-            } else if (*pos == 'r') {
-                out[idx++] = '\r';
-            } else if (*pos == 't') {
-                out[idx++] = '\t';
-            } else if (*pos == '\"' || *pos == '\\') {
-                out[idx++] = *pos;
-            } else {
-                out[idx++] = *pos;
-            }
-        } else {
-            out[idx++] = *pos;
-        }
-        pos++;
-    }
-    out[idx] = '\0';
-    return 1;
+    return read_display_string(skip_whitespace(found), end, out, max_len) != NULL;
 }
 
 static int parse_int_field_bounded(const char *json, const char *end, const char *key, int *out) {
@@ -499,23 +462,10 @@ int v2_parse_sync_packet(const char *json, int len) {
                     while (p < end_obj && *p != ']' && item_count < 8) {
                         p = skip_whitespace(p);
                         if (*p == '\"') {
-                            p++;
-                            int sidx = 0;
-                            while (p < end_obj && *p != '\"' && sidx < 23) {
-                                if (*p == '\\' && (p + 1) < end_obj) {
-                                    p++;
-                                    if (*p == 'n') items[item_count][sidx++] = '\n';
-                                    else if (*p == 'r') items[item_count][sidx++] = '\r';
-                                    else if (*p == 't') items[item_count][sidx++] = '\t';
-                                    else items[item_count][sidx++] = *p;
-                                } else {
-                                    items[item_count][sidx++] = *p;
-                                }
-                                p++;
-                            }
-                            items[item_count][sidx] = '\0';
+                            const char *next = read_display_string(p, end_obj, items[item_count], sizeof(items[item_count]));
+                            if (!next) break;
+                            p = next;
                             item_count++;
-                            if (*p == '\"') p++;
                         } else {
                             p++;
                         }

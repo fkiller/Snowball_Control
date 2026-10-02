@@ -40,7 +40,7 @@ static inline uint16_t blend_rgb565(uint16_t fg, uint16_t bg, uint8_t alpha) {
     return (uint16_t)((r << 11) | (g << 5) | b);
 }
 
-int unicode_draw(uint16_t *fb, int stride, int x, int y, const char *s, uint16_t color, int scale) {
+int unicode_draw_clipped(uint16_t *fb, int stride, int x, int y, const char *s, uint16_t color, int scale, int clip_x, int clip_y, int clip_w, int clip_h) {
     static FT_Face face;
     static time_t retry_at;
     static FT_Error (*load)(FT_Face, FT_ULong, FT_Int32);
@@ -82,7 +82,7 @@ int unicode_draw(uint16_t *fb, int stride, int x, int y, const char *s, uint16_t
                         for (int dx = 0; dx < scale; dx++) {
                             int px = x + (glyph->bitmap_left + (int)col) * scale + dx;
                             int py = y + (baseline - glyph->bitmap_top + (int)row) * scale + dy;
-                            if (px >= 0 && px < stride && py >= 0 && py < height) {
+                            if (px >= 0 && px < stride && py >= 0 && py < height && px >= clip_x && px < clip_x + clip_w && py >= clip_y && py < clip_y + clip_h) {
                                 if (alpha >= 240) {
                                     fb[py * stride + px] = color;
                                 } else {
@@ -97,4 +97,8 @@ int unicode_draw(uint16_t *fb, int stride, int x, int y, const char *s, uint16_t
         x += (cp < 128 ? 8 : 16) * scale;
     }
     return 1;
+}
+
+int unicode_draw(uint16_t *fb, int stride, int x, int y, const char *s, uint16_t color, int scale) {
+    return unicode_draw_clipped(fb, stride, x, y, s, color, scale, 0, 0, stride, stride == TOP_W ? TOP_H : KEY_H);
 }

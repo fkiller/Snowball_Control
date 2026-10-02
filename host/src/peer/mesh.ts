@@ -64,7 +64,7 @@ export class MeshRouter extends EventEmitter {
   public async start(): Promise<void> {
     return new Promise((resolve) => {
       this.server = http.createServer((req, res) => this.handleHttp(req, res));
-      this.server.listen(this.port, () => {
+      this.server.listen(this.port, "127.0.0.1", () => {
         console.log(`[MeshRouter] Peer mesh HTTP server listening on port ${this.port}`);
         this.startHeartbeats();
         resolve();

@@ -3,7 +3,8 @@ CROSS_COMPILE ?= $(TOOLCHAIN_DIR)/arm-openwrt-linux-
 CC := $(CROSS_COMPILE)gcc
 CFLAGS := -O2 -Wall -march=armv7-a -mtune=cortex-a7 -mfpu=neon -mfloat-abi=hard
 LDFLAGS := -lm -ldl
-FREETYPE_HEADERS := .deps/freetype-2.6.1/include
+FREETYPE_HEADERS ?= .deps/freetype-2.6.1/include
+FREETYPE_ARCHIVE ?= ../Keyboard_T113_SourceCode_20260427_MK20/Tina-t113-pro/dl/freetype-2.6.1.tar.gz
 CFLAGS += -I$(FREETYPE_HEADERS)
 
 SRCS := mk20-hud.c v2_state.c v2_render.c unicode_text.c
@@ -26,8 +27,9 @@ mk20-hud: $(OBJS)
 
 unicode_text.o: $(FREETYPE_HEADERS)/ft2build.h
 $(FREETYPE_HEADERS)/ft2build.h:
+	@test -f "$(FREETYPE_ARCHIVE)" || { echo 'Set FREETYPE_HEADERS to installed FreeType headers, or FREETYPE_ARCHIVE to a supplied source archive.'; exit 1; }
 	mkdir -p .deps
-	tar -xzf ../Keyboard_T113_SourceCode_20260427_MK20/Tina-t113-pro/dl/freetype-2.6.1.tar.gz -C .deps
+	tar -xzf "$(FREETYPE_ARCHIVE)" -C .deps
 
 clean:
 	rm -f mk20-hud $(OBJS)

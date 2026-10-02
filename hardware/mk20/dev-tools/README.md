@@ -59,7 +59,7 @@ location. Pass `-Device 127.0.0.1:15555` when using the dual-NIC relay, or
 `-Device address:port` when DHCP changes the MK20 endpoint. The helper's
 `192.168.69.27:5555` default describes the original development network.
 
-## Security
+## Preview security
 
 This Tina image does not include the ADB authentication service. Device
 firewall rules therefore allow port 5555 only from the development PC's Wi-Fi
@@ -68,7 +68,7 @@ device Wi-Fi, obtains its DHCP lease, launches TCP-only ADB, and reapplies the
 rules at boot without changing the USB gadget.
 
 If the development PC's Wi-Fi adapter changes, update `DEV_PC_MAC` in
-`lunch.sh` before replacing the device copy at `/mnt/SDCARD/lunch.sh`.
+`dev-access.conf` before replacing the device copy at `/mnt/SDCARD/lunch.sh`.
 
 ## Device-side files
 
@@ -102,3 +102,5 @@ serial protocol after reboot.
   variable.
 - `package/PCMonitorApp/setusbconfig` owns the product serial gadget mode.
 - `package/PCMonitorApp/qt_app1` executes `/mnt/SDCARD/lunch.sh` as root.
+
+변경 전 SD 전체 이미지와 파일 백업을 권장합니다. SD 제거만으로 공장 런타임 복구를 보장하지 않으며 복구 절차는 아직 실물 검증 전입니다. 현재 설계·QMK 필수 조건·Preview 보안 경계는 [중앙 문서](../../../docs/ARCHITECTURE.md)를 참고하세요.

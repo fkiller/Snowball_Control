@@ -1,7 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createInterface } from "node:readline";
 import * as fs from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { NativeVoiceProvider } from "./provider.js";
@@ -11,9 +10,10 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export class LocalWhisperProvider implements NativeVoiceProvider {
   private child?: ChildProcessWithoutNullStreams;
+  private workerReady?: Promise<void>;
   private seq = 0;
   private pending = new Map<number, { resolve(value: any): void; reject(error: Error): void; timer: NodeJS.Timeout }>();
-  private audioTransport: AudioTransport;
+  private audioTransport: Pick<AudioTransport, "startDeviceRecording" | "stopDeviceRecording" | "cancelDeviceRecording" | "pullDeviceWav">;
   private currentCaptureId?: string;
   private activeRecording = false;
 
@@ -21,9 +21,10 @@ export class LocalWhisperProvider implements NativeVoiceProvider {
     private model = process.env.SNOWBALL_WHISPER_MODEL || "large-v3-turbo",
     private deviceAdb = process.env.SNOWBALL_DEVICE_ADB || "192.168.1.248:5555",
     private modelDir = process.env.SNOWBALL_MODELS_DIR,
-    private computeDevice = process.env.SNOWBALL_WHISPER_DEVICE || "auto"
+    private computeDevice = process.env.SNOWBALL_WHISPER_DEVICE || "auto",
+    captureTransport?: Pick<AudioTransport, "startDeviceRecording" | "stopDeviceRecording" | "cancelDeviceRecording" | "pullDeviceWav">
   ) {
-    this.audioTransport = new AudioTransport(this.deviceAdb);
+    this.audioTransport = captureTransport || new AudioTransport(this.deviceAdb);
   }
 
   public static resolvePythonRuntime(): { exec: string; workerPy: string } {
@@ -219,14 +220,12 @@ export class LocalWhisperProvider implements NativeVoiceProvider {
   }
 
   private ensureWorkerStarted(): Promise<void> {
-    if (this.child && !this.child.killed) {
-      return Promise.resolve();
-    }
+    if (this.workerReady) return this.workerReady;
 
     const { exec, args } = this.resolvePython();
     console.log(`[LocalWhisper] Spawning resident worker: ${exec} ${args.join(" ")}`);
 
-    return new Promise<void>((resolve, reject) => {
+    this.workerReady = new Promise<void>((resolve, reject) => {
       let resolved = false;
       const child = spawn(exec, args, {
         stdio: "pipe",
@@ -241,8 +240,8 @@ export class LocalWhisperProvider implements NativeVoiceProvider {
       const startupTimer = setTimeout(() => {
         if (!resolved) {
           resolved = true;
-          console.warn("[LocalWhisper] Worker startup timed out waiting for ready signal; proceeding.");
-          resolve();
+          reject(new Error("Whisper worker did not acknowledge readiness within 30 seconds"));
+          child.kill();
         }
       }, 30000);
 
@@ -282,7 +281,7 @@ export class LocalWhisperProvider implements NativeVoiceProvider {
       const onExit = (code: number | null, signal: string | null) => {
         console.warn(`[LocalWhisper] Worker exited with code=${code} signal=${signal}`);
         if (this.child === child) {
-          this.child = undefined;
+          this.child = undefined; this.workerReady = undefined;
         }
         for (const req of this.pending.values()) {
           clearTimeout(req.timer);
@@ -302,6 +301,7 @@ export class LocalWhisperProvider implements NativeVoiceProvider {
       });
       child.on("exit", onExit);
     });
+    return this.workerReady;
   }
 
   private async request(method: string, params: Record<string, any> = {}): Promise<any> {
@@ -332,20 +332,13 @@ export class LocalWhisperProvider implements NativeVoiceProvider {
     this.currentCaptureId = captureId;
     this.activeRecording = true;
 
-    // Ensure worker is pre-warmed concurrently while MK20 begins capturing
-    const warmWorker = this.ensureWorkerStarted().catch((e) =>
-      console.warn("[LocalWhisper] Pre-warm warning:", e.message)
-    );
-
-    if (process.env.SNOWBALL_MOCK_CAPTURE === "1") {
-      console.log(`[LocalWhisper] Mock capture started for ${captureId}`);
-      await warmWorker;
-      return;
+    try {
+      await Promise.all([this.ensureWorkerStarted(), this.audioTransport.startDeviceRecording()]);
+    } catch (error) {
+      this.activeRecording = false; this.currentCaptureId = undefined;
+      await this.audioTransport.cancelDeviceRecording().catch(() => {});
+      throw error;
     }
-
-    console.log(`[LocalWhisper] Starting MK20 microphone capture for ${captureId}...`);
-    await this.audioTransport.startDeviceRecording();
-    await warmWorker;
   }
 
   /**
@@ -358,26 +351,8 @@ export class LocalWhisperProvider implements NativeVoiceProvider {
     }
     this.activeRecording = false;
 
-    let wavPath: string;
-    if (process.env.SNOWBALL_MOCK_CAPTURE === "1") {
-      console.log(`[LocalWhisper] Mock capture finishing for ${captureId}`);
-      const mockFixture = process.env.SNOWBALL_MOCK_FIXTURE;
-      if (mockFixture && fs.existsSync(mockFixture)) {
-        wavPath = path.join(os.tmpdir(), `mock_test_${Date.now()}.wav`);
-        fs.copyFileSync(mockFixture, wavPath);
-      } else {
-        // Synthesize clean 1-second 16kHz mono WAV (silence)
-        const raw3ch = Buffer.alloc(16000 * 6);
-        wavPath = path.join(os.tmpdir(), `mock_synth_${Date.now()}.wav`);
-        fs.writeFileSync(wavPath, AudioTransport.pcm3chToMonoWav(raw3ch));
-      }
-    } else {
-      console.log(`[LocalWhisper] Stopping MK20 recording for ${captureId}...`);
-      await this.audioTransport.stopDeviceRecording();
-
-      console.log("[LocalWhisper] Pulling MK20 audio & extracting Channel 3 mono WAV...");
-      wavPath = await this.audioTransport.pullDeviceWav();
-    }
+    await this.audioTransport.stopDeviceRecording();
+    const wavPath = await this.audioTransport.pullDeviceWav();
 
     try {
       console.log(`[LocalWhisper] Transcribing ${wavPath} with resident Whisper model...`);
@@ -400,11 +375,6 @@ export class LocalWhisperProvider implements NativeVoiceProvider {
     console.log(`[LocalWhisper] Cancelling capture for ${captureId}...`);
     this.activeRecording = false;
     this.currentCaptureId = undefined;
-
-    if (process.env.SNOWBALL_MOCK_CAPTURE === "1") {
-      console.log(`[LocalWhisper] Mock capture cancelled for ${captureId}`);
-      return;
-    }
 
     await this.audioTransport.cancelDeviceRecording();
   }
@@ -436,7 +406,7 @@ export class LocalWhisperProvider implements NativeVoiceProvider {
         this.child.stdin.end();
         this.child.kill();
       } catch {}
-      this.child = undefined;
+      this.child = undefined; this.workerReady = undefined;
     }
     this.audioTransport.stopDeviceRecording().catch(() => {});
   }

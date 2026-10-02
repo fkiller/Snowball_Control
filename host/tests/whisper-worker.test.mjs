@@ -9,9 +9,9 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-test('whisper-worker: stdio JSON-RPC protocol ping, status, transcribe, and error resilience', async () => {
-  const venvPy = path.resolve(__dirname, '../.venv-whisper/Scripts/python.exe');
-  const pyExec = fs.existsSync(venvPy) ? venvPy : 'python';
+test('whisper-worker: stdio JSON-RPC protocol ping, status, transcribe, and error resilience', { skip: process.env.SNOWBALL_TEST_STT !== '1', timeout: 120000 }, async () => {
+  const venvPy = path.resolve(__dirname, process.platform === 'win32' ? '../.venv-whisper/Scripts/python.exe' : '../.venv-whisper/bin/python');
+  const pyExec = process.env.PYTHON_BIN || (fs.existsSync(venvPy) ? venvPy : process.platform === 'win32' ? 'python' : 'python3');
   const workerPy = path.resolve(__dirname, '../dist/audio/whisper_worker.py');
 
   assert.ok(fs.existsSync(workerPy), 'whisper_worker.py must exist in dist/audio/');
@@ -24,7 +24,12 @@ test('whisper-worker: stdio JSON-RPC protocol ping, status, transcribe, and erro
   const rl = createInterface({ input: child.stdout });
   const responses = new Map();
   let onReady;
-  const readyPromise = new Promise((resolve) => { onReady = resolve; });
+  const readyPromise = new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('Worker never acknowledged readiness')), 45000);
+    onReady = message => { clearTimeout(timer); resolve(message); };
+    child.once('error', error => { clearTimeout(timer); reject(error); });
+    child.once('exit', code => { clearTimeout(timer); reject(new Error(`Worker exited before ready (${code})`)); });
+  });
 
   rl.on('line', (line) => {
     line = line.trim();
@@ -55,7 +60,7 @@ test('whisper-worker: stdio JSON-RPC protocol ping, status, transcribe, and erro
     const readyEvent = await readyPromise;
     assert.equal(readyEvent.event, 'ready');
     assert.equal(readyEvent.model, 'base');
-    assert.ok(readyEvent.rss_mb > 50, 'Worker RSS should be reported');
+    assert.ok(Number.isFinite(readyEvent.rss_mb) && readyEvent.rss_mb >= 0, 'Optional RSS measurement must be valid');
 
     // 2. Test ping
     const pingRes = await sendReq(1, 'ping');

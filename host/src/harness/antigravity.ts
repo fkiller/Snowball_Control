@@ -367,11 +367,7 @@ export class AntigravityAdapter extends EventEmitter implements AgentHarness {
         this.activeChild = null;
       });
     } else {
-      // Fallback: emit acknowledgment
-      this.emit("delta", {
-        sessionId,
-        content: `[Antigravity] Prompt queued for session ${sessionId.slice(0, 8)}`,
-      });
+      throw new Error("Antigravity native CLI is unavailable; prompt was not queued");
     }
   }
 
@@ -384,7 +380,7 @@ export class AntigravityAdapter extends EventEmitter implements AgentHarness {
   }
 
   public async respondApproval(approvalId: string, decision: string): Promise<void> {
-    console.log(`[Antigravity] Approval response: ${approvalId} -> ${decision}`);
+    throw new Error("This reference adapter has no native Antigravity approval bridge");
   }
 
   public watchSessionTranscript(sessionId: string): void {

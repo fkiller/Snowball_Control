@@ -5,6 +5,14 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import { AntigravityAdapter } from '../dist/harness/antigravity.js';
 
+test('Antigravity reference adapter cannot acknowledge an unavailable CLI or approval bridge', async () => {
+  const adapter=new AntigravityAdapter({agyPath:path.join(os.tmpdir(),'snowball-unavailable-cli','agy.exe')});
+  const deltas=[]; adapter.on('delta',delta=>deltas.push(delta));
+  await assert.rejects(adapter.sendPrompt('not-a-real-session','Do not execute'),/not queued/);
+  assert.deepEqual(deltas,[]);
+  await assert.rejects(adapter.respondApproval('unavailable','accept'),/no native/);
+});
+
 test('AntigravityAdapter: Brain directory session discovery and transcript delta parsing', async () => {
   // Create temporary mock brain environment
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'antigravity-test-'));

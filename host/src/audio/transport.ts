@@ -56,7 +56,7 @@ export class AudioTransport {
 
   private execAdb(args: string[]): Promise<{ stdout: string; stderr: string }> {
     return new Promise((resolve, reject) => {
-      cp.execFile(this.adbPath, args, { windowsHide: true }, (err, stdout, stderr) => {
+      cp.execFile(this.adbPath, args, { windowsHide: true, timeout: 30000, maxBuffer: 4 * 1024 * 1024 }, (err, stdout, stderr) => {
         if (err) {
           return reject(err);
         }
@@ -163,6 +163,7 @@ export class AudioTransport {
    * and saves a clean 16kHz mono WAV file for local transcription.
    */
   public async pullDeviceWav(remotePath = "/tmp/snowball_voice.pcm"): Promise<string> {
+    if (remotePath !== "/tmp/snowball_voice.pcm") throw new Error("Unsupported recording scratch path");
     await this.ensureConnected();
     const checkRes = await this.execAdb([
       "-s",
@@ -216,6 +217,7 @@ export class AudioTransport {
    * MIC3 carries the physical microphone. Stops automatically after 600s if not finished.
    */
   public async startDeviceRecording(remotePath = "/tmp/snowball_voice.pcm"): Promise<void> {
+    if (remotePath !== "/tmp/snowball_voice.pcm") throw new Error("Unsupported recording scratch path");
     await this.ensureConnected();
     this.recordingStartTime = Date.now();
     // Clean up any old files first
@@ -223,8 +225,8 @@ export class AudioTransport {
       "-s",
       this.deviceAddress,
       "shell",
-      `killall -9 arecord 2>/dev/null; rm -f '${remotePath}' /tmp/snowball_arecord.pid`
-    ]).catch(() => {});
+      `if [ -s /tmp/snowball_arecord.pid ]; then p=$(cat /tmp/snowball_arecord.pid); case $p in ''|*[!0-9]*) p=0;; esac; if [ "$p" != 0 ] && [ -r /proc/$p/cmdline ] && tr '\\000' ' ' < /proc/$p/cmdline | grep -q 'arecord.*snowball_voice.pcm'; then kill -2 "$p"; fi; fi; rm -f '${remotePath}' /tmp/snowball_arecord.pid`
+    ]);
 
     const shellArgs = [
       "-s",
@@ -234,12 +236,19 @@ export class AudioTransport {
     ];
 
     this.recorderProcess = cp.spawn(this.adbPath, shellArgs, { windowsHide: true });
-    this.recorderProcess.on("error", (err) => {
-      console.warn("[AudioTransport] arecord spawn error:", err.message);
-    });
-
-    // Wait 150ms for ALSA device initialization
-    await new Promise((r) => setTimeout(r, 150));
+    let recorderError: Error | undefined;
+    this.recorderProcess.on("error", (err) => { recorderError = err; });
+    const deadline = Date.now() + 3000;
+    while (Date.now() < deadline) {
+      if (recorderError) throw recorderError;
+      if (this.recorderProcess.exitCode !== null) throw new Error("MK20 recorder exited before capture started");
+      const result = await this.execAdb(["-s", this.deviceAddress, "shell",
+        "if [ -s /tmp/snowball_arecord.pid ] && [ -s /tmp/snowball_voice.pcm ]; then p=$(cat /tmp/snowball_arecord.pid); case $p in ''|*[!0-9]*) exit 1;; esac; kill -0 $p 2>/dev/null && echo snowball_recording_ready; fi"]);
+      if (result.stdout.trim() === "snowball_recording_ready") return;
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    await this.cancelDeviceRecording();
+    throw new Error("MK20 microphone did not produce audio before the startup deadline");
   }
 
   /**
@@ -252,11 +261,11 @@ export class AudioTransport {
     }
 
     // Signal MK20 arecord to stop cleanly
-    const stopCmd = "if [ -s /tmp/snowball_arecord.pid ]; then p=$(cat /tmp/snowball_arecord.pid); case $p in ''|*[!0-9]*) exit 0;; esac; if [ -r /proc/$p/cmdline ]; then kill -2 $p; fi; fi";
+    const stopCmd = "if [ -s /tmp/snowball_arecord.pid ]; then p=$(cat /tmp/snowball_arecord.pid); case $p in ''|*[!0-9]*) exit 0;; esac; if [ -r /proc/$p/cmdline ] && tr '\\000' ' ' < /proc/$p/cmdline | grep -q 'arecord.*snowball_voice.pcm'; then kill -2 $p; fi; fi";
     await this.execAdb(["-s", this.deviceAddress, "shell", stopCmd]).catch(() => {});
 
     // Wait for local adb child process to exit
-    if (this.recorderProcess && !this.recorderProcess.killed) {
+    if (this.recorderProcess && !this.recorderProcess.killed && this.recorderProcess.exitCode === null) {
       await new Promise<void>((resolve) => {
         const timer = setTimeout(() => {
           try { this.recorderProcess?.kill(); } catch {}
@@ -267,14 +276,15 @@ export class AudioTransport {
           resolve();
         });
       });
-      this.recorderProcess = undefined;
     }
+    this.recorderProcess = undefined;
   }
 
   /**
    * Cancels in-flight recording and removes remote scratch files.
    */
   public async cancelDeviceRecording(remotePath = "/tmp/snowball_voice.pcm"): Promise<void> {
+    if (remotePath !== "/tmp/snowball_voice.pcm") throw new Error("Unsupported recording scratch path");
     await this.stopDeviceRecording();
     await this.execAdb(["-s", this.deviceAddress, "shell", `rm -f '${remotePath}' /tmp/snowball_arecord.pid`]).catch(() => {});
   }

@@ -1,0 +1,30 @@
+name: Verify Preview
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  node:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+      - run: npm ci
+        working-directory: host
+      - run: npm test
+        working-directory: host
+      - run: npm test
+        working-directory: plugins/device-mk20
+      - name: QMK serial contract
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./hardware/mk20/contract/Test-QmkProtocol.ps1
+      - name: HUD parser with sanitizers
+        if: runner.os == 'Linux'
+        run: |
+          gcc -Wall -Wextra -fsanitize=address,undefined hardware/mk20/hud/tests/v2-state-test.c hardware/mk20/hud/v2_state.c -lm -o /tmp/snowball-v2-test
+          /tmp/snowball-v2-test

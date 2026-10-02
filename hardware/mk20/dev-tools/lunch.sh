@@ -1,7 +1,8 @@
 #!/bin/sh
 
-# Bring up the development Wi-Fi, start TCP-only ADB after the product
-# application is ready, then restrict it to the development PC. This script
+# Bring up development Wi-Fi and restrict TCP-only ADB before starting it.
+# This is a trusted-private-LAN Preview, without cryptographic ADB authentication.
+# This script
 # never changes the USB gadget.
 CONFIG="/mnt/SDCARD/dev-access.conf"
 LOG="/mnt/SDCARD/dev-access.log"
@@ -70,17 +71,17 @@ EOF
     fi
 
     killall adbd 2>/dev/null
-    sleep 2
-    ADB_TRANSPORT_PORT=5555 /bin/adbd -D >/dev/null 2>&1 &
-    sleep 2
-
-    iptables -C INPUT -p tcp --dport 5555 -m mac --mac-source "$DEV_PC_MAC" -j ACCEPT 2>/dev/null || \
-        iptables -I INPUT 1 -p tcp --dport 5555 -m mac --mac-source "$DEV_PC_MAC" -j ACCEPT
-
-    iptables -C INPUT -p tcp --dport 5555 -j DROP 2>/dev/null || \
-        iptables -A INPUT -p tcp --dport 5555 -j DROP
-
-    log_msg "TCP ADB daemon running (pid $(pidof adbd)) on port 5555, MAC restricted to $DEV_PC_MAC"
+    while iptables -D INPUT -p tcp --dport 5555 -j SNOWBALL_ADB 2>/dev/null; do :; done
+    iptables -N SNOWBALL_ADB 2>/dev/null || true
+    if iptables -F SNOWBALL_ADB && \
+       iptables -A SNOWBALL_ADB -m mac --mac-source "$DEV_PC_MAC" -j ACCEPT && \
+       iptables -A SNOWBALL_ADB -j DROP && \
+       iptables -I INPUT 1 -p tcp --dport 5555 -j SNOWBALL_ADB; then
+        ADB_TRANSPORT_PORT=5555 /bin/adbd -D >/dev/null 2>&1 &
+        log_msg "TCP ADB requested after development MAC filter installation"
+    else
+        log_msg "ADB disabled: development firewall could not be installed"
+    fi
 
     # Free /dev/ttyS1 and /dev/fb0 from vendor Qt app
     /etc/init.d/qt_app2 disable 2>/dev/null

@@ -109,39 +109,10 @@ export class ContextManager {
   ];
 
   // Scoped Project Catalogs: keyed by "machineId/harnessId"
-  public projectsByScope: Record<string, ProjectInfo[]> = {
-    "dev-pc/codex": [
-      { id: "snowball", name: "Snowball", path: "E:\\developments\\projects\\Snowball_Control" },
-      { id: "gnunae", name: "GnuNae", path: "E:\\developments\\projects\\GnuNae" },
-      { id: "gimmytwitter", name: "TwitterB", path: "C:\\Users\\wondo\\OneDrive\\Documents\\GimMyTwitterB" },
-      { id: "mk20-hud", name: "MK20-HUD", path: "E:\\developments\\projects\\Snowball_Control\\hardware\\mk20\\hud" },
-    ],
-    "dev-pc/antigravity": [
-      { id: "snowball-control", name: "Snowball_Control", path: "E:\\developments\\projects\\Snowball_Control" },
-      { id: "gnunae", name: "GnuNae", path: "E:\\developments\\projects\\GnuNae" },
-      { id: "descentvr", name: "descentVR", path: "E:\\developments\\projects\\descentVR" },
-    ],
-    "dev-pc/opencode": [
-      { id: "snowball-control", name: "Snowball_Control", path: "E:\\developments\\projects\\Snowball_Control" },
-    ],
-  };
-
-  // Scoped Session Catalogs: keyed by "machineId/harnessId/projectId"
-  public sessionsByScope: Record<string, SessionInfo[]> = {
-    "dev-pc/codex/snowball": [
-      { id: "s-01", title: "Dual Knob Tuning", createdAt: Date.now() - 3600000, preview: "Unbind right knob HID keycodes across layers" },
-      { id: "s-02", title: "V2 UI State Machine", createdAt: Date.now() - 7200000, preview: "Revamped product design implementation" },
-      { id: "s-03", title: "Codex 0.153.4 Scope", createdAt: Date.now() - 86400000, preview: "Native pub/sub multi-client verification" },
-      { id: "s-new", title: "New Session", createdAt: Date.now(), preview: "Start fresh conversation" },
-    ],
-    "dev-pc/codex/gnunae": [
-      { id: "gn-01", title: "Audio Sync Refactor", createdAt: Date.now() - 1000000, preview: "Optimized sample rate conversion for streaming" },
-      { id: "gn-02", title: "FFmpeg Pipeline", createdAt: Date.now() - 5000000, preview: "Low-latency PCM audio buffer management" },
-    ],
-  };
-
-  public models: string[] = ["gpt-6-astra", "gpt-5.6-sol", "gpt-5.5", "claude-3-7"];
-  public efforts: string[] = ["low", "medium", "high"];
+  public projectsByScope: Record<string, ProjectInfo[]> = {};
+  public sessionsByScope: Record<string, SessionInfo[]> = {};
+  public models: string[] = [];
+  public efforts: string[] = [];
   public accessLevels: string[] = ["untrusted", "on-request", "never"];
 
   // Selected State
@@ -197,20 +168,7 @@ export class ContextManager {
   public editorFocusIdx = 0;
 
   // Workspace / Files Modal state
-  public workspaceFiles: { name: string; isDir: boolean; size?: string }[] = [
-    { name: "..", isDir: true },
-    { name: "docs", isDir: true },
-    { name: "hardware", isDir: true },
-    { name: "host", isDir: true },
-    { name: "README.md", isDir: false, size: "4.2KB" },
-    { name: "AGENTS.md", isDir: false, size: "3.1KB" },
-    { name: "HANDOFF.md", isDir: false, size: "8.5KB" },
-    { name: "CODEX_VERIFICATION.md", isDir: false, size: "7.1KB" },
-    { name: "CODEX_CAPABILITY_PLAN.md", isDir: false, size: "14.2KB" },
-    { name: "mk20-hud.c", isDir: false, size: "86KB" },
-    { name: "v2_state.c", isDir: false, size: "7.2KB" },
-    { name: "v2_render.c", isDir: false, size: "5.1KB" },
-  ];
+  public workspaceFiles: { name: string; isDir: boolean; size?: string }[] = [];
   public workspaceScrollRow = 0; // 4 items per row in 4x4 grid
   public currentFilePath: string = "/";
   public isWorkspaceViewerActive: boolean = false;
@@ -386,25 +344,11 @@ export class ContextManager {
 
   public getProjectsForCurrentScope(): ProjectInfo[] {
     const key = this.getScopeKey();
-    if (this.projectsByScope[key] && this.projectsByScope[key].length > 0) {
-      return this.projectsByScope[key];
-    }
-    // Fallback default
-    return [
-      { id: "default-proj-1", name: `${this.getCurrentHarness().name}-Core`, path: `/workspace/core` },
-      { id: "default-proj-2", name: `${this.getCurrentHarness().name}-App`, path: `/workspace/app` },
-    ];
+    return this.projectsByScope[key] || [];
   }
 
   public getSessionsForCurrentScope(): SessionInfo[] {
-    const key = this.getFullScopeKey();
-    if (this.sessionsByScope[key] && this.sessionsByScope[key].length > 0) {
-      return this.sessionsByScope[key];
-    }
-    return [
-      { id: "s-1", title: `${this.getCurrentProject().name} Main`, createdAt: Date.now(), preview: "Initial working session" },
-      { id: "s-new", title: "New Session", createdAt: Date.now(), preview: "Start fresh conversation" },
-    ];
+    return this.sessionsByScope[this.getFullScopeKey()] || [];
   }
 
   // --- Cascading Context Resets ---
@@ -760,7 +704,7 @@ export class ContextManager {
 
   public getCurrentProject(): ProjectInfo {
     const projs = this.getProjectsForCurrentScope();
-    return projs[this.selectedProjectIdx] || projs[0] || { id: "none", name: "None", path: "/" };
+    return projs[this.selectedProjectIdx] || projs[0] || { id: "none", name: "None", path: "" };
   }
 
   public getCurrentSession(): SessionInfo {

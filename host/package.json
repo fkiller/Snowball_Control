@@ -6,7 +6,8 @@
   "type": "module",
   "scripts": {
     "build": "tsc && node -e \"import('node:fs').then(fs => { fs.mkdirSync('dist/audio', { recursive: true }); fs.copyFileSync('src/audio/whisper_worker.py', 'dist/audio/whisper_worker.py'); })\"",
-    "test": "npm run build && node --test tests",
+    "test": "npm run build && node ../scripts/test-node.mjs tests",
+    "test:stt": "npm run build && node scripts/test-stt.mjs",
     "start": "node dist/index.js",
     "dev": "tsc -w"
   },

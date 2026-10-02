@@ -129,7 +129,7 @@ void v2_render_key_frame(uint16_t *fb, int key_idx, int pressed) {
 
         // 7. Main Label (Button Font Color + Automatic Font Color reversed by Background)
         if (k->main[0]) {
-            int len = strlen(k->main);
+            int len = unicode_width(k->main) / 8;
             uint16_t base_main = (k->flags & KEY_FLAG_FILLED) ? g_v2_theme.key_filled_text : g_v2_theme.btn_main_font_color;
             uint16_t main_color = get_contrast_font_color(bg_color, base_main, g_v2_theme.auto_font_reverse);
             if (len <= 14) {
@@ -154,7 +154,7 @@ void v2_render_key_frame(uint16_t *fb, int key_idx, int pressed) {
             uint16_t dbg_color = get_contrast_font_color(bg_color, g_v2_theme.top_accent, g_v2_theme.auto_font_reverse);
             draw_string_centered_16(fb, KEY_W, 96, dbg_buf, dbg_color, 1);
         } else if (k->sub[0]) {
-            int sub_len = strlen(k->sub);
+            int sub_len = unicode_width(k->sub) / 8;
             uint16_t base_sub = (k->flags & KEY_FLAG_FILLED) ? g_v2_theme.key_filled_text : g_v2_theme.btn_sub_font_color;
             uint16_t sub_color = get_contrast_font_color(bg_color, base_sub, g_v2_theme.auto_font_reverse);
             if (sub_len <= 14) {

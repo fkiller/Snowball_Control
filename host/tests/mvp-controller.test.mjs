@@ -93,7 +93,7 @@ test('Korean wraps by rendered width, without surrogate splitting or dropped cha
   const lines42=wrapText(text, 42);
   assert.ok(lines42.every(l=>Array.from(l).reduce((n,c)=>n+(c.codePointAt(0)<128?1:2),0)<=42));
 });
-test('K17 and K13 are enabled and cycle machine and harness in session mode', async () => {
+test('reference host advertises only the Codex backend it can dispatch', async () => {
   const {controller:c} = setup(); await c.connect();
   const keys = c.state().keys;
   const k17 = keys.find(k => k.keyId === 17);
@@ -104,7 +104,35 @@ test('K17 and K13 are enabled and cycle machine and harness in session mode', as
   assert.equal(k13.labelTop, 'HARNESS');
   const initialHarness = c.context.getCurrentHarness().id;
   await c.input(press(13));
-  assert.notEqual(c.context.getCurrentHarness().id, initialHarness);
+  assert.equal(c.context.getCurrentHarness().id, initialHarness);
+  assert.deepEqual(c.context.harnesses.map(h => h.id), ['codex']);
+});
+
+test('backend exit expires approvals even when a restarted server reuses its request ID', async () => {
+  const {controller:c,backend} = setup(); await c.connect();
+  const request = {id:1, method:'item/commandExecution/requestApproval', params:{threadId:'s'}};
+  backend.emit('raw_request', request);
+  assert.equal(c.pending.length, 1);
+  backend.emit('exit', 1);
+  assert.equal(c.pending.length, 0);
+  backend.emit('raw_request', {...request, params:{threadId:'new'}});
+  assert.equal(c.pending.length, 1);
+  assert.equal(c.pending[0].params.threadId, 'new');
+});
+
+test('desktop rejection preserves the draft and selected model/effort', async () => {
+  const {controller:c,backend,desktop} = setup(); await c.connect();
+  c.context.models=['native-model']; c.context.selectedModelIdx=0;
+  c.context.efforts=['high']; c.context.selectedEffortIdx=0;
+  desktop.isConnected=true;
+  let sent;
+  desktop.sendMessageToThread=async (...args) => { sent=args; return {isError:true}; };
+  const request=backend.request;
+  backend.request=async (method,params) => { if(method==='thread/resume') throw new Error('already has an active writer'); return request(method,params); };
+  await c.input(press(20)); await c.input(press(16)); await c.input(press(16));
+  assert.equal(c.draft.snapshot.phase,'unknown');
+  assert.equal(c.draft.snapshot.text,'한글 README 수정');
+  assert.deepEqual(sent,['s','한글 README 수정','native-model','high']);
 });
 test('active writer conflict on thread/resume routes send through CodexDesktopClient', async () => {
   const {controller:c,backend,desktop} = setup();
