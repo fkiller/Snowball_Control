@@ -73,7 +73,18 @@ flowchart TD
 
 ---
 
-## 3. Deliverables Organization (산출물 구성)
+## 3. Deliverables & Ecosystem Organization (산출물 및 생태계 구성)
+
+### 3.0 Snowball Ecosystem Repository Architecture
+Snowball 생태계는 통일된 `Snowball_<Component>` 명명 규칙과 단일 라이선스(Apache-2.0)로 배포됩니다:
+
+| Repository | Role | Technology Stack | License |
+|---|---|---|---|
+| **[Snowball_Control](https://github.com/fkiller/Snowball_Control)** | MK20 데스크 터미널 하드웨어 산출물, HUD 데몬, QMK 펌웨어, 기기 플러그인(`plugins/device-mk20`) | QMK (C), Tina Linux (C99), Node.js ESM | Apache-2.0 |
+| **[Snowball_Middleware](https://github.com/fkiller/Snowball_Middleware)** | 로컬 제어 코어, Web Supervisor (`:8765`), 트레이 앱, Plugin SDK/Host | Node.js (TS), Electron, Loopback REST/WS | Apache-2.0 |
+| **[Snowball_Harness_Antigravity](https://github.com/fkiller/Snowball_Harness_Antigravity)** | Google Antigravity 공식 하네스 플러그인 (샌드박스 격리) | TypeScript, `@snowball/plugin-sdk` | Apache-2.0 |
+| **[Snowball_Harness_OpenCode](https://github.com/fkiller/Snowball_Harness_OpenCode)** | OpenCode 공식 하네스 플러그인 (샌드박스 격리) | TypeScript, `@snowball/plugin-sdk` | Apache-2.0 |
+| **[Snowball_Harness_Codex](https://github.com/fkiller/Snowball_Harness_Codex)** | OpenAI Codex CLI 공식 하네스 플러그인 (샌드박스 격리) | TypeScript, `@snowball/plugin-sdk` | Apache-2.0 |
 
 ### 3.1 MK20 하드웨어 3대 산출물 (`mk20-deliverables`)
 MK20 하드웨어 터미널은 상호 연동되는 3개의 독립적인 배포 계층으로 구성됩니다:
