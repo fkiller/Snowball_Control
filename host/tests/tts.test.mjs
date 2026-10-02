@@ -210,3 +210,57 @@ test('TTS Interruption: Starting voice input (Talk / Key 20) stops active speech
   assert.equal(controller.context.autoTts, true);
   await controller.close();
 });
+
+test('TTS Fallback: Speeks earlier turn if the latest turn is failed or has no agent response', async () => {
+  const backend = new MockBackend();
+  const voice = new MockVoiceProvider();
+  const tts = new MockTtsProvider();
+  const controller = new MvpController(backend, voice, () => {}, undefined, mockDesktop, tts);
+
+  // Override thread/read with a thread where Turn 1 had an agent response, but Turn 2 was failed with no agent response
+  backend.request = async (method, params) => {
+    if (method === 'thread/list') {
+      return {
+        threads: [
+          { id: 'session-failed', preview: 'Initial preview fallback' },
+        ],
+      };
+    }
+    if (method === 'thread/read') {
+      return {
+        thread: {
+          id: 'session-failed',
+          turns: [
+            {
+              id: 'turn-1',
+              status: 'completed',
+              items: [
+                { type: 'userMessage', text: 'Turn 1 user request' },
+                { type: 'agentMessage', text: 'Turn 1 successful agent response' },
+              ],
+            },
+            {
+              id: 'turn-2',
+              status: 'failed',
+              items: [
+                { type: 'userMessage', text: 'Turn 2 failed request' },
+              ],
+            },
+          ],
+        },
+      };
+    }
+    return {};
+  };
+
+  await controller.connect();
+  // Turn 2 is the latest turn, but has no agent response.
+  // toggleAutoTts should find Turn 1's agent response!
+  await controller.toggleAutoTts();
+
+  assert.equal(controller.context.autoTts, true);
+  assert.equal(tts.spokenTexts.length, 1);
+  assert.equal(tts.spokenTexts[0].text, 'Turn 1 successful agent response');
+  await controller.close();
+});
+

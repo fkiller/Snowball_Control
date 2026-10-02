@@ -81,11 +81,19 @@ export class LocalKokoroProvider implements NativeTtsProvider {
     this.isSpawning = true;
     try {
       const { exec, workerPy } = LocalKokoroProvider.resolvePythonRuntime();
-      const args = ["-u", workerPy, "--daemon", "--device", this.computeDevice];
+      const args = ["-X", "utf8", "-u", workerPy, "--daemon", "--device", this.computeDevice];
       if (this.modelPath) args.push("--model", this.modelPath);
       if (this.voicesPath) args.push("--voices", this.voicesPath);
 
-      const child = spawn(exec, args, { stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
+      const child = spawn(exec, args, {
+        stdio: ["pipe", "pipe", "pipe"],
+        windowsHide: true,
+        env: {
+          ...process.env,
+          PYTHONIOENCODING: "utf-8",
+          PYTHONUTF8: "1",
+        },
+      });
       this.child = child;
 
       const rl = createInterface({ input: child.stdout });
@@ -136,10 +144,18 @@ export class LocalKokoroProvider implements NativeTtsProvider {
   }
 
   public async synthesize(text: string, options?: TtsSynthesizeOptions): Promise<TtsSynthesizeResult> {
-    const cleanText = text.trim();
+    const cleanText = text
+      .trim()
+      .replace(/[\ud800-\udfff]/g, "")
+      .replace(/\u2011/g, "-")
+      .replace(/\u00a0/g, " ");
     if (!cleanText) {
       return { wavPath: "", durationMs: 0, sampleRate: 24000, text: "", engine: "mock" };
     }
+
+    const hasKorean = /[\uac00-\ud7af\u1100-\u11ff\u3130-\u318f]/.test(cleanText);
+    const targetLang = options?.language || (hasKorean ? "ko" : "en-us");
+    const targetVoice = options?.voice || "af_bella";
 
     const tmpWav = path.join(os.tmpdir(), `snowball_tts_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.wav`);
 
@@ -150,11 +166,11 @@ export class LocalKokoroProvider implements NativeTtsProvider {
         {
           text: cleanText,
           output_path: tmpWav,
-          voice: options?.voice || "af_bella",
+          voice: targetVoice,
           speed: options?.speed || 1.0,
-          lang: options?.language || "en-us",
+          lang: targetLang,
         },
-        30000
+        60000
       );
       return {
         wavPath: res.wav_path,

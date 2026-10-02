@@ -15,8 +15,9 @@ import time
 # Ensure UTF-8 streams on Windows
 if sys.platform == "win32":
     try:
-        sys.stdout.reconfigure(encoding="utf-8")
-        sys.stderr.reconfigure(encoding="utf-8")
+        sys.stdin.reconfigure(encoding="utf-8", errors="replace")
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
     except Exception:
         pass
 
@@ -116,8 +117,36 @@ def get_kokoro(model_path: str, voices_path: str, device: str = "auto"):
     sys.stderr.write("[TtsWorker] Kokoro instance initialized successfully.\n")
     return _KOKORO_INSTANCE
 
+def sanitize_tts_text(text: str) -> str:
+    """Normalize typography and remove unencodable surrogates."""
+    if not text:
+        return ""
+    # Strip any dangling surrogates
+    clean = text.encode("utf-8", "ignore").decode("utf-8")
+    # Replace non-breaking spaces and hyphens
+    clean = clean.replace("\u2011", "-").replace("\u00a0", " ")
+    # Replace curly quotes and apostrophes
+    clean = clean.replace("“", '"').replace("”", '"').replace("‘", "'").replace("’", "'")
+    return clean.strip()
+
+def has_korean(text: str) -> bool:
+    """Check if string contains any Korean Hangul syllables or jamo."""
+    for ch in text:
+        code = ord(ch)
+        if (0xAC00 <= code <= 0xD7A3) or (0x1100 <= code <= 0x11FF) or (0x3130 <= code <= 0x318F):
+            return True
+    return False
+
 def synthesize_text(text: str, output_path: str, model_path: str, voices_path: str, voice: str = "af_bella", speed: float = 1.0, lang: str = "en-us", device: str = "auto") -> dict:
     import soundfile as sf
+
+    text = sanitize_tts_text(text)
+    if not text:
+        raise ValueError("Nothing to synthesize (empty text after sanitization)")
+
+    # Auto-detect Korean if default en-us was passed but text contains Hangul
+    if (lang in ("en-us", "auto", "")) and has_korean(text):
+        lang = "ko"
 
     kokoro = get_kokoro(model_path, voices_path, device)
     t0 = time.time()
@@ -135,7 +164,8 @@ def synthesize_text(text: str, output_path: str, model_path: str, voices_path: s
         "sample_rate": sample_rate,
         "process_time_ms": proc_ms,
         "text": text,
-        "voice": voice
+        "voice": voice,
+        "lang": lang
     }
 
 def run_daemon(model_path: str, voices_path: str, device: str = "auto"):

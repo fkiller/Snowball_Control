@@ -263,15 +263,17 @@ export class MvpController {
   public async toggleAutoTts(): Promise<void> {
     this.context.autoTts = !this.context.autoTts;
     if (this.context.autoTts) {
+      this.clearNotice();
       const turns = this.context.currentTurns;
-      const latestTurn = turns.length > 0 ? turns[turns.length - 1] : null;
-      const text = latestTurn?.agentResponse;
+      const latestWithResponse = turns.slice().reverse().find(t => t.agentResponse && t.agentResponse.trim());
+      const text = latestWithResponse?.agentResponse || this.context.getCurrentSession().preview;
       if (text && text.trim()) {
         await this.speakText(text);
       } else {
-        this.info("Auto TTS ON", "No recent agent message in current session.");
+        this.info("Auto TTS ON", "Ready for voice input. No turns in this session yet.");
       }
     } else {
+      this.clearNotice();
       await this.stopSpeaking();
     }
     this.paint();
