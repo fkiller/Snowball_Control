@@ -1,6 +1,7 @@
 import dgram from 'node:dgram';
 import { isIPv4 } from 'node:net';
 import { EventEmitter } from 'node:events';
+import { randomBytes } from 'node:crypto';
 
 export class Mk20Fault extends Error { constructor(code) { super(code); this.code = code; } }
 const requireThat = (value, code) => { if (!value) throw new Mk20Fault(code); };
@@ -12,8 +13,12 @@ export function decodeLegacyInput(bytes) {
   requireThat(Buffer.isBuffer(bytes) && bytes.length > 0 && bytes.length <= 1024, 'invalid_packet');
   let value; try { value = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)); } catch { throw new Mk20Fault('invalid_packet'); }
   requireThat(value && typeof value === 'object' && !Array.isArray(value), 'invalid_packet');
+  const scoped=value.controllerId!==undefined||value.runId!==undefined;
+  requireThat(!scoped||(/^ctl_[a-f0-9]{16}$/.test(value.controllerId)&&/^[a-f0-9]{32}$/.test(value.runId)&&int(value.seq,1,0x7fffffff)),'invalid_scope');
+  const scope=scoped?{controllerId:value.controllerId,runId:value.runId}:{};
+  delete value.controllerId;delete value.runId;
   requireThat(value.seq === undefined || int(value.seq,0,Number.MAX_SAFE_INTEGER), 'invalid_sequence');
-  const sequence = value.seq === undefined ? {} : { sequence: value.seq };
+  const sequence = {...scope,...(value.seq === undefined ? {} : { sequence: value.seq })};
   if (value.type === 'key') {
     requireThat(Object.keys(value).every(k=>['type','keyId','isDown','seq'].includes(k)) && int(value.keyId,1,20) && typeof value.isDown === 'boolean', 'invalid_key');
     return { kind:'button',button:`key-${value.keyId}`,pressed:value.isDown,trust:'untrusted_lab',...sequence };
@@ -53,6 +58,7 @@ export function encodeLegacyPreview(view, sequence) {
     return k;
   });
   const packet={type:'v2_sync',seq:sequence,viewMode:text(view.mode ?? 'lab',15),topTitle:text(view.title,63),topSubtitle:text(view.subtitle ?? '',63),topBody:view.lines.map(line=>text(line,168)).join('\n'),topScroll:view.scroll,topTotalLines:view.totalLines,volume:view.volume,isMuted:view.muted,keys};
+  if(view.controllerId!==undefined||view.runId!==undefined){requireThat(/^ctl_[a-f0-9]{16}$/.test(view.controllerId)&&/^[a-f0-9]{32}$/.test(view.runId)&&int(sequence,1,0x7fffffff),'invalid_scope');packet.controllerId=view.controllerId;packet.runId=view.runId;}
   if (view.skinId !== undefined) {
     requireThat(typeof view.skinId === 'string' && /^[a-z0-9][a-z0-9-_]{1,31}$/.test(view.skinId), 'invalid_skin_id');
     packet.skinId = view.skinId;
@@ -69,13 +75,14 @@ import { DeviceSkinManager } from './skin.mjs';
 
 /** Explicit lab-only transport. It cannot grant core Controller permissions. */
 export class Mk20LabTransport extends EventEmitter {
-  #socket; #starting=false; #generation=0; #sequence=0; #lastSequence=-1; #window=Date.now(); #count=0;
+  #socket; #starting=false; #generation=0; #sequence=0; #lastSequence=-1; #window=Date.now(); #count=0; #scoped=false;
   skinManager;
-  constructor({labEnabled=false,localAddress,targetAddress,targetPort=7701,localPort=0,skinManager}) {
+  constructor({labEnabled=false,localAddress,targetAddress,targetPort=7701,localPort=0,skinManager,controllerId}) {
     super();requireThat(labEnabled === true,'lab_opt_in_required');
     requireThat(local(localAddress)&&local(targetAddress)&&int(targetPort,1,65535)&&int(localPort,0,65535),'invalid_endpoint');
     this.endpoint=Object.freeze({localAddress,targetAddress,targetPort,localPort});
     this.skinManager = skinManager || new DeviceSkinManager();
+    requireThat(controllerId===undefined||/^ctl_[a-f0-9]{16}$/.test(controllerId),'invalid_controller');this.controllerId=controllerId;
   }
   listSkins() { return this.skinManager.listSkins(); }
   getActiveSkin() { return this.skinManager.getActiveSkin(); }
@@ -94,11 +101,15 @@ export class Mk20LabTransport extends EventEmitter {
   }
   async start() {
     requireThat(!this.#socket&&!this.#starting,'already_started');this.#starting=true;const generation=++this.#generation;
+    this.runId=randomBytes(16).toString('hex');this.#sequence=0;this.#scoped=false;
     const socket=dgram.createSocket('udp4');this.#socket=socket;
     socket.on('message',(bytes,remote)=>{
       if(this.#socket!==socket||generation!==this.#generation||remote.address!==this.endpoint.targetAddress||remote.port!==this.endpoint.targetPort)return;
       if(Date.now()-this.#window>=1000){this.#window=Date.now();this.#count=0;}if(++this.#count>100)return;
-      try {const input=decodeLegacyInput(bytes);if(input.sequence!==undefined){if(input.sequence<=this.#lastSequence)return;this.#lastSequence=input.sequence;}
+      try {const input=decodeLegacyInput(bytes);
+        if(input.controllerId!==undefined){if(input.controllerId!==this.controllerId||input.runId!==this.runId)return;if(!this.#scoped)this.#lastSequence=-1;this.#scoped=true;}
+        else if(this.#scoped)return;
+        if(input.sequence!==undefined){if(input.sequence<=this.#lastSequence)return;this.#lastSequence=input.sequence;}
         this.emit('lab.input',input);
       }catch{/* Invalid/untrusted input never becomes a command. */}
     });
@@ -111,7 +122,7 @@ export class Mk20LabTransport extends EventEmitter {
   async preview(view) {
     const socket=this.#socket;requireThat(socket&&!this.#starting,'not_running');
     const enriched = (view && view.skinId) ? view : this.skinManager.applyToPreview(view);
-    const bytes=encodeLegacyPreview(enriched,++this.#sequence);
+    const bytes=encodeLegacyPreview({...enriched,...(this.controllerId?{controllerId:this.controllerId,runId:this.runId}:{})},++this.#sequence);
     await new Promise((resolve,reject)=>socket.send(bytes,this.endpoint.targetPort,this.endpoint.targetAddress,error=>error?reject(new Mk20Fault('preview_failed')):resolve()));
     return {sentBytes:bytes.length,delivery:'unacknowledged_lab'};
   }
