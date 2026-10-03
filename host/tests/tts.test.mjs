@@ -221,6 +221,9 @@ test('TTS Fallback: Speeks earlier turn if the latest turn is failed or has no a
   backend.request = async (method, params) => {
     if (method === 'thread/list') {
       return {
+        data: [
+          { id: 'session-failed', cwd: process.cwd(), name: 'Test Session', preview: 'Initial preview fallback' },
+        ],
         threads: [
           { id: 'session-failed', preview: 'Initial preview fallback' },
         ],

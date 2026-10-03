@@ -344,7 +344,7 @@ export class ContextManager {
   }
 
   public getProjectsForCurrentScope(): ProjectInfo[] {
-    return this.projectsByScope[key] || [];
+    return this.projectsByScope[this.getScopeKey()] || [];
   }
 
   public getSessionsForCurrentScope(): SessionInfo[] {
@@ -1678,6 +1678,7 @@ export class ContextManager {
     // The same disabled state is enforced by the input dispatcher.
     for (const key of keys) {
       if (this.viewMode === "session" || this.viewMode === "editor") {
+        if (key.keyId === 12 && !this.autoTts) key.isDisabled = true;
         if (key.keyId === 16 && !this.isRecordingVoice && !this.voiceDraftText.trim()) key.isDisabled = true;
         if ([20, 16, 4].includes(key.keyId) && this.voiceSubmission !== "idle") {
           key.isDisabled = true;
