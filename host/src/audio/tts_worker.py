@@ -30,20 +30,32 @@ def configure_windows_dll_paths():
         import site
         if hasattr(site, "getsitepackages"):
             candidates.extend(site.getsitepackages())
+        if hasattr(site, "getusersitepackages"):
+            candidates.append(site.getusersitepackages())
     except Exception:
         pass
+
+    # Also include virtualenv site-packages if sys.prefix is set
+    if sys.prefix:
+        candidates.append(os.path.join(sys.prefix, "Lib", "site-packages"))
 
     for sp in candidates:
         if not sp or not os.path.isdir(sp):
             continue
-        for sub in ["nvidia/cublas/bin", "nvidia/cudnn/bin"]:
-            p = os.path.join(sp, sub.replace("/", os.sep))
-            if os.path.isdir(p):
-                try:
-                    os.add_dll_directory(p)
-                    os.environ["PATH"] = p + os.pathsep + os.environ.get("PATH", "")
-                except Exception:
-                    pass
+        nvidia_dir = os.path.join(sp, "nvidia")
+        if os.path.isdir(nvidia_dir):
+            try:
+                for entry in os.scandir(nvidia_dir):
+                    if entry.is_dir():
+                        bin_dir = os.path.join(entry.path, "bin")
+                        if os.path.isdir(bin_dir):
+                            try:
+                                os.add_dll_directory(bin_dir)
+                                os.environ["PATH"] = bin_dir + os.pathsep + os.environ.get("PATH", "")
+                            except Exception:
+                                pass
+            except Exception:
+                pass
 
 configure_windows_dll_paths()
 
@@ -86,7 +98,7 @@ def get_kokoro(model_path: str, voices_path: str, device: str = "auto"):
     if _KOKORO_INSTANCE is not None and _CURRENT_MODEL_PATH == model_path and _CURRENT_VOICES_PATH == voices_path:
         return _KOKORO_INSTANCE
 
-    from kokoro_onnx import Kokoro
+    import kokoro_onnx.session
     import onnxruntime as ort
 
     sys.stderr.write(f"[TtsWorker] Initializing Kokoro-82M from {model_path} (voices: {voices_path})...\n")
@@ -111,10 +123,14 @@ def get_kokoro(model_path: str, voices_path: str, device: str = "auto"):
     providers.append("CPUExecutionProvider")
     sys.stderr.write(f"[TtsWorker] Selected Execution Providers: {providers}\n")
 
+    # Override kokoro_onnx provider resolver to avoid TensorRT fallback issues
+    kokoro_onnx.session.resolve_providers = lambda: providers
+
+    from kokoro_onnx import Kokoro
     _KOKORO_INSTANCE = Kokoro(model_path, voices_path)
     _CURRENT_MODEL_PATH = model_path
     _CURRENT_VOICES_PATH = voices_path
-    sys.stderr.write("[TtsWorker] Kokoro instance initialized successfully.\n")
+    sys.stderr.write(f"[TtsWorker] Kokoro instance initialized with active providers: {_KOKORO_INSTANCE.sess.get_providers()}\n")
     return _KOKORO_INSTANCE
 
 def sanitize_tts_text(text: str) -> str:

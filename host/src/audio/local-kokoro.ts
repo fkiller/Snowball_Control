@@ -160,7 +160,7 @@ export class LocalKokoroProvider implements NativeTtsProvider {
     const tmpWav = path.join(os.tmpdir(), `snowball_tts_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.wav`);
     const timeoutMs = Math.max(60000, cleanText.length * 150);
 
-    // 1. Try Kokoro-82M ONNX via resident daemon
+    // 1. Synthesize via Kokoro-82M ONNX resident daemon (sole TTS engine)
     try {
       const res = await this.request<{ wav_path: string; duration_ms: number; sample_rate: number }>(
         "synthesize",
@@ -181,83 +181,9 @@ export class LocalKokoroProvider implements NativeTtsProvider {
         engine: "kokoro-onnx",
       };
     } catch (err: any) {
-      console.warn("[LocalKokoroProvider] Kokoro worker synthesis unavailable, falling back to OS native:", err.message);
+      console.error("[LocalKokoroProvider] Kokoro synthesis failed:", err.message);
+      return { wavPath: "", durationMs: 0, sampleRate: 24000, text: cleanText, engine: "error" };
     }
-
-    // 2. Hardware / OS Native Fallback
-    if (process.platform === "win32") {
-      try {
-        await this.synthesizeViaWindowsSapi(cleanText, tmpWav, hasKorean);
-        return {
-          wavPath: tmpWav,
-          durationMs: 1500,
-          sampleRate: 22050,
-          text: cleanText,
-          engine: "windows-sapi",
-        };
-      } catch (sapiErr: any) {
-        console.warn("[LocalKokoroProvider] Windows SAPI fallback failed:", sapiErr.message);
-      }
-    } else if (process.platform === "darwin") {
-      try {
-        await this.synthesizeViaMacSay(cleanText, tmpWav);
-        return {
-          wavPath: tmpWav,
-          durationMs: 1500,
-          sampleRate: 22050,
-          text: cleanText,
-          engine: "macos-say",
-        };
-      } catch (macErr: any) {
-        console.warn("[LocalKokoroProvider] macOS say fallback failed:", macErr.message);
-      }
-    }
-
-    return { wavPath: "", durationMs: 0, sampleRate: 24000, text: cleanText, engine: "mock" };
-  }
-
-  private async synthesizeViaWindowsSapi(text: string, outWav: string, hasKorean = false): Promise<void> {
-    const tmpTxt = outWav.replace(/\.wav$/i, ".txt");
-    await fs.promises.writeFile(tmpTxt, text, "utf8");
-    return new Promise((resolve, reject) => {
-      const psScript = `
-        Add-Type -AssemblyName System.Speech;
-        $synth = New-Object System.Speech.Synthesis.SpeechSynthesizer;
-        if ('${hasKorean ? "1" : "0"}' -eq '1') {
-          $ko = $synth.GetInstalledVoices() | Where-Object { $_.VoiceInfo.Culture.Name -like 'ko*' -and $_.Enabled } | Select-Object -First 1;
-          if ($ko) { $synth.SelectVoice($ko.VoiceInfo.Name); }
-        }
-        $synth.SetOutputToWaveFile('${outWav.replace(/'/g, "''")}');
-        $raw = [IO.File]::ReadAllText('${tmpTxt.replace(/'/g, "''")}', [Text.Encoding]::UTF8);
-        $synth.Speak($raw);
-        $synth.Dispose();
-      `;
-      const cleanCmd = psScript.split(/\r?\n/).map((s) => s.trim()).filter(Boolean).join(" ");
-      const proc = spawn("powershell", ["-NoProfile", "-NonInteractive", "-Command", cleanCmd], {
-        windowsHide: true,
-      });
-
-      proc.on("exit", (code) => {
-        try { fs.unlinkSync(tmpTxt); } catch {}
-        if (code === 0 && fs.existsSync(outWav)) resolve();
-        else reject(new Error(`PowerShell SAPI exited with code ${code}`));
-      });
-      proc.on("error", (err) => {
-        try { fs.unlinkSync(tmpTxt); } catch {}
-        reject(err);
-      });
-    });
-  }
-
-  private async synthesizeViaMacSay(text: string, outWav: string): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const proc = spawn("say", ["-o", outWav, "--data-format=LEF32@24000", text], { windowsHide: true });
-      proc.on("exit", (code) => {
-        if (code === 0 && fs.existsSync(outWav)) resolve();
-        else reject(new Error(`macOS say exited with code ${code}`));
-      });
-      proc.on("error", reject);
-    });
   }
 
   /**

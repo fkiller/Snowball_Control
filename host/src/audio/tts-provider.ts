@@ -10,7 +10,7 @@ export interface TtsSynthesizeResult {
   durationMs: number;
   sampleRate: number;
   text: string;
-  engine: "kokoro-onnx" | "windows-sapi" | "macos-say" | "mock";
+  engine: "kokoro-onnx" | "windows-sapi" | "macos-say" | "mock" | "error";
 }
 
 /**
