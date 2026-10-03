@@ -24,8 +24,7 @@ test('settings is a closed modal and preserves the voice draft on return', () =>
 test('recording, transcription, review and uncertain delivery expose matching actions', () => {
   const ctx = new ContextManager();
   assert.equal(key(ctx, 16).isDisabled, true);
-  assert.equal(key(ctx, 12).isDisabled, false);
-  assert.equal(key(ctx, 12).labelMain, 'Speak');
+  assert.equal(key(ctx, 12).isDisabled, true);
   ctx.isRecordingVoice = true;
   assert.equal(key(ctx, 16).labelMain, 'Done');
   assert.notEqual(key(ctx, 16).isDisabled, true);

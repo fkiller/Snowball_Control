@@ -72,14 +72,20 @@ export function getLuminance(color) {
  */
 export function getContrastFontColor(bg, defaultFg, autoReverse = true) {
   if (!autoReverse) return normalizeHex(defaultFg);
-  const lum = getLuminance(bg);
-  if (lum > 140) {
+  const lumBg = getLuminance(bg);
+  const lumFg = getLuminance(defaultFg);
+  const diff = Math.abs(lumBg - lumFg);
+
+  // Preserve theme color if contrast difference is already high enough (>= 75)
+  if (diff >= 75) {
+    return normalizeHex(defaultFg);
+  }
+
+  // Insufficient contrast (< 75): invert based on background brightness
+  if (lumBg >= 135) {
     return '#000000';
   } else {
-    if (getLuminance(defaultFg) < 90) {
-      return '#ffffff';
-    }
-    return normalizeHex(defaultFg);
+    return '#ffffff';
   }
 }
 
@@ -163,13 +169,14 @@ export class DeviceSkin {
       sizeDebug: Number.isInteger(definition.fonts?.sizeDebug) ? definition.fonts.sizeDebug : 9
     });
 
-    // 2. Button Style: Line visible, Line color, Fill visible, Fill color
+    // 2. Button Style: Line visible, Line color, Fill visible, Fill color, Border radius
     const btnStyle = definition.buttonStyle || {};
     this.buttonStyle = Object.freeze({
       lineVisible: btnStyle.lineVisible !== false,
       lineColor: normalizeHex(btnStyle.lineColor || this.theme.keys.defaultBorder),
       fillVisible: btnStyle.fillVisible !== false,
-      fillColor: normalizeHex(btnStyle.fillColor || this.theme.keys.defaultBg)
+      fillColor: normalizeHex(btnStyle.fillColor || this.theme.keys.defaultBg),
+      borderRadius: Number.isInteger(btnStyle.borderRadius) ? btnStyle.borderRadius : 10
     });
 
     // 3. Button Title Style: Line visible, Line color, Fill visible, Fill color, Font color
@@ -308,6 +315,7 @@ export class DeviceSkin {
       btnLineColor: toRgb565(this.buttonStyle.lineColor),
       btnFillVisible: this.buttonStyle.fillVisible,
       btnFillColor: toRgb565(this.buttonStyle.fillColor),
+      btnCornerRadius: this.buttonStyle.borderRadius,
       titleLineVisible: this.titleStyle.lineVisible,
       titleLineColor: toRgb565(this.titleStyle.lineColor),
       titleFillVisible: this.titleStyle.fillVisible,
@@ -362,7 +370,7 @@ export const BUILTIN_MK20_SKINS = Object.freeze([
         card: '#121b2a',
         border: '#1e293b',
         text: '#e2e8f0',
-        textDim: '#64748b',
+        textDim: '#94a3b8',
         accent: '#06b6d4',
         status: { idle: '#64748b', active: '#06b6d4', success: '#10b981', warning: '#f59e0b', error: '#f43f5e' }
       },
@@ -370,7 +378,7 @@ export const BUILTIN_MK20_SKINS = Object.freeze([
         defaultBg: '#121b2a',
         defaultBorder: '#1e293b',
         defaultText: '#e2e8f0',
-        defaultSubText: '#64748b',
+        defaultSubText: '#94a3b8',
         filledBg: '#06b6d4',
         filledText: '#ffffff',
         focusedBorder: '#06b6d4',
@@ -380,7 +388,7 @@ export const BUILTIN_MK20_SKINS = Object.freeze([
         disabledBg: '#0b101b',
         disabledText: '#334155'
       },
-      palette: ['#e2e8f0', '#06b6d4', '#10b981', '#f59e0b', '#f43f5e', '#64748b']
+      palette: ['#e2e8f0', '#06b6d4', '#10b981', '#f59e0b', '#f43f5e', '#94a3b8']
     },
     fonts: {
       korean: 'D2Coding',
@@ -394,7 +402,8 @@ export const BUILTIN_MK20_SKINS = Object.freeze([
       lineVisible: true,
       lineColor: '#1e293b',
       fillVisible: true,
-      fillColor: '#121b2a'
+      fillColor: '#121b2a',
+      borderRadius: 10
     },
     titleStyle: {
       lineVisible: false,
@@ -420,7 +429,7 @@ export const BUILTIN_MK20_SKINS = Object.freeze([
     fontColors: {
       title: '#06b6d4',
       main: '#e2e8f0',
-      sub: '#64748b',
+      sub: '#94a3b8',
       autoReverse: true
     }
   }),
@@ -435,7 +444,7 @@ export const BUILTIN_MK20_SKINS = Object.freeze([
         card: '#081c0e',
         border: '#15803d',
         text: '#4ade80',
-        textDim: '#166534',
+        textDim: '#4ade80',
         accent: '#22c55e',
         status: { idle: '#166534', active: '#4ade80', success: '#22c55e', warning: '#eab308', error: '#ef4444' }
       },
@@ -443,7 +452,7 @@ export const BUILTIN_MK20_SKINS = Object.freeze([
         defaultBg: '#081c0e',
         defaultBorder: '#15803d',
         defaultText: '#4ade80',
-        defaultSubText: '#166534',
+        defaultSubText: '#4ade80',
         filledBg: '#22c55e',
         filledText: '#040d06',
         focusedBorder: '#4ade80',
@@ -453,7 +462,7 @@ export const BUILTIN_MK20_SKINS = Object.freeze([
         disabledBg: '#020603',
         disabledText: '#14532d'
       },
-      palette: ['#4ade80', '#22c55e', '#86efac', '#a3e635', '#ef4444', '#166534']
+      palette: ['#4ade80', '#22c55e', '#86efac', '#a3e635', '#ef4444', '#4ade80']
     },
     fonts: {
       korean: 'D2Coding',
@@ -467,7 +476,8 @@ export const BUILTIN_MK20_SKINS = Object.freeze([
       lineVisible: true,
       lineColor: '#15803d',
       fillVisible: true,
-      fillColor: '#081c0e'
+      fillColor: '#081c0e',
+      borderRadius: 10
     },
     titleStyle: {
       lineVisible: false,
@@ -492,7 +502,7 @@ export const BUILTIN_MK20_SKINS = Object.freeze([
     fontColors: {
       title: '#4ade80',
       main: '#4ade80',
-      sub: '#166534',
+      sub: '#4ade80',
       autoReverse: true
     }
   }),
@@ -507,7 +517,7 @@ export const BUILTIN_MK20_SKINS = Object.freeze([
         card: '#1d1137',
         border: '#7c3aed',
         text: '#f43f5e',
-        textDim: '#a855f7',
+        textDim: '#c4b5fd',
         accent: '#06b6d4',
         status: { idle: '#a855f7', active: '#06b6d4', success: '#10b981', warning: '#facc15', error: '#f43f5e' }
       },
@@ -515,7 +525,7 @@ export const BUILTIN_MK20_SKINS = Object.freeze([
         defaultBg: '#1d1137',
         defaultBorder: '#7c3aed',
         defaultText: '#f43f5e',
-        defaultSubText: '#a855f7',
+        defaultSubText: '#c4b5fd',
         filledBg: '#f43f5e',
         filledText: '#ffffff',
         focusedBorder: '#06b6d4',
@@ -525,7 +535,7 @@ export const BUILTIN_MK20_SKINS = Object.freeze([
         disabledBg: '#0a0414',
         disabledText: '#581c87'
       },
-      palette: ['#f8fafc', '#06b6d4', '#10b981', '#facc15', '#f43f5e', '#a855f7']
+      palette: ['#f8fafc', '#06b6d4', '#10b981', '#facc15', '#f43f5e', '#c4b5fd']
     },
     fonts: {
       korean: 'D2Coding',
@@ -539,7 +549,8 @@ export const BUILTIN_MK20_SKINS = Object.freeze([
       lineVisible: true,
       lineColor: '#7c3aed',
       fillVisible: true,
-      fillColor: '#1d1137'
+      fillColor: '#1d1137',
+      borderRadius: 10
     },
     titleStyle: {
       lineVisible: false,
@@ -565,7 +576,7 @@ export const BUILTIN_MK20_SKINS = Object.freeze([
     fontColors: {
       title: '#06b6d4',
       main: '#f43f5e',
-      sub: '#a855f7',
+      sub: '#c4b5fd',
       autoReverse: true
     }
   }),
@@ -580,7 +591,7 @@ export const BUILTIN_MK20_SKINS = Object.freeze([
         card: '#261604',
         border: '#78350f',
         text: '#f59e0b',
-        textDim: '#92400e',
+        textDim: '#fbbf24',
         accent: '#fbbf24',
         status: { idle: '#92400e', active: '#fbbf24', success: '#f59e0b', warning: '#d97706', error: '#dc2626' }
       },
@@ -588,7 +599,7 @@ export const BUILTIN_MK20_SKINS = Object.freeze([
         defaultBg: '#261604',
         defaultBorder: '#78350f',
         defaultText: '#f59e0b',
-        defaultSubText: '#92400e',
+        defaultSubText: '#fbbf24',
         filledBg: '#f59e0b',
         filledText: '#140c02',
         focusedBorder: '#fbbf24',
@@ -598,7 +609,7 @@ export const BUILTIN_MK20_SKINS = Object.freeze([
         disabledBg: '#0c0601',
         disabledText: '#78350f'
       },
-      palette: ['#fef3c7', '#fbbf24', '#f59e0b', '#d97706', '#b45309', '#78350f']
+      palette: ['#fef3c7', '#fbbf24', '#f59e0b', '#d97706', '#b45309', '#fbbf24']
     },
     fonts: {
       korean: 'D2Coding',
@@ -612,7 +623,8 @@ export const BUILTIN_MK20_SKINS = Object.freeze([
       lineVisible: true,
       lineColor: '#78350f',
       fillVisible: true,
-      fillColor: '#261604'
+      fillColor: '#261604',
+      borderRadius: 10
     },
     titleStyle: {
       lineVisible: false,
@@ -637,7 +649,7 @@ export const BUILTIN_MK20_SKINS = Object.freeze([
     fontColors: {
       title: '#fbbf24',
       main: '#f59e0b',
-      sub: '#92400e',
+      sub: '#fbbf24',
       autoReverse: true
     }
   }),
@@ -684,7 +696,8 @@ export const BUILTIN_MK20_SKINS = Object.freeze([
       lineVisible: true,
       lineColor: '#ffffff',
       fillVisible: true,
-      fillColor: '#000000'
+      fillColor: '#000000',
+      borderRadius: 10
     },
     titleStyle: {
       lineVisible: true,

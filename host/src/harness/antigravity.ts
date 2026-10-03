@@ -26,20 +26,39 @@ export class AntigravityAdapter extends EventEmitter implements AgentHarness {
     this.appDataDir =
       options.appDataDir ||
       path.join(os.homedir(), ".gemini", "antigravity");
-    this.agyPath =
-      options.agyPath ||
-      path.join(
+    if (options.agyPath) {
+      this.agyPath = options.agyPath;
+    } else if (process.platform === "win32") {
+      const winDefault = path.join(
         process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local"),
         "agy",
         "bin",
         "agy.exe"
       );
+      this.agyPath = fs.existsSync(winDefault) ? winDefault : "agy.exe";
+    } else {
+      const candidates = [
+        path.join(os.homedir(), ".local", "bin", "agy"),
+        path.join(os.homedir(), "bin", "agy"),
+        "/usr/local/bin/agy",
+        "/opt/homebrew/bin/agy",
+        "/usr/bin/agy",
+      ];
+      this.agyPath = candidates.find((c) => fs.existsSync(c)) || "agy";
+    }
   }
 
   public async isAvailable(): Promise<boolean> {
     if (process.env.ANTIGRAVITY_AGENT === "1") return true;
-    if (fs.existsSync(this.agyPath)) return true;
     if (fs.existsSync(this.appDataDir)) return true;
+    if (path.isAbsolute(this.agyPath) && fs.existsSync(this.agyPath)) return true;
+    try {
+      const res = cp.spawnSync(this.agyPath, ["--version"], {
+        encoding: "utf8",
+        windowsHide: true,
+      });
+      if (res.status === 0) return true;
+    } catch {}
     return false;
   }
 
@@ -72,10 +91,21 @@ export class AntigravityAdapter extends EventEmitter implements AgentHarness {
     }
 
     // 2. Scan Antigravity IDE workspace storage
-    const roamingDir = path.join(
-      process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming"),
-      "Antigravity"
-    );
+    let roamingDir = "";
+    if (process.platform === "win32") {
+      roamingDir = path.join(
+        process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming"),
+        "Antigravity"
+      );
+    } else if (process.platform === "darwin") {
+      roamingDir = path.join(os.homedir(), "Library", "Application Support", "Antigravity");
+    } else {
+      roamingDir = path.join(
+        process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config"),
+        "Antigravity"
+      );
+    }
+
     const wsStorageDir = path.join(roamingDir, "User", "workspaceStorage");
     if (fs.existsSync(wsStorageDir)) {
       try {
@@ -87,10 +117,18 @@ export class AntigravityAdapter extends EventEmitter implements AgentHarness {
             try {
               const content = JSON.parse(fs.readFileSync(wsJsonPath, "utf8"));
               if (content.folder && typeof content.folder === "string") {
-                let p = decodeURIComponent(content.folder.replace(/^file:\/\/\/?/, ""));
-                if (process.platform === "win32" && /^[a-zA-Z]:/.test(p)) {
-                  p = path.normalize(p);
+                let p = content.folder;
+                if (p.startsWith("file://")) {
+                  try {
+                    p = decodeURIComponent(new URL(p).pathname);
+                    if (process.platform === "win32" && /^\/[a-zA-Z]:/.test(p)) {
+                      p = p.slice(1);
+                    }
+                  } catch {
+                    p = decodeURIComponent(p.replace(/^file:\/\/\/?/, ""));
+                  }
                 }
+                p = path.normalize(p);
                 if (fs.existsSync(p)) {
                   discovered.set(p, path.basename(p));
                 }
@@ -107,10 +145,18 @@ export class AntigravityAdapter extends EventEmitter implements AgentHarness {
       try {
         const rawBuf = fs.readFileSync(vscdbPath);
         const str = rawBuf.toString("utf8");
-        const matches = str.match(/file:\/\/\/(?:[a-zA-Z]%3A|[a-zA-Z]:)[^\x00-\x1f\x7f-\xff"'<>\s\\]+/gi) || [];
+        const matches = str.match(/file:\/\/[^\x00-\x1f\x7f-\xff"'<>\s\\]+/gi) || [];
         for (const m of matches) {
           try {
-            let decoded = decodeURIComponent(m.replace(/^file:\/\/\/?/, ""));
+            let decoded = m;
+            try {
+              decoded = decodeURIComponent(new URL(m).pathname);
+              if (process.platform === "win32" && /^\/[a-zA-Z]:/.test(decoded)) {
+                decoded = decoded.slice(1);
+              }
+            } catch {
+              decoded = decodeURIComponent(m.replace(/^file:\/\/\/?/, ""));
+            }
             decoded = path.normalize(decoded);
             if (fs.existsSync(decoded) && fs.statSync(decoded).isDirectory()) {
               discovered.set(decoded, path.basename(decoded));
@@ -321,11 +367,7 @@ export class AntigravityAdapter extends EventEmitter implements AgentHarness {
         this.activeChild = null;
       });
     } else {
-      // Fallback: emit acknowledgment
-      this.emit("delta", {
-        sessionId,
-        content: `[Antigravity] Prompt queued for session ${sessionId.slice(0, 8)}`,
-      });
+      throw new Error("Antigravity native CLI is unavailable; prompt was not queued");
     }
   }
 
@@ -338,7 +380,7 @@ export class AntigravityAdapter extends EventEmitter implements AgentHarness {
   }
 
   public async respondApproval(approvalId: string, decision: string): Promise<void> {
-    console.log(`[Antigravity] Approval response: ${approvalId} -> ${decision}`);
+    throw new Error("This reference adapter has no native Antigravity approval bridge");
   }
 
   public watchSessionTranscript(sessionId: string): void {

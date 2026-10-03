@@ -3,15 +3,13 @@
     AgentAdapter - Live coding agent adapter for MK20 control panel.
 .DESCRIPTION
     Bridges live sessions from OpenAI Codex, Anthropic Claude Code, and Google Antigravity
-    into the normalized SCHEMA.md event pipeline, routing tool executions and approval
-    gates to physical MK20 hardware switches.
+    into legacy diagnostic events. Native hardware approval gating is unsupported.
 #>
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 Import-Module (Resolve-Path "$PSScriptRoot\..\dev-tools\Mk20Protocol.psm1") -Force
-. (Resolve-Path "$PSScriptRoot\Listen-Mk20Keys.ps1")
 
 function Convert-ClaudeStreamEvent {
     param($Raw)
@@ -197,6 +195,10 @@ function Start-Mk20LiveSession {
         [string]$PortName
     )
 
+    if ($RequireHardwareApproval) {
+        throw 'Legacy stdout observation cannot gate native tools. Hardware approval requires a native request/response bridge before execution.'
+    }
+
     $sessionId = [Guid]::NewGuid().ToString()
     Write-Host "`n=== Snowball Control: Live Agent Session ===" -ForegroundColor Cyan
     Write-Host "Session ID: $sessionId"
@@ -301,58 +303,7 @@ function Get-SafeProp {
                         } catch {}
 
                         $isModifying = $norm.type -eq 'tool.invocation' -and ($toolName -match 'Bash|Write|Edit|execute_command|patch')
-                        if ($isModifying -and $RequireHardwareApproval) {
-                            try {
-                                & "$PSScriptRoot\Send-Mk20HudEvent.ps1" -Action approval -ApprovalTitle "Execute $toolName?" -ApprovalDesc $summaryText -ErrorAction SilentlyContinue
-                            } catch {}
-                            Write-Host "`n>>> [HARDWARE APPROVAL REQUIRED FOR $toolName]" -ForegroundColor Magenta
-                            Write-Host "    Press Key 1 (Approve) or Key 2 (Reject) on the physical MK20..." -ForegroundColor White
-                            
-                            $resolved = $null
-                            if ($PortName) {
-                                $serial = [IO.Ports.SerialPort]::new($PortName, 115200, 'None', 8, 'One')
-                                $serial.ReadTimeout = 150
-                                $serial.Open()
-                                $serial.DiscardInBuffer()
-                                $buf = [Collections.Generic.List[byte]]::new()
-                                $deadline = [DateTime]::UtcNow.AddSeconds(15)
 
-                                try {
-                                    while ([DateTime]::UtcNow -lt $deadline -and -not $resolved) {
-                                        if ($serial.BytesToRead -gt 0) {
-                                            $chunk = [byte[]]::new($serial.BytesToRead)
-                                            [void]$serial.Read($chunk, 0, $chunk.Length)
-                                            $buf.AddRange($chunk)
-                                            $arr = $buf.ToArray()
-                                            for ($i = 0; $i -le ($arr.Length - 8); $i++) {
-                                                if ($arr[$i] -eq 0xAA -and $arr[$i+1] -eq 0x55 -and $arr[$i+5] -eq 0x16) {
-                                                    if ($arr[$i+6] -ne 0) {
-                                                        $meta = Get-KeyMetadata -Row ([int]$arr[$i+7]) -Col ([int]$arr[$i+8]) -Pressed $true
-                                                        $resolved = $meta
-                                                        break
-                                                    }
-                                                }
-                                            }
-                                        }
-                                        Start-Sleep -Milliseconds 20
-                                    }
-                                }
-                                finally {
-                                    if ($serial.IsOpen) { $serial.Close() }
-                                    $serial.Dispose()
-                                }
-                            }
-
-                            if ($resolved -and ($resolved.Action -eq 'REJECT' -or $resolved.KeyNumber -eq 2)) {
-                                Write-Host ">>> REJECTED by physical Key 2! Aborting operation." -ForegroundColor Red
-                                try { & "$PSScriptRoot\Send-Mk20HudEvent.ps1" -Action clear_approval -ErrorAction SilentlyContinue } catch {}
-                                $proc.Kill()
-                                break
-                            } else {
-                                Write-Host ">>> APPROVED by physical Key 1 (or timeout). Proceeding..." -ForegroundColor Green
-                                try { & "$PSScriptRoot\Send-Mk20HudEvent.ps1" -Action clear_approval -ErrorAction SilentlyContinue } catch {}
-                            }
-                        }
                     }
                 } else {
                     # Non-JSON text output

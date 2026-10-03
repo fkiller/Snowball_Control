@@ -1,6 +1,5 @@
 import * as dgram from "node:dgram";
 import { DeviceInputPacket, HostSyncPacket, KEY_FLAG_FILLED, KEY_FLAG_EDITING, KEY_FLAG_FOCUSED, KEY_FLAG_DISABLED, KEY_FLAG_LIST, KEY_FLAG_LINES } from "../protocol/messages.js";
-import { ContextManager } from "../state/context.js";
 import { EventEmitter } from "node:events";
 import type { V2DeviceState } from "../types.js";
 
@@ -9,7 +8,6 @@ export class UdpTransport extends EventEmitter {
   private port: number;
   private targetHost: string = process.env.SNOWBALL_DEVICE_IP || "192.168.1.248";
   private targetPort: number = 7701;
-  private lastClientSeen: number = 0;
   private syncSeq = 1;
 
   constructor(port = 7701, targetHost = process.env.SNOWBALL_DEVICE_IP || "192.168.1.248", targetPort = 7701) {
@@ -29,8 +27,10 @@ export class UdpTransport extends EventEmitter {
   }
 
   public start(): Promise<void> {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
+      this.socket.once("error", reject);
       this.socket.bind(this.port, "0.0.0.0", () => {
+        this.socket.off("error", reject);
         console.log(`[UDP] Server listening on port ${this.port}`);
         resolve();
       });
@@ -44,21 +44,17 @@ export class UdpTransport extends EventEmitter {
   }
 
   private handleIncoming(msg: Buffer, rinfo: dgram.RemoteInfo) {
-    // Record client address if from external device or test port
-    if (rinfo.address !== "127.0.0.1" && rinfo.address !== "::1") {
-      this.targetHost = rinfo.address;
-      this.targetPort = rinfo.port;
-      this.lastClientSeen = Date.now();
-    } else if (rinfo.port !== this.port) {
-      this.targetHost = rinfo.address;
-      this.targetPort = rinfo.port;
-      this.lastClientSeen = Date.now();
-    }
-
+    if (rinfo.address !== this.targetHost || rinfo.port !== this.targetPort || msg.length > 1024) return;
     const str = msg.toString("utf-8").trim();
     try {
-      const packet = JSON.parse(str) as DeviceInputPacket;
-      this.emit("device_input", packet);
+      const packet = JSON.parse(str);
+      if (!packet || typeof packet !== "object" || Array.isArray(packet)) return;
+      if (packet.seq !== undefined && (!Number.isSafeInteger(packet.seq) || packet.seq < 0)) return;
+      const valid = packet.type === "ping" ||
+        (packet.type === "key" && Number.isInteger(packet.keyId) && packet.keyId >= 1 && packet.keyId <= 20 && typeof packet.isDown === "boolean") ||
+        (["knob_left", "knob_right"].includes(packet.type) &&
+          (packet.delta !== undefined ? Number.isInteger(packet.delta) && Math.abs(packet.delta) <= 1024 : packet.isClick === true));
+      if (valid) this.emit("device_input", packet as DeviceInputPacket);
     } catch {
       // Could be raw legacy string e.g. "PING"
       if (str === "PING") {
@@ -125,20 +121,9 @@ export class UdpTransport extends EventEmitter {
     };
 
     const buf = Buffer.from(JSON.stringify(packet), "utf-8");
-    const defaultHost = process.env.SNOWBALL_DEVICE_IP || "192.168.1.248";
-    const clientIsDefault = this.targetHost === defaultHost && this.targetPort === 7701;
-    const clientIsFresh = !clientIsDefault && (Date.now() - this.lastClientSeen) < 10000;
-
-    if (clientIsFresh) {
-      // Learned client is active — send only to it
-      this.socket.send(buf, 0, buf.length, this.targetPort, this.targetHost, (err) => {
-        if (err) console.error("[UDP] Client send error:", err);
-      });
-    } else {
-      // No recent client or client is the default — send to default device
-      this.socket.send(buf, 0, buf.length, 7701, defaultHost, (err) => {
-        if (err) console.error("[UDP] Device send error:", err);
-      });
-    }
+    if (buf.length > 65507) throw new Error("HUD state exceeds the UDP datagram limit");
+    this.socket.send(buf, 0, buf.length, this.targetPort, this.targetHost, (err) => {
+      if (err) console.error("[UDP] Device send error:", err);
+    });
   }
 }

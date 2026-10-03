@@ -23,6 +23,10 @@ test('ContextManager: machine and harness cycling updates scope and retains memo
 
 test('ContextManager: project and session selection updates active destination', () => {
   const ctx = new ContextManager();
+  assert.deepEqual(ctx.getProjectsForCurrentScope(), []);
+  assert.deepEqual(ctx.getSessionsForCurrentScope(), []);
+  ctx.projectsByScope['dev-pc/codex'] = [{id:'p',name:'Project',path:process.cwd()}];
+  ctx.sessionsByScope['dev-pc/codex/p'] = [{id:'s',title:'Task',createdAt:0,preview:''}];
   const projs = ctx.getProjectsForCurrentScope();
   assert.ok(projs.length > 0);
 
@@ -38,6 +42,7 @@ test('ContextManager: project and session selection updates active destination',
 
 test('ContextManager: Left Knob scrolls reader lines and choice list', () => {
   const ctx = new ContextManager();
+  ctx.models = ['model-a', 'model-b', 'model-c'];
   ctx.readerLines = ['Line 1', 'Line 2', 'Line 3', 'Line 4', 'Line 5', 'Line 6', 'Line 7', 'Line 8', 'Line 9'];
   ctx.readerScrollLine = 0;
 

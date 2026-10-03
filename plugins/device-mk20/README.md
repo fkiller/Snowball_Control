@@ -82,14 +82,14 @@ Each `DeviceSkin` supports comprehensive visual styling properties:
 
 The MK20 128x128 key LCD displays physically sit behind rounded square keycaps. The embedded HUD engine renders the button canvas to match the physical bezel:
 
-1. **Rounded Rectangle Geometry (`KEY_CORNER_RADIUS = 6`)**:
+1. **Rounded Rectangle Geometry (`KEY_CORNER_RADIUS = 10`)**:
    - The button screen is physically a rounded rectangle ($128 \times 128$).
-   - Outer button borders (`draw_round_border_16`), focused cursor outlines, active editing indicator borders, and background fills (`draw_round_rect_16`, `draw_gradient_round_rect_16`) conform to a 6-pixel radius curvature using subpixel integer circle math: `(2r - 2x - 1)^2 + (2r - 2y - 1)^2 <= 4r^2`.
-   - The 4 corner pixels of row 0 and row 127 are cleanly clipped to black (`0x0000`), matching the hardware bezel.
+   - Outer button borders (`draw_round_border_16`), focused cursor outlines, active editing indicator borders, and background fills (`draw_round_rect_16`, `draw_gradient_round_rect_16`) conform to a 10-pixel radius curvature using subpixel integer circle math: `(2r - 2x - 1)^2 + (2r - 2y - 1)^2 <= 4r^2`.
+   - The outer corner pixels of row 0 and row 127 are cleanly clipped to black (`0x0000`), perfectly matching the physical hardware keycap curve.
 
 2. **Full-Width Top Title Layout (`KEY_TITLE_H = 22`)**:
    - The button Title layout spans the entire top area ($x \in [0, 127], y \in [0, 21]$), replacing pill-style badges with a solid top header bar.
-   - Rendered via `draw_title_bar_16`: top-left and top-right corners follow the outer 6px corner curvature, while bottom corners are square to meet the button body flush.
+   - Rendered via `draw_title_bar_16`: top-left and top-right corners follow the outer 10px corner curvature, while bottom corners are square to meet the button body flush.
 
 3. **Title Line Convention**:
    - Seamless Background Skins: `slate-dark`, `matrix-emerald`, `cyberpunk-neon`, and `amber-crt` configure `titleStyle.lineVisible: false` with `fillVisible: true`, rendering a clean, flush title header without harsh divider lines.

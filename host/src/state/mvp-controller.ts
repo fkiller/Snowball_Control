@@ -59,7 +59,6 @@ export function extractSpokenAgentResponse(rawText: string): string {
   }
   return target;
 }
-
 export interface MvpDesktopClient {
   isConnected: boolean;
   connect(): Promise<boolean>;
@@ -114,15 +113,17 @@ export class MvpController {
     const c = this.context;
     c.harnesses = [
       { id: "codex", name: "Codex", isEnabled: true },
-      { id: "antigravity", name: "Antigrav", isEnabled: true },
-      { id: "opencode", name: "OpenCode", isEnabled: true },
     ];
     c.projectsByScope = {}; c.sessionsByScope = {}; c.workspaceFiles = [];
     c.models = ["Default"]; c.efforts = ["Default"]; c.selectedEffortIdx = 0;
     c.accessLevels = ["on-request"]; c.selectedAccessIdx = 0;
     backend.on("raw_event", event => this.event(event));
     backend.on("raw_request", request => this.receive(request));
-    backend.on("exit", () => { this.connected = false; this.info("Codex disconnected", "Draft retained. K3 reconnects; no automatic Send."); });
+    backend.on("exit", () => {
+      this.connected = false; this.pending.length = 0; this.requestView = false;
+      this.voiceQuestion = undefined;
+      this.info("Codex disconnected", "Draft retained. K3 reconnects; no automatic Send.");
+    });
     if (storagePath && syncFs.existsSync(storagePath)) {
       const saved = JSON.parse(syncFs.readFileSync(storagePath, "utf8"));
       if (saved.draft?.text && ["review", "unknown", "sending"].includes(saved.draft.phase)) {
@@ -412,6 +413,10 @@ export class MvpController {
   private async send() {
     const snapshot = this.draft.snapshot;
     if (!this.connected || snapshot?.phase !== "review" || !snapshot.text.trim()) return;
+    const selectedModel = this.context.models[this.context.selectedModelIdx];
+    const selectedEffort = this.context.efforts[this.context.selectedEffortIdx];
+    const model = selectedModel === "Default" ? undefined : selectedModel;
+    const effort = selectedEffort === "Default" ? undefined : selectedEffort;
     this.clearNotice();
     const promise = this.draft.submit(async (destination, text) => {
       if (this.voiceQuestion) {
@@ -450,17 +455,16 @@ export class MvpController {
       }
 
       if (isDesktopDelegated) {
-        await this.desktop.sendMessageToThread(destination.sessionId, text);
+        const result = await this.desktop.sendMessageToThread(destination.sessionId, text, model, effort);
+        if (result?.isError) throw new Error("Codex Desktop rejected the prompt; draft retained.");
         this.tasks.set(destination.sessionId, { phase: "inProgress", text: "" });
         this.pollDesktopTurn(destination.sessionId);
       } else {
-        const model = this.context.models[this.context.selectedModelIdx];
-        const effort = this.context.efforts[this.context.selectedEffortIdx];
         const result = await this.backend.request("turn/start", {
           threadId: destination.sessionId,
           input: [{ type: "text", text }],
-          model: model === "Default" ? null : model,
-          effort: effort === "Default" ? null : effort,
+          model: model ?? null,
+          effort: effort ?? null,
           approvalPolicy: "on-request"
         });
         const existing = this.tasks.get(destination.sessionId);
@@ -985,7 +989,6 @@ export class MvpController {
   }
   async close() {
     this.paint(); // persist final draft state before disposing
-    this.disposed = true;
     this.tts.close();
     this.voice.close();
     try { this.desktop.disconnect(); } catch {}

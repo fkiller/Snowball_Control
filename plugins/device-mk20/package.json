@@ -1,1 +1,14 @@
-{"name":"@snowball/device-mk20-lab","version":"0.1.0","private":true,"type":"module","exports":"./src/index.mjs","engines":{"node":">=20.19"},"scripts":{"test":"node --test tests"},"license":"UNLICENSED"}
+{
+  "name": "@snowball/device-mk20-lab",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": "./src/index.mjs",
+  "engines": {
+    "node": ">=20.19"
+  },
+  "scripts": {
+    "test": "node ../../scripts/test-node.mjs tests"
+  },
+  "license": "Apache-2.0"
+}

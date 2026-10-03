@@ -7,17 +7,15 @@ import { ContextManager } from '../dist/state/context.js';
 import { VoiceDraft } from '../dist/audio/draft.js';
 import { LocalWhisperProvider } from '../dist/audio/local-whisper.js';
 
-test('integration: end-to-end headless flow (capture -> transcribe -> review -> talk-replace -> send)', async () => {
-  // Configure mock capture mode for headless testing
-  process.env.SNOWBALL_MOCK_CAPTURE = '1';
-  const fixturePath = path.join(os.tmpdir(), 'snowball_fixture_en.wav');
-  if (fs.existsSync(fixturePath)) {
-    process.env.SNOWBALL_MOCK_FIXTURE = fixturePath;
-  }
-
+test('integration: end-to-end headless flow (capture -> transcribe -> review -> talk-replace -> send)', { skip: process.env.SNOWBALL_TEST_STT !== '1' }, async () => {
+  const fixturePath = process.env.SNOWBALL_STT_FIXTURE || path.join(os.tmpdir(), 'snowball_fixture_en.wav');
+  assert.ok(fs.existsSync(fixturePath), 'Provide SNOWBALL_STT_FIXTURE with actual speech audio');
   const context = new ContextManager();
   const voiceDraft = new VoiceDraft();
-  const provider = new LocalWhisperProvider('base');
+  const provider = new LocalWhisperProvider('base', undefined, undefined, 'auto', {
+    startDeviceRecording: async () => {}, stopDeviceRecording: async () => {}, cancelDeviceRecording: async () => {},
+    pullDeviceWav: async () => { const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'snowball-stt-')); const target=path.join(temp, 'speech.wav'); fs.copyFileSync(fixturePath,target); return target; },
+  });
 
   try {
     const destination = {
@@ -38,9 +36,9 @@ test('integration: end-to-end headless flow (capture -> transcribe -> review -> 
     assert.equal(voiceDraft.snapshot.phase, 'transcribing');
 
     const transcribedText = await provider.finish(capture.id);
-    assert.equal(typeof transcribedText, 'string');
+    assert.ok(transcribedText.trim(), 'Real fixture transcription must contain speech');
 
-    const completed = voiceDraft.complete(capture.id, transcribedText || 'Fallback transcribed prompt');
+    const completed = voiceDraft.complete(capture.id, transcribedText);
     assert.equal(completed, true);
     assert.equal(voiceDraft.snapshot.phase, 'review');
 
@@ -80,7 +78,5 @@ test('integration: end-to-end headless flow (capture -> transcribe -> review -> 
     assert.equal(voiceDraft.snapshot.phase, 'sent');
   } finally {
     provider.close();
-    delete process.env.SNOWBALL_MOCK_CAPTURE;
-    delete process.env.SNOWBALL_MOCK_FIXTURE;
   }
 });

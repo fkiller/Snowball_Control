@@ -93,7 +93,7 @@ export class CodexHarness extends EventEmitter implements AgentHarness {
       for (const t of threads) {
         if (t.id) this.cachedThreads.set(t.id, t);
         if (!t.cwd) continue;
-        if (t.cwd.includes(".probe-codex") || t.cwd.toLowerCase().includes("\\temp\\")) continue;
+        if (t.cwd.includes(".probe-codex")) continue;
 
         const cleanPath = t.cwd.replace(/^\\\\\?\\/, "");
         const norm = normalizePath(cleanPath);
@@ -141,7 +141,7 @@ export class CodexHarness extends EventEmitter implements AgentHarness {
       }
 
       let filtered = threads.filter(
-        (t) => !t.cwd?.includes(".probe-codex") && !t.cwd?.toLowerCase().includes("\\temp\\")
+        (t) => !t.cwd?.includes(".probe-codex")
       );
 
       if (projectId) {

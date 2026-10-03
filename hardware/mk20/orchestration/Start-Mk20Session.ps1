@@ -34,12 +34,7 @@ $ErrorActionPreference = 'Stop'
 Import-Module (Resolve-Path "$PSScriptRoot\AgentAdapter.psm1") -Force
 
 if ($Synthetic -or -not $Prompt) {
-    if (-not $Prompt) {
-        $Prompt = "Verify live MK20 HUD connection and hardware switch contact"
-    }
-    Write-Host "`n>>> Running Synthetic Session Player on MK20..." -ForegroundColor Cyan
-    & "$PSScriptRoot\SyntheticPlayer.ps1" -Provider $Provider -Objective $Prompt -HardwareApproval:$RequireHardwareApproval
-    return
+    throw 'A real prompt and native harness are required; synthetic session playback is not a product session.'
 }
 
 Start-Mk20LiveSession -Provider $Provider -Prompt $Prompt -WorkingDir $WorkingDir -RequireHardwareApproval:$RequireHardwareApproval -PortName $PortName

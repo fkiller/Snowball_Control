@@ -23,23 +23,51 @@ export interface CodexApprovalEvent {
   reason: string | null;
 }
 
+import * as os from "node:os";
+
 export function discoverCodexBinary(): string {
   if (process.env.CODEX_BIN && fs.existsSync(process.env.CODEX_BIN)) {
     return process.env.CODEX_BIN;
   }
-  const localAppData =
-    process.env.LOCALAPPDATA ||
-    (process.env.USERPROFILE ? path.join(process.env.USERPROFILE, "AppData", "Local") : "");
-  if (localAppData) {
-    const binDir = path.join(localAppData, "OpenAI", "Codex", "bin");
-    if (fs.existsSync(binDir)) {
-      const entries = fs.readdirSync(binDir);
-      for (const entry of entries) {
-        const candidate = path.join(binDir, entry, "codex.exe");
-        if (fs.existsSync(candidate)) {
-          return candidate;
-        }
+  if (process.platform === "win32") {
+    const localAppData =
+      process.env.LOCALAPPDATA ||
+      (process.env.USERPROFILE ? path.join(process.env.USERPROFILE, "AppData", "Local") : "");
+    if (localAppData) {
+      const binDir = path.join(localAppData, "OpenAI", "Codex", "bin");
+      if (fs.existsSync(binDir)) {
+        try {
+          const entries = fs.readdirSync(binDir);
+          for (const entry of entries) {
+            const candidate = path.join(binDir, entry, "codex.exe");
+            if (fs.existsSync(candidate)) {
+              return candidate;
+            }
+          }
+        } catch {}
       }
+    }
+  } else if (process.platform === "darwin") {
+    const macCandidates = [
+      "/Applications/Codex.app/Contents/MacOS/codex",
+      path.join(os.homedir(), "Applications", "Codex.app", "Contents", "MacOS", "codex"),
+      path.join(os.homedir(), ".local", "bin", "codex"),
+      "/usr/local/bin/codex",
+      "/opt/homebrew/bin/codex",
+    ];
+    for (const c of macCandidates) {
+      if (fs.existsSync(c)) return c;
+    }
+  } else {
+    // Linux
+    const linuxCandidates = [
+      path.join(os.homedir(), ".local", "bin", "codex"),
+      "/usr/local/bin/codex",
+      "/usr/bin/codex",
+      "/opt/codex/bin/codex",
+    ];
+    for (const c of linuxCandidates) {
+      if (fs.existsSync(c)) return c;
     }
   }
   return "codex";

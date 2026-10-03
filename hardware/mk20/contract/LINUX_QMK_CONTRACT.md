@@ -80,6 +80,20 @@ Linux can reprogram the physical key definitions on GD32 at runtime using VIA co
 - `request_upload_key(layer, keycode)`: Requests current keycode binding from GD32.
 - `request_mouse_control(buffer, length)`: Sends relative cursor movement / mouse clicks.
 
+### 3.5 Dual-Knob Chord & Dynamic PC Key Masking (HOST ↔ HID Mode)
+
+1. **Knob Button Escalation**:
+   - Left knob button (pin `B5`, row `100`) and Right knob button (pin `B4`, row `103`) are unconditionally unbound to HID (`KC_NO = 0x0000`) across all layers by `mk20-hud`.
+   - Press and release events are transmitted to Tina Linux as `0x16` key state events.
+2. **Chord Detection**:
+   - Simultaneous press of both knobs (`g_left_down && g_right_down`) triggers the `g_pc_keys_on` toggle in `mk20-hud`.
+3. **Mode Operation**:
+   - **HOST Mode (`g_pc_keys_on = 0`, default)**: All 20 matrix keys are written with `0x0000 (KC_NO)` via VIA command `0x05`. QMK sends key state events over UART to Tina Linux for HUD / Snowball control, but suppresses USB HID keystrokes to the PC.
+   - **HID Mode (`g_pc_keys_on = 1`)**: All 20 matrix keys are restored to `g_saved_keymap[l][r][c]` (`KC_0`..`KC_J`). Keystrokes are sent to the PC as standard USB HID input while continuing UART escalation.
+4. **Non-Host Standalone Boot Fix (`hardware/mk20/qmk/`)**:
+   - QMK compiled with `NO_USB_STARTUP_CHECK = yes` and `NO_SUSPEND_POWER_DOWN = yes`.
+   - Bypasses USB host enumeration wait loops on cold power-on without a PC USB connection. Matrix scanning and UART communication activate immediately.
+
 ---
 
 ## 4. Host-Level Key Matrix Representation

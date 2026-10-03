@@ -306,6 +306,7 @@ export class CodexDesktopClient extends EventEmitter {
       model: model || undefined,
       thinking: thinking || undefined,
     }, threadId);
+    if (res?.isError) throw new Error("Codex Desktop tool returned an error");
     if (typeof res === "string" && (res.includes("already has an active writer") || res.includes("error") || res.includes("failed"))) {
       throw new Error(res);
     }

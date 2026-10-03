@@ -330,6 +330,7 @@ test('extended design elements: all built-in skins specify fonts, button styles,
     assert.match(skin.buttonStyle.lineColor, /^#[0-9a-f]{6}$/);
     assert.equal(typeof skin.buttonStyle.fillVisible, 'boolean');
     assert.match(skin.buttonStyle.fillColor, /^#[0-9a-f]{6}$/);
+    assert.equal(skin.buttonStyle.borderRadius, 10);
 
     // 3. Title Style
     assert.equal(typeof skin.titleStyle.lineVisible, 'boolean');

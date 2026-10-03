@@ -146,7 +146,7 @@ A `DeviceSkin` defines the complete visual appearance for a device. Colors are a
 ### 2.1 Button Physical Geometry & Title Layout Standard
 
 Hardware key displays (e.g. MK20 128x128 LCDs) feature rounded physical keycaps:
-1. **Rounded Canvas Clipping**: Outer button borders, focused/editing outlines, and background fills should clip to the physical corner radius (typically $r \approx 5 \sim 6\text{px}$) to prevent corner clipping against hardware bezels.
+1. **Rounded Canvas Clipping**: Outer button borders, focused/editing outlines, and background fills should clip to the physical corner radius (MK20 reference: $r = 10\text{px}$) to prevent corner clipping against hardware bezels.
 2. **Full-Width Top Title Layout**: Title headers span the entire top width of the key ($x \in [0, \text{Width}-1], y \in [0, \text{TitleHeight}-1]$), with top corners rounded to follow keycap curvature and bottom corners square.
 3. **Title Line Convention**: Themes default to `titleStyle.lineVisible: false` with only background fill active for a modern borderless look. High-contrast accessibility themes may set `titleStyle.lineVisible: true` to provide a sharp dividing boundary.
 
