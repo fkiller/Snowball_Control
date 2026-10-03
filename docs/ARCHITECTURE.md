@@ -17,6 +17,7 @@ This document serves as the **Single Source of Truth (SSOT)** governing the desi
 | **Device HUD** | `Snowball_Control/hardware/mk20/hud/` | Native C low-latency HUD daemon running on `/mnt/SDCARD/mk20-hud` |
 | **Device Boot Tools** | `Snowball_Control/hardware/mk20/dev-tools/` | MicroSD bootstrap, Wi-Fi configuration, TCP ADB launcher, and HUD startup |
 | **MK20 Device Plugin** | `Snowball_Control/plugins/device-mk20/` | Isolated lab Preview transport and framebuffer encoding module |
+| **M5Stack Device Plugin** | [Snowball_Device_M5Stack](https://github.com/fkiller/Snowball_Device_M5Stack) | Native ESP32 firmware for original M5Stack + FACES QWERTY, English/Korean keyboard UI, and a Protocol 1 hardware worker backed by a trusted local gateway |
 | **Middleware & Web API** | [Snowball_Middleware](https://github.com/fkiller/Snowball_Middleware) `packages/core`, `packages/api`, `apps/supervisor` | Session/command journal, workspace grants, local REST/SSE API, and Web UI |
 | **Integrated MK20 Runtime** | `Snowball_Middleware/scripts/start-all.mjs` | Unified entrypoint binding physical MK20, local STT, live harness discovery, and Web UI |
 | **Native Harness Dispatch** | `Snowball_Middleware/scripts/harness-dispatch.mjs` | Native process spawns: Codex app-server, AGY stream-json, OpenCode run. Plugin sandboxing and host execution privileges are separate boundaries |
@@ -38,6 +39,8 @@ flowchart LR
   API --> Daemon
   Sources[CLI, Cache, Session DBs] -->|Observation| Daemon
   Daemon -->|Native Processes| Harness[Codex, AGY, OpenCode]
+  M5[M5Stack + FACES] <-->|USB or authenticated Wi-Fi| Gateway[M5Stack trusted gateway]
+  Gateway <-->|Loopback HTTP and command journal| API
 ```
 
 The MK20 terminal handles screen rendering, physical keys, knobs, and voice audio capture, while the host PC retains absolute ownership of workspace filesystem grants and native agent process execution. USB HID/CDC and LAN transport operate on decoupled paths; the Preview UDP protocol does not provide automated wired failover or cryptographic device pairing.
@@ -134,6 +137,23 @@ The MK20 hardware features a **428×142** header display (`/dev/fb21`) and 20 in
 
 ---
 
+### 5.1 M5Stack + FACES First Release
+
+The M5Stack terminal is a separate device implementation in `Snowball_Device_M5Stack`, not an MK20 firmware image. Its first release uses FACES QWERTY keyboard input only; no PC microphone or device audio capture is enabled. The original Core/FACES assembly has a speaker but does not include a microphone in its standard bill of materials.
+
+- **Verified hardware**: CP210x USB UART on COM7 (`10C4:EA60`), ESP32-D0WDQ6-V3 revision 3.0, MAC `24:0a:c4:f8:16:78`, 16MB flash. The UART VID/PID is only a candidate hint; ESP32 interrogation and the firmware's real FACES I²C probe establish this deployment's evidence. Other original Core units may have 4MB flash and require the corresponding build setting.
+- **Firmware**: Arduino ESP32 via PlatformIO `espressif32@6.12.0`, M5Unified `0.2.11`, M5GFX `0.2.32`, ArduinoJson `6.21.5`. Native 320×240 display; FACES at I²C `0x08`, SDA/SCL 21/22, interrupt GPIO5. The 3MB application partition uses USB updates, without OTA. Large protocol and capture buffers are heap/static allocated to fit the ESP32 loop task's stack.
+- **Input contract**: A/B/C mean previous/select/next in menus; holding a button returns home. WASD and arrow codes navigate menus. In Compose, WASD remains literal text, A erases, B reviews a send, and C returns home. Tab or held B switches English and Korean two-beolsik. Held C clears the draft. Korean compound vowels/finals, resyllabification, shifted consonants, and keystroke backspace use the same native IME header exercised by the host C++ tests. M5GFX's Korean font renders UTF-8 locally, without PC IME dependency. Wi-Fi credentials use ASCII input.
+- **Wi-Fi UX**: Scan 2.4GHz networks, enter a password or hidden SSID, connect, change the selected network, and explicitly forget saved credentials. Persist a network in NVS only after successful association. Credentials are never emitted in diagnostic state, screenshots, or source control. USB can provision a matching saved Windows WLAN profile through the explicit `scripts/provision_wifi.py` utility, without staging credentials in a file.
+- **Transport and enrollment**: The trusted gateway connects to the existing middleware's loopback `/v1/snapshot`, dynamic model API, and command journal. Supervisor remains `127.0.0.1:8765` without PIN. Initial physical USB enrollment stores a random key in device NVS and the gateway's ignored `.local` directory. Standalone Wi-Fi requires an explicitly selected private PC interface. UDP 47770 discovers a reachable middleware gateway; TCP 47771 accepts only bounded device actions authenticated with HMAC-SHA256. Request/response directions, fresh gateway epoch, device boot ID, and monotonic sequence bind signatures and reject replay. Discovery replies bind the nonce and endpoint; the device also checks subnet membership. HMAC authenticates but does not encrypt LAN content: use only a trusted private LAN. Reset enrollment with a deliberate A+B+C hold.
+- **Control ownership**: Sessions, models, and each model's effort options come from the actual middleware/native sources. Session pages preserve an explicit selection; UTF-8 drafts bind to the selected session key. Send requires a confirmation screen and a stable command ID; ambiguous delivery never automatically repeats or switches transport. Journal admission is not reported as native completion. The first release selects existing sessions; it does not invent sessions when native creation is unavailable.
+- **Plugin boundary**: `src/manifest.mjs` computes the worker's entrypoint SHA-256 for the existing Protocol 1 PluginHost. The worker declares only `devices.list`/`devices.render` and accesses a closed list/render broker on `127.0.0.1:47772`. It receives no enrollment secret, serial handle, filesystem path, or harness command capability. The trusted gateway owns hardware I/O and command dispatch. The existing child-process PluginHost is still not an OS sandbox. This first release provides its worker for explicit host loading; it does not silently change the middleware's plugin registration policy.
+- **Recovery**: Before first deployment, the entire original 16,777,216-byte flash was read with esptool `4.9.0`. Backup SHA-256: `733894d655a473f5ae9d4ee9fd44d7185073ebe59adc797d0d62d841a593fa40`. The backup remains outside Git in the device repository's ignored `artifacts/original-flash.bin` because original firmware may contain credentials. esptool `5.4.0` produced incomplete/corrupt reads on this USB connection and is not the verified recovery tool. Restore the complete backup at flash address 0 only to this same board.
+
+Run the gateway from the device repository with Node >=22.12: `node scripts/gateway.mjs --serial COM7 --python <PYTHON> --bind <PRIVATE_LAN_IP>`. Stop the serial gateway before opening COM7 for an upload or diagnostic capture. Device capture reads the actual firmware framebuffer; software-injected IME checks do not certify physical button presses. The firmware's inspection endpoint reports real FACES, Wi-Fi, enrollment, heap, and UI state. Test and physical evidence must distinguish compiled functionality from credentials, actual association, LAN reachability, and native harness completion.
+
+**Outbound Wi-Fi path**: If PC inbound firewall policy blocks UDP/HTTP, the gateway can initiate TCP to the enrolled device on port 47774 (`--device <PAIRED_DEVICE_IP>`). The device issues a fresh random challenge for each connection; the PC authenticates its new gateway epoch with the enrollment key. Only then does the device exchange the same bounded signed request/response envelopes over that socket. USB and TCP pending receipts are tracked separately; switching routes never retries a send. Device identity remains bound to its enrollment key and previously verified ID. The USB-reported or explicitly selected private device address is remembered; DHCP changes require a fresh verified address. This path leaves the PC firewall and Supervisor loopback boundary unchanged.
+
 ## 6. Installation & Verification
 
 Place both repositories in the same parent directory:
@@ -164,6 +184,8 @@ node scripts/start-all.mjs
 - **Control Host Unit Tests**: `npm test --prefix host` (52 passed, 2 optional STT skipped)
 - **Middleware Comprehensive Tests**: `npm test` in `Snowball_Middleware` (241 passed, 5 optional skipped)
 - **Live Framebuffer Capture**: `python scripts/dump_mk20_screens.py --adb <PATH> --device <IP:PORT> --output-dir <DIR>`
+
+**M5Stack verification on 2026-10-03**: Native firmware built and flashed to COM7 with esptool's flash hash verification. Final firmware SHA-256: `ac58032a7290fca7190c334b0c589bbf5167f81f280b07e2e60804e6aca5ccc3`. Real FACES `0x08` presence, 16MB flash, NVS enrollment, Wi-Fi association at `192.168.1.163`, and authenticated outbound Wi-Fi to the gateway at `192.168.1.197` were observed. USB serial was not attached to the gateway during the outbound Wi-Fi check; USB still supplied power. The worker loaded through the actual PluginHost and its observation registered in the core DeviceRegistry as `lan/ready`. Signed discovery/request/response, replay rejection, native session pages, 8 actual models and 6 efforts for the selected model passed read-only live verification. Six device Node tests and the native C++ IME assertions passed. Actual firmware captures verified English and Korean glyphs and the menu layout; physical A/B/C and FACES keypresses were not manually exercised in this unattended run. No native harness prompt was sent, so this evidence does not certify a completed harness turn. Existing middleware tests passed 241 with 5 optional skips; MK20 parity passed 10 with 1 opt-in skip; harness switching and real MK20 framebuffer capture also passed.
 
 ---
 
