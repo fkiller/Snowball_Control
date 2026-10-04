@@ -191,6 +191,8 @@ npm run start:local
 node scripts/start-all.mjs
 ```
 
+**Desktop package CI storage**: Middleware push checks build real Windows x64, macOS ARM64 and macOS x64 packages, verify their file inventories and native tray/loopback/pause behavior, then repeat verification after ZIP extraction. SHA-256 and results appear in each job summary. Push checks do not retain full binaries in Actions storage. Explicit `workflow_dispatch` with `save_packages=true` creates a draft prerelease bound to the exact commit/run; only successfully verified archives and their checksum files are uploaded as Release assets. The draft is not automatically published, and existing releases remain intact. Matrix failures remain failures and do not cancel other platforms' checks. Workflow concurrency retires duplicate runs for the same ref/event. On 2026-10-04, 37 superseded package artifacts totaling 5,183,499,261 bytes were removed; the newest three main-branch platform artifacts (421,357,402 bytes), workflow histories, and published releases were preserved.
+
 ### Verification Checklist
 
 - **Control Hardware Plugin Tests**: `npm test --prefix plugins/device-mk20` (13 passed)
