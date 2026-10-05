@@ -17,6 +17,7 @@
 .venv/
 .venv*/
 node_modules/
+.snowball/
 .state/
 paired_device.json
 dist/

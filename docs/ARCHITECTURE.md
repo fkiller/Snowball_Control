@@ -10,6 +10,20 @@ This document serves as the **Single Source of Truth (SSOT)** governing the desi
 
 ## 1. Repositories and Concrete Execution Paths
 
+**Snowball** is the complete local control system. **Snowball Middleware** owns installation, host execution and the Web UI. **Snowball Control** owns the MK20 component and this common architecture specification; it is not a second competing middleware. **Snowball Device · M5Stack** owns the ESP32 firmware/gateway. The three **Snowball Harness · Codex / Antigravity / OpenCode** repositories are independently buildable plugins included in every installation.
+
+The common Windows entry point is `Snowball_Middleware/install.ps1 -Profile web|mk20|m5stack`. `scripts/setup.mjs` clones missing official repositories, installs/builds Middleware and all three standalone harness plugins, checks their real isolated-worker handshakes and writes `.snowball/suite.json` with source commits and approved entrypoint digests. Existing tracked edits are refused; existing checkouts are never reset. Native provider applications/account sign-in are separate vendor prerequisites; missing providers stay unavailable. Model, effort and session data continue to come from native CLI/cache observation.
+
+| Profile | Installed component repositories | Device preparation |
+| --- | --- | --- |
+| `web` | Middleware + all three Harness repositories | None; does not import Control, device transport or STT |
+| `m5stack` | Middleware + all three Harness repositories + Device M5Stack | Private Python venv, physical UART/ESP32 interrogation, detected 4MB/16MB build setting, full flash backup, USB upload, real firmware/FACES check and gateway enrollment |
+| `mk20` | Middleware + all three Harness repositories + Control | ADB discovery/SD Wi-Fi bootstrap, guided physical QMK DFU, SHA-256 checked native runtime bundle, device-file backup, verified HUD deployment, STT dependencies/model resolution |
+
+`Start-Snowball.ps1` and the desktop shortcut start `scripts/start-suite.mjs` without reinstallation. It rejects an occupied loopback port, verifies installed plugin digests before starting their isolated processes, starts the common `scripts/start-all.mjs` native-session/journal API, verifies a real API response and opens the browser. Only MK20 initializes its transport/context/STT; M5Stack starts its gateway with its own controller identity. Each child stops on its parent's IPC shutdown/disconnect. Port/data-directory overrides allow independent verification without replacing the owner's live runtime. Web Supervisor remains loopback-only with no PIN; hardware LAN gateways retain their existing pairing/security boundaries.
+
+Windows bootstrap prepares supported Node (official LTS ZIP plus official SHA-256), Git and Python where needed. macOS source installation needs Node/Git/Python beforehand; Linux is not yet supported by the suite's native plugin workers. USB/DFU reconnects, MK20 full raw SD disk-image backup and vendor sign-in remain physical/owner steps in the guided installation. `-NoFlash` validates an existing installation; it never pretends a firmware write occurred. Repository README headers share identical banner/icon assets and the `Snowball <component> · <provider> — Preview` naming pattern.
+
 | Subsystem | Location | Current Role & Responsibility |
 | --- | --- | --- |
 | **Keyboard MCU** | `Snowball_Control/hardware/mk20/qmk/` | QMK mechanical key matrix scan, USB HID, and UART escalation to Tina Linux |
@@ -19,7 +33,7 @@ This document serves as the **Single Source of Truth (SSOT)** governing the desi
 | **MK20 Device Plugin** | `Snowball_Control/plugins/device-mk20/` | Isolated lab Preview transport and framebuffer encoding module |
 | **M5Stack Device Plugin** | [Snowball_Device_M5Stack](https://github.com/fkiller/Snowball_Device_M5Stack) | Native ESP32 firmware for original M5Stack + FACES QWERTY, English/Korean keyboard UI, and a Protocol 1 hardware worker backed by a trusted local gateway |
 | **Middleware & Web API** | [Snowball_Middleware](https://github.com/fkiller/Snowball_Middleware) `packages/core`, `packages/api`, `apps/supervisor` | Session/command journal, workspace grants, local REST/SSE API, and Web UI |
-| **Integrated MK20 Runtime** | `Snowball_Middleware/scripts/start-all.mjs` | Unified entrypoint binding physical MK20, local STT, live harness discovery, and Web UI |
+| **Integrated Native Runtime** | `Snowball_Middleware/scripts/start-all.mjs` | Common live harness/session/journal/Web API; MK20 transport and local STT load only in the MK20 profile |
 | **Native Harness Dispatch** | `Snowball_Middleware/scripts/harness-dispatch.mjs` | Native process spawns: Codex app-server, AGY stream-json, OpenCode run. Plugin sandboxing and host execution privileges are separate boundaries |
 | **Installation & Catalog Scan** | `harness-runtime.mjs`, `harness-catalog-scanner.mjs` | Discovers PATH/explicit executables and local CLI caches. Emits empty catalog on discovery failure |
 | **Session & Project Scan** | `harness-session-scanner.mjs`, `harness-db-scanner.py`, `harness-project-scanner.mjs` | Non-mutating observation of native indexes/DBs. Scanners never write to harness storage |
