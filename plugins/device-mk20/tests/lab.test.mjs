@@ -5,6 +5,18 @@ import {once} from 'node:events';
 import {compatibility,requireProductionControl,decodeLegacyInput,encodeLegacyPreview,Mk20LabTransport} from '../src/index.mjs';
 const packet=v=>Buffer.from(JSON.stringify(v));
 const view={title:'로컬 테스트',lines:['preview only'],scroll:0,totalLines:1,volume:50,muted:false,keys:[{id:1,top:'Project',main:'Demo',flags:1}]};
+test('two actual UDP controllers reject foreign and retired input without sharing theme or sequence',async t=>{
+  const peer=dgram.createSocket('udp4');peer.bind(0,'127.0.0.1');await once(peer,'listening');t.after(()=>peer.close());
+  const make=controllerId=>new Mk20LabTransport({labEnabled:true,localAddress:'127.0.0.1',targetAddress:'127.0.0.1',targetPort:peer.address().port,controllerId});
+  const a=make('ctl_aaaaaaaaaaaaaaaa'),b=make('ctl_bbbbbbbbbbbbbbbb');t.after(()=>Promise.all([a.close(),b.close()]));
+  const aa=await a.start(),bb=await b.start();const received=[],seen=[];peer.on('message',bytes=>received.push(JSON.parse(bytes)));a.on('lab.input',input=>seen.push(input));
+  a.cycleSkin();assert.notEqual(a.getActiveSkin().id,b.getActiveSkin().id);await a.preview(view);await b.preview(view);
+  const send=value=>peer.send(packet(value),aa.address.port,'127.0.0.1');const key={type:'key',keyId:1,isDown:true,seq:1};
+  send({...key,controllerId:b.controllerId,runId:b.runId});send({...key,controllerId:a.controllerId,runId:'f'.repeat(32)});
+  const next=once(a,'lab.input');send({...key,controllerId:a.controllerId,runId:a.runId});await next;
+  send({...key,controllerId:a.controllerId,runId:a.runId});send({type:'key',keyId:2,isDown:true});await new Promise(resolve=>setTimeout(resolve,40));
+  assert.equal(seen.length,1);assert.equal(seen[0].controllerId,a.controllerId);assert.equal(received.length,2);assert.notEqual(received[0].controllerId,received[1].controllerId);assert.notEqual(aa.address.port,bb.address.port);
+});
 test('legacy presence/serial/address cannot grant pairing, merged identity or production control',()=>{
   assert.equal(compatibility().controllable,false);assert.equal(compatibility().canMergeUsbLan,false);assert.equal(compatibility().authenticated,false);
   assert.throws(()=>requireProductionControl({authenticated:true,paired:true}),/authenticated_firmware_required/);

@@ -1684,6 +1684,17 @@ static void on_right_knob(int direction);
 static void on_right_knob_click(void);
 
 // Handle switch contact events
+static void send_input_to_host(const char *json, int len) {
+    static char last_run[33];static uint32_t sequence;
+    if(g_sockfd<0||!g_has_host_addr)return;
+    if(!g_v2_controller_id[0]){sendto(g_sockfd,json,len,0,(struct sockaddr *)&g_host_addr,sizeof g_host_addr);return;}
+    if(strcmp(last_run,g_v2_run_id)){strcpy(last_run,g_v2_run_id);sequence=0;}
+    if(sequence>=0x7fffffff)return;
+    while(len>0&&(json[len-1]=='\n'||json[len-1]=='\r'||json[len-1]==' '))len--;
+    if(len<2||json[len-1]!='}')return;
+    char scoped[256];int n=snprintf(scoped,sizeof scoped,"%.*s,\"controllerId\":\"%s\",\"runId\":\"%s\",\"seq\":%u}",len-1,json,g_v2_controller_id,g_v2_run_id,++sequence);
+    if(n>0&&n<(int)sizeof scoped)sendto(g_sockfd,scoped,n,0,(struct sockaddr *)&g_host_addr,sizeof g_host_addr);
+}
 static void on_key_event(int row, int col, int pressed) {
     int key_idx = get_mapped_key_index(row, col);
     if (key_idx < 1 || key_idx > 20) return;
@@ -1695,7 +1706,7 @@ static void on_key_event(int row, int col, int pressed) {
             char pkt[128];
             int n = snprintf(pkt, sizeof(pkt), "{\"type\":\"key\",\"keyId\":%d,\"isDown\":%s}\n",
                              key_idx, pressed ? "true" : "false");
-            sendto(g_sockfd, pkt, n, 0, (struct sockaddr *)&g_host_addr, sizeof(g_host_addr));
+            if(!g_host_offline)send_input_to_host(pkt,n);
         }
         g_dirty_keys |= (1 << key_idx);
         return;
@@ -1802,7 +1813,7 @@ static void on_left_knob(int direction) {
         if (g_sockfd >= 0 && g_has_host_addr) {
             char pkt[128];
             int n = snprintf(pkt, sizeof(pkt), "{\"type\":\"knob_left\",\"delta\":%d}\n", direction);
-            sendto(g_sockfd, pkt, n, 0, (struct sockaddr *)&g_host_addr, sizeof(g_host_addr));
+            if(!g_host_offline)send_input_to_host(pkt,n);
         }
         return;
     }
@@ -1834,7 +1845,7 @@ static void on_left_knob_click(void) {
         if (g_sockfd >= 0 && g_has_host_addr) {
             char pkt[128];
             int n = snprintf(pkt, sizeof(pkt), "{\"type\":\"knob_left\",\"isClick\":true}\n");
-            sendto(g_sockfd, pkt, n, 0, (struct sockaddr *)&g_host_addr, sizeof(g_host_addr));
+            if(!g_host_offline)send_input_to_host(pkt,n);
         }
         return;
     }
@@ -1855,7 +1866,7 @@ static void on_right_knob(int direction) {
         if (g_sockfd >= 0 && g_has_host_addr) {
             char pkt[128];
             int n = snprintf(pkt, sizeof(pkt), "{\"type\":\"knob_right\",\"delta\":%d}\n", direction);
-            sendto(g_sockfd, pkt, n, 0, (struct sockaddr *)&g_host_addr, sizeof(g_host_addr));
+            if(!g_host_offline)send_input_to_host(pkt,n);
         }
         g_v2_state.volume += direction * 5;
         if (g_v2_state.volume < 0) g_v2_state.volume = 0;
@@ -1885,7 +1896,7 @@ static void on_right_knob_click(void) {
         if (g_sockfd >= 0 && g_has_host_addr) {
             char pkt[128];
             int n = snprintf(pkt, sizeof(pkt), "{\"type\":\"knob_right\",\"isClick\":true}\n");
-            sendto(g_sockfd, pkt, n, 0, (struct sockaddr *)&g_host_addr, sizeof(g_host_addr));
+            if(!g_host_offline)send_input_to_host(pkt,n);
         }
         g_v2_state.is_muted = !g_v2_state.is_muted;
         g_dirty_top = 1;
@@ -2043,6 +2054,7 @@ static void parse_qmk_byte(uint8_t byte) {
 }
 
 static void handle_udp_packet(const char *buf, int len, const struct sockaddr_in *sender) {
+    if(sender&&g_v2_controller_id[0]&&g_has_host_addr&&sender->sin_addr.s_addr!=g_host_addr.sin_addr.s_addr)return;
     if (v2_parse_sync_packet(buf, len)) {
         if (sender) {
             g_host_addr = *sender;
@@ -2056,6 +2068,9 @@ static void handle_udp_packet(const char *buf, int len, const struct sockaddr_in
     } else if (strstr(buf, "\"type\":\"v2_sync\"") || strstr(buf, "\"type\": \"v2_sync\"")) {
         fprintf(stderr, "[MK20-HUD] Failed to parse v2_sync packet (len=%d)\n", len);
     }
+    // Once a scoped host owns this display, legacy diagnostic KEY/DIAL
+    // datagrams cannot impersonate physical GPIO/UART navigation.
+    if(g_v2_controller_id[0])return;
     if (strncmp(buf, "KEY:", 4) == 0) {
         int r, c, p;
         if (sscanf(buf + 4, "%d|%d|%d", &r, &c, &p) == 3) {
@@ -2261,8 +2276,9 @@ int main(int argc, char *argv[]) {
 
     for (int a = 1; a < argc; a++) {
         if (strcmp(argv[a], "-d") == 0) {
-            if (daemon(1, 1) < 0) {
+            if (daemon(0, 0) < 0) {
                 perror("daemon() failed");
+                return 1;
             }
             int log_fd = open("/tmp/hud.log", O_WRONLY | O_CREAT | O_APPEND, 0644);
             if (log_fd >= 0) {
@@ -2459,16 +2475,14 @@ int main(int argc, char *argv[]) {
         if (g_mode_v2) {
             if (now - g_last_host_sync_ms > 15000 && !g_host_offline) {
                 g_host_offline = 1;
-                snprintf(g_v2_state.top_title, sizeof g_v2_state.top_title, "Host disconnected");
-                snprintf(g_v2_state.top_subtitle, sizeof g_v2_state.top_subtitle, "Displayed session state is stale");
-                snprintf(g_v2_state.top_body, sizeof g_v2_state.top_body, "Start Snowball middleware on PC.\nDevice buttons need the host.\nWindows dictation PoC is separate.\nNo active recording is confirmed.");
-                for (int k = 1; k <= 20; k++) g_v2_state.keys[k].flags |= KEY_FLAG_DISABLED;
+                // Renderer shows the disconnect screen; keep the last actual
+                // controller state intact for recovery and diagnostics.
                 g_dirty_keys = 0x1FFFFE; g_dirty_top = 1;
             }
             static long long last_host_ping = 0;
             if (g_has_host_addr && now - last_host_ping > 1000) {
                 last_host_ping = now;
-                sendto(g_sockfd, "{\"type\":\"ping\"}", 15, 0, (struct sockaddr *)&g_host_addr, sizeof g_host_addr);
+                send_input_to_host("{\"type\":\"ping\"}",15);
             }
             static long long last_v2_anim_ms = 0;
             if (now - last_v2_anim_ms >= 50) {

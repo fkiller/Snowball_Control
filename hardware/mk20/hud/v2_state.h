@@ -113,6 +113,9 @@ extern V2_Theme g_v2_theme;
 extern int g_mode_v2;
 extern uint32_t g_v2_tick_count;
 extern int g_host_offline;
+extern char g_v2_controller_id[21];
+extern char g_v2_run_id[33];
+extern uint32_t g_v2_sequence;
 
 void v2_init_defaults(void);
 void v2_apply_theme(const char *skin_id);
