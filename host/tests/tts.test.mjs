@@ -267,3 +267,77 @@ test('TTS Fallback: Speeks earlier turn if the latest turn is failed or has no a
   await controller.close();
 });
 
+test('TTS Key 8: Speak on PC/Mac speaks latest turn on host destination with current volume', async () => {
+  const backend = new MockBackend();
+  const voice = new MockVoiceProvider();
+  const tts = new MockTtsProvider();
+  const controller = new MvpController(backend, voice, () => {}, undefined, mockDesktop, tts);
+
+  await controller.connect();
+
+  const expectedMain = process.platform === 'darwin' ? 'Speak Mac' : 'Speak PC';
+  const expectedTop = process.platform === 'darwin' ? 'MAC AUDIO' : 'PC AUDIO';
+
+  const k8 = controller.state().keys.find(k => k.keyId === 8);
+  assert.equal(k8?.labelMain, expectedMain);
+  assert.equal(k8?.labelTop, expectedTop);
+  assert.equal(k8?.isDisabled, false);
+
+  // Press Key 8 to speak on PC/Mac
+  await controller.input({ type: 'key', keyId: 8, isDown: true });
+
+  assert.equal(tts.spokenTexts.length, 1);
+  assert.equal(tts.spokenTexts[0].text, 'Hello! I am your AI assistant.');
+  assert.equal(tts.spokenTexts[0].options.destination, 'host');
+  assert.equal(tts.spokenTexts[0].options.volume, 0.75); // Default 75% volume
+
+  await controller.close();
+});
+
+test('TTS Key 8 & Key 12: Volume adjustment with Right Knob scales speech volume accurately', async () => {
+  const backend = new MockBackend();
+  const voice = new MockVoiceProvider();
+  const tts = new MockTtsProvider();
+  const controller = new MvpController(backend, voice, () => {}, undefined, mockDesktop, tts);
+
+  await controller.connect();
+
+  // Rotate Right Knob: 75 - 5 * 5 = 50%
+  controller.context.onRightKnob(-5);
+  assert.equal(controller.context.volume, 50);
+
+  // Speak on MK20 (Key 12)
+  await controller.toggleAutoTts();
+  assert.equal(tts.spokenTexts.length, 1);
+  assert.equal(tts.spokenTexts[0].options.destination, 'device');
+  assert.equal(tts.spokenTexts[0].options.volume, 0.5);
+
+  // Speak on PC (Key 8)
+  await controller.input({ type: 'key', keyId: 8, isDown: true });
+  assert.equal(tts.spokenTexts.length, 2);
+  assert.equal(tts.spokenTexts[1].options.destination, 'host');
+  assert.equal(tts.spokenTexts[1].options.volume, 0.5);
+
+  await controller.close();
+});
+
+test('TTS Key 8: Pressing Speak on PC again while speaking stops playback immediately', async () => {
+  const backend = new MockBackend();
+  const voice = new MockVoiceProvider();
+  const tts = new MockTtsProvider();
+  const controller = new MvpController(backend, voice, () => {}, undefined, mockDesktop, tts);
+
+  await controller.connect();
+
+  // Simulate in-flight speaking on PC
+  controller.context.isSpeakingHost = true;
+  tts.stopped = false;
+
+  await controller.input({ type: 'key', keyId: 8, isDown: true });
+
+  assert.equal(tts.stopped, true);
+  assert.equal(controller.context.isSpeakingHost, false);
+
+  await controller.close();
+});
+

@@ -297,25 +297,46 @@ export class MvpController {
     }
     this.paint();
   }
-  public async speakText(text: string): Promise<void> {
+  public async speakText(text: string, destination: "device" | "host" = "device"): Promise<void> {
     if (this.context.isMuted || !text.trim()) return;
-    this.context.isSpeaking = true;
+    if (destination === "device") {
+      this.context.isSpeaking = true;
+    } else {
+      this.context.isSpeakingHost = true;
+    }
     this.paint();
     try {
       if ((this.tts as any).speak) {
-        await (this.tts as any).speak(text, { volume: this.context.volume / 100 });
+        await (this.tts as any).speak(text, { volume: this.context.volume / 100, destination });
       } else {
-        await this.tts.synthesize(text, { volume: this.context.volume / 100 });
+        await this.tts.synthesize(text, { volume: this.context.volume / 100, destination });
       }
     } catch (e: any) {
       console.warn("[MvpController] Speech synthesis error:", e?.message || e);
     } finally {
       this.context.isSpeaking = false;
+      this.context.isSpeakingHost = false;
       this.paint();
+    }
+  }
+  public async speakOnHost(): Promise<void> {
+    if (this.context.isSpeakingHost) {
+      await this.stopSpeaking();
+      return;
+    }
+    const turns = this.context.currentTurns;
+    const latestWithResponse = turns.slice().reverse().find(t => t.agentResponse && t.agentResponse.trim());
+    const rawText = latestWithResponse?.agentResponse || this.context.getCurrentSession().preview;
+    const text = extractSpokenAgentResponse(rawText);
+    if (text && text.trim()) {
+      await this.speakText(text, "host");
+    } else {
+      this.info(process.platform === "darwin" ? "Speak Mac" : "Speak PC", "No agent response to speak.");
     }
   }
   public async stopSpeaking(): Promise<void> {
     this.context.isSpeaking = false;
+    this.context.isSpeakingHost = false;
     try {
       await this.tts.stop();
     } catch {}
@@ -342,6 +363,7 @@ export class MvpController {
   }
   private async startVoice() {
     this.context.isSpeaking = false;
+    this.context.isSpeakingHost = false;
     void this.tts.stop();
     if (this.startingVoice || this.cancellingVoice) return;
     const prior = this.draft.snapshot;
@@ -847,7 +869,10 @@ export class MvpController {
     } else if (k === 20) { if (this.draft.snapshot?.phase === "recording") await this.finishVoice(); else await this.startVoice(); }
     else if (k === 16) { if (this.draft.snapshot?.phase === "unknown") await this.reconcile(); else if (this.draft.snapshot?.phase === "recording") await this.finishVoice(); else await this.send(); }
     else if (k === 12) await this.toggleAutoTts();
-    else if (k === 8) this.restoreDraft();
+    else if (k === 8) {
+      if (this.replacing) this.restoreDraft();
+      else await this.speakOnHost();
+    }
     else if (k === 4) {
       if (this.draft.snapshot && ["review","recording","transcribing"].includes(this.draft.snapshot.phase)) await this.cancelVoice();
       else if (this.draft.snapshot?.phase === "unknown") {
@@ -880,6 +905,20 @@ export class MvpController {
         isFocused: false,
         isDisabled: false,
       });
+
+      const hostLabel = process.platform === "darwin" ? "Speak Mac" : "Speak PC";
+      const hostTop = process.platform === "darwin" ? "MAC AUDIO" : "PC AUDIO";
+      replace({
+        keyId: 8,
+        labelTop: this.replacing ? "DRAFT" : hostTop,
+        labelMain: this.replacing ? "Undo" : hostLabel,
+        labelSub: this.replacing ? "Restore" : (c.isSpeakingHost ? "Speaking" : ""),
+        isFilled: this.replacing ? false : c.isSpeakingHost,
+        isEditing: false,
+        isFocused: false,
+        isDisabled: false,
+      });
+
       if (c.activeEditor === "none") replace(this.key(3, this.pending.length ? `Requests ${this.pending.length}` : this.connected ? "Refresh" : "Reconnect", this.connecting));
       for (const id of [1,18,14,20,16]) if (!this.connected || this.connecting) state.keys.find(k => k.keyId === id)!.isDisabled = true;
       if (this.target() === "none") for (const id of [20,16,4,5]) state.keys.find(k => k.keyId === id)!.isDisabled = true;

@@ -212,6 +212,7 @@ export class ContextManager {
   public volume = 75; // 0..100
   public isMuted = false;
   public isSpeaking = false;
+  public isSpeakingHost = false;
   public autoTts = false;
   public isRecordingVoice = false;
   public isTranscribingVoice = false;
@@ -1663,7 +1664,16 @@ export class ContextManager {
           isFocused: false,
           isDisabled: false,
         });
-        keys.push({ keyId: 8, labelTop: "", labelMain: "", isFilled: false, isEditing: false, isFocused: false, isDisabled: true });
+        keys.push({
+          keyId: 8,
+          labelTop: process.platform === "darwin" ? "MAC AUDIO" : "PC AUDIO",
+          labelMain: process.platform === "darwin" ? "Speak Mac" : "Speak PC",
+          labelSub: this.isSpeakingHost ? "Speaking" : "",
+          isFilled: this.isSpeakingHost,
+          isEditing: false,
+          isFocused: false,
+          isDisabled: false,
+        });
         keys.push({
           keyId: 4,
           labelTop: "ABORT",
@@ -1706,6 +1716,7 @@ export class ContextManager {
       volume: this.volume,
       isMuted: this.isMuted,
       isSpeaking: this.isSpeaking,
+      isSpeakingHost: this.isSpeakingHost,
       topTitle: this.readerTitle,
       topSubtitle: this.readerSubtitle,
       topBodyLines: this.readerLines,

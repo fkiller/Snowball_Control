@@ -14,8 +14,9 @@ This document serves as the **Single Source of Truth (SSOT)** governing the desi
 | --- | --- | --- |
 | **Keyboard MCU** | `Snowball_Control/hardware/mk20/qmk/` | QMK mechanical key matrix scan, USB HID, and UART escalation to Tina Linux |
 | **Device Linux OS** | Vendor Tina T113-based Snowball SD Release | Framebuffers, ALSA, Wi-Fi, and ADB. Tina BSP SDK is not tracked in this repository |
-| **Device HUD** | `Snowball_Control/hardware/mk20/hud/` | Native C low-latency HUD daemon running on `/mnt/SDCARD/mk20-hud` |
-| **Device Boot Tools** | `Snowball_Control/hardware/mk20/dev-tools/` | MicroSD bootstrap, Wi-Fi configuration, TCP ADB launcher, and HUD startup |
+| **Device HUD** | `Snowball_Control/hardware/mk20/hud/` | Native C low-latency HUD daemon running on `/mnt/SDCARD/mk20-hud` (UDP 7701) |
+| **Device Audio Daemon** | `Snowball_Control/hardware/mk20/hud/` | Native C audio streaming daemon running on `/mnt/SDCARD/mk20-audio` (TCP 7702 SNAU protocol) |
+| **Device Boot Tools** | `Snowball_Control/hardware/mk20/dev-tools/` | MicroSD bootstrap, Wi-Fi configuration, TCP ADB launcher, and HUD/audio startup |
 | **MK20 Device Plugin** | `Snowball_Control/plugins/device-mk20/` | Isolated lab Preview transport and framebuffer encoding module |
 | **Middleware & Web API** | [Snowball_Middleware](https://github.com/fkiller/Snowball_Middleware) `packages/core`, `packages/api`, `apps/supervisor` | Session/command journal, workspace grants, local REST/SSE API, and Web UI |
 | **Integrated MK20 Runtime** | `Snowball_Middleware/scripts/start-all.mjs` | Unified entrypoint binding physical MK20, local STT, live harness discovery, and Web UI |
@@ -31,16 +32,18 @@ This document serves as the **Single Source of Truth (SSOT)** governing the desi
 ```mermaid
 flowchart LR
   QMK[QMK MCU] -->|UART Keys & Knobs| HUD[Tina C HUD]
-  HUD <-->|LAN UDP Preview| Daemon[Middleware start-all]
-  Mic[MK20 ALSA MIC3] -->|ADB PCM| STT[Local Whisper]
+  HUD <-->|LAN UDP Preview 7701| Daemon[Middleware start-all]
+  Mic[MK20 ALSA MIC3] -->|TCP 7702 SNAU Stream| STT[Local Whisper]
   STT --> Daemon
+  Daemon -->|TCP 7702 SNAU Stream| Spk[MK20 Speaker aplay]
+  Daemon -->|OS Audio| HostSpk[Host PC/Mac Speaker]
   UI[Loopback Supervisor] <-->|HTTP & SSE| API[LocalApi & CommandJournal]
   API --> Daemon
   Sources[CLI, Cache, Session DBs] -->|Observation| Daemon
   Daemon -->|Native Processes| Harness[Codex, AGY, OpenCode]
 ```
 
-The MK20 terminal handles screen rendering, physical keys, knobs, and voice audio capture, while the host PC retains absolute ownership of workspace filesystem grants and native agent process execution. USB HID/CDC and LAN transport operate on decoupled paths; the Preview UDP protocol does not provide automated wired failover or cryptographic device pairing.
+The MK20 terminal handles screen rendering, physical keys, knobs, and dual-way voice audio streaming (TCP 7702 `SNAU` binary protocol), while the host PC retains absolute ownership of workspace filesystem grants and native agent process execution. Audio capture and playback stream directly over the local network with zero disk wear on MK20 flash storage. USB HID/CDC and LAN transport operate on decoupled paths; the Preview UDP protocol does not provide automated wired failover or cryptographic device pairing.
 
 ---
 
@@ -125,13 +128,13 @@ The MK20 hardware features a **428×142** header display (`/dev/fb21`) and 20 in
   - `K9`: Project selector
   - `K5`: Session selector
   - `K1`: New task draft
-  - `K12`: Speak on **MK20 onboard speaker** (synthesized WAV chunks are pushed to `/tmp` via ADB and played with ALSA `aplay` on `audiocodec`; press again to stop)
-  - `K8`: Speak on **host PC / Mac speaker** (label `Speak PC` on Windows/Linux, `Speak Mac` on macOS; press again to stop)
-  - `K20`: Voice recording toggle
+  - `K12`: Speak on **MK20 onboard speaker** (Destination: `device`. Audio is streamed natively via TCP port 7702 `SNAU` binary protocol directly to `mk20-audio` $\rightarrow$ ALSA `aplay`, zero disk I/O, software + hardware gain scaling; press again to stop)
+  - `K8`: Speak on **host PC / Mac speaker** (Destination: `host`. Label `Speak PC` on Windows/Linux, `Speak Mac` on macOS; in-memory PCM volume scaled to match Right Knob; press again to stop)
+  - `K20`: Voice recording toggle (Initiates TCP port 7702 streaming capture directly to host; interrupts active TTS playback immediately to avoid acoustic echo and ALSA device conflicts)
   - `K16`: Transcribe & Send
-  - `K4`: Cancel / Discard draft / Cut off active speech on both destinations (host player kill + `killall -9 aplay` on MK20)
+  - `K4`: Cancel / Discard draft / Cut off active speech on both destinations (host player kill + stop signal to `mk20-audio`)
   - `Left Knob`: Scroll navigation and item commit
-  - `Right Knob`: System volume and mute
+  - `Right Knob`: System volume (0..100) and click mute. Dynamically scales playback volume across both MK20 hardware speaker (via mixer + 16-bit PCM attenuation) and host speakers.
   - `Dual-Knob Chord`: Simultaneous press toggles HOST Mode (keystroke masking) and HID Mode (keystroke passthrough to PC).
 
 ### Speech Synthesis (TTS) 3-Tier Fallback Chain
@@ -185,6 +188,52 @@ $$\text{Language Package} = \text{UI Resources (Fonts \& Labels)} + \text{STT (W
 - **Living OS Auto-Discovery**: Automatically queries OS display culture (`(Get-Culture).Name` on Windows, `LANG` on POSIX) on startup. Korean OS (`ko-KR`) configures `ko` as the primary language and activates D2Coding Korean font rendering on the MK20 HUD.
 - **Dynamic Configuration & Lifecycle**: Languages can be enabled, disabled, or set as primary via `/v1/settings` and `languageManager`. Adding a language ensures corresponding STT and TTS model weights exist locally.
 
+### Native Audio Streaming Subsystem (`mk20-audio` & `SNAU` Protocol)
+
+To eliminate high latency and flash wear from push-and-pull ADB commands, audio I/O on the MK20 operates via a dedicated native C daemon (`mk20-audio`) running on Tina Linux:
+
+- **Daemon Architecture & Deployment**:
+  - Source: `hardware/mk20/hud/mk20-audio.c`.
+  - Statically linked ARMv7 binary (`arm-linux-gnueabihf-gcc -static -O2`) deployed to `/mnt/SDCARD/mk20-audio`.
+  - Automatically launched at boot via `/mnt/SDCARD/lunch.sh` (`/mnt/SDCARD/mk20-audio &`), listening on TCP port **7702** (`INADDR_ANY`).
+  - Cross-platform network model: Windows host initiates outbound connections to `192.168.1.248:7702`, traversing Windows Defender Firewall without administrator elevation prompts.
+
+- **`SNAU` Binary Streaming Protocol**:
+  Communication over TCP port 7702 uses a compact 16-byte binary header (`struct snau_header`):
+  | Field | Type | Size | Description |
+  | :--- | :--- | :--- | :--- |
+  | `magic` | `char[4]` | 4B | Protocol magic: `'S'`, `'N'`, `'A'`, `'U'` (`0x55414E53` in LE) |
+  | `mode` | `uint8_t` | 1B | `1` = PLAY (TTS), `2` = RECORD (STT), `3` = PING |
+  | `channels` | `uint8_t` | 1B | `1` (mono) or `2` (stereo) |
+  | `format` | `uint8_t` | 1B | Sample format: `16` (16-bit signed integer PCM, little-endian) |
+  | `volume` | `uint8_t` | 1B | Software attenuation volume factor (`0`..`100`) |
+  | `sample_rate` | `uint32_t` | 4B | Sample rate: `16000` (STT), `24000` (TTS Supertonic), or custom |
+  | `data_len` | `uint32_t` | 4B | Payload byte count (`0` for continuous live streaming until socket close) |
+  | `is_muted` | `uint8_t` | 1B | `1` if audio output should be muted, `0` otherwise |
+  | `reserved` | `uint8_t[3]` | 3B | Zero-padding alignment bytes |
+
+- **Microphone Capture (STT Streaming)**:
+  - The host connects with `MODE_RECORD`. The daemon spawns ALSA `arecord -D hw:0,0 -r 16000 -f S16_LE -c 1 -t raw` bound to the onboard MIC3 channel.
+  - Raw PCM samples are streamed directly over the TCP socket to Node.js `AudioTransport` (`host/src/audio/transport.ts`).
+  - Upon user release or completion, the host closes the stream, prepends an in-memory 44-byte canonical WAV header (`monoPcmToWav`), and passes the buffer directly to the local Whisper worker. Zero temporary files are written to MK20 storage.
+
+- **Speaker Playback (TTS Streaming)**:
+  - The host connects with `MODE_PLAY`, transmitting the `SNAU` header with current knob volume and mute status.
+  - The daemon sets the hardware ALSA mixer levels (`LINEOUT volume` 0..31 and `Headphone volume` 0..7 via `amixer cset`), scales PCM samples in 16-bit integer space, and pipes them directly into `aplay -D hw:0,0 -r <rate> -f S16_LE -c <ch> -t raw`.
+  - Zero disk I/O on the device; speech plays back in real-time as chunks stream from the host.
+
+- **Volume & Mute Integration**:
+  - The MK20's physical `Right Knob` controls system volume (`0`..`100`) and click mute.
+  - **MK20 Hardware Speaker**: Volume is transmitted in the `SNAU` header and applied simultaneously at the hardware mixer and software scaling stages in `mk20-audio`.
+  - **Host PC / Mac Speaker**: Volume is scaled directly in-memory on the host's 16-bit PCM buffer before dispatching to the OS audio player (`PowerShell SoundPlayer` on Windows, `afplay` on macOS, `aplay` on Linux).
+
+- **Hardware Concurrency & Interruption Management**:
+  - The Allwinner T113 `audiocodec` (`hw:0,0`) cannot operate in full-duplex mode. Active speaker playback (`aplay`) locks the audio device and must terminate before microphone recording (`arecord`) can begin.
+  - Pressing `Talk` (Key 20) or `Cancel` (Key 4) issues an immediate cutoff signal, killing active playback and resetting socket buffers before recording begins.
+
+- **Legacy Fallback & Fault Tolerance**:
+  - If TCP port 7702 is unreachable (e.g. older SD card image without `mk20-audio`), `AudioTransport` transparently falls back to the ADB pipeline (`arecord /tmp/snowball_rec.wav` $\rightarrow$ `adb pull`), guaranteeing backward compatibility and zero crash risk.
+
 ---
 
 ## 6. Installation & Verification
@@ -214,7 +263,7 @@ node scripts/start-all.mjs
 
 - **Control Hardware Plugin Tests**: `npm test --prefix plugins/device-mk20` (13 passed)
 - **QMK Serial Contract**: `powershell -File hardware/mk20/contract/Test-QmkProtocol.ps1` (14 passed)
-- **Control Host Unit Tests**: `npm test --prefix host` (52 passed, 2 optional STT skipped)
+- **Control Host Unit Tests**: `npm test --prefix host` (66 passed, 2 optional STT skipped)
 - **Middleware Comprehensive Tests**: `npm test` in `Snowball_Middleware` (241 passed, 5 optional skipped)
 - **Live Framebuffer Capture**: `python scripts/dump_mk20_screens.py --adb <PATH> --device <IP:PORT> --output-dir <DIR>`
 

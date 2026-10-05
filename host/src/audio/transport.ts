@@ -2,19 +2,26 @@ import * as cp from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
+import * as net from "node:net";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const SNAU_MAGIC = 0x55414e53; // 'SNAU' in little endian
 
 export class AudioTransport {
   private adbPath: string;
   private deviceAddress: string;
   private startPromise: Promise<void> | null = null;
   private recordingStartTime = 0;
+  private recordSocket?: net.Socket;
+  private recordedChunks: Buffer[] = [];
+  private isUsingTcp = false;
+  public tcpPort?: number;
 
-  constructor(deviceAddress = process.env.SNOWBALL_DEVICE_ADB || "192.168.1.248:5555", adbPath?: string) {
+  constructor(deviceAddress = process.env.SNOWBALL_DEVICE_ADB || "192.168.1.248:5555", adbPath?: string, tcpPort?: number) {
     this.deviceAddress = deviceAddress;
     this.adbPath = adbPath || AudioTransport.discoverAdb();
+    this.tcpPort = tcpPort || (process.env.SNOWBALL_AUDIO_PORT ? parseInt(process.env.SNOWBALL_AUDIO_PORT, 10) : undefined);
   }
 
   public static discoverAdb(): string {
@@ -159,10 +166,54 @@ export class AudioTransport {
   }
 
   /**
+   * Converts 1-channel 16kHz 16-bit LE PCM data into standard mono 16kHz 16-bit LE WAV.
+   */
+  public static monoPcmToWav(pcm: Buffer, sampleRate = 16000): Buffer {
+    const dataSize = pcm.length;
+    const wav = Buffer.alloc(44 + dataSize);
+
+    // RIFF chunk descriptor
+    wav.write("RIFF", 0);
+    wav.writeUInt32LE(36 + dataSize, 4);
+    wav.write("WAVE", 8);
+
+    // fmt sub-chunk
+    wav.write("fmt ", 12);
+    wav.writeUInt32LE(16, 16); // Subchunk1Size (16 for PCM)
+    wav.writeUInt16LE(1, 20);  // AudioFormat (1 = PCM)
+    wav.writeUInt16LE(1, 22);  // NumChannels (1 = Mono)
+    wav.writeUInt32LE(sampleRate, 24); // SampleRate
+    wav.writeUInt32LE(sampleRate * 2, 28); // ByteRate (sampleRate * 1 * 2)
+    wav.writeUInt16LE(2, 32);  // BlockAlign (1 * 2)
+    wav.writeUInt16LE(16, 34); // BitsPerSample (16 bits)
+
+    // data sub-chunk
+    wav.write("data", 36);
+    wav.writeUInt32LE(dataSize, 40);
+    pcm.copy(wav, 44);
+
+    return wav;
+  }
+
+  /**
    * Pulls recorded 3-channel audio from MK20, extracts Channel 3 (MIC3),
    * and saves a clean 16kHz mono WAV file for local transcription.
    */
   public async pullDeviceWav(remotePath = "/tmp/snowball_voice.pcm"): Promise<string> {
+    if (this.isUsingTcp) {
+      const pcm = Buffer.concat(this.recordedChunks);
+      this.recordedChunks = [];
+      this.isUsingTcp = false;
+
+      if (pcm.length < 960) {
+        throw new Error(`Audio buffer too short: ${pcm.length} bytes`);
+      }
+      const localWav = path.join(os.tmpdir(), `mk20_voice_${Date.now()}.wav`);
+      const wavBuf = AudioTransport.monoPcmToWav(pcm, 16000);
+      fs.writeFileSync(localWav, wavBuf);
+      return localWav;
+    }
+
     if (remotePath !== "/tmp/snowball_voice.pcm") throw new Error("Unsupported recording scratch path");
     await this.ensureConnected();
     const checkRes = await this.execAdb([
@@ -213,13 +264,76 @@ export class AudioTransport {
   private recorderProcess?: cp.ChildProcess;
 
   /**
-   * Triggers background 3-channel 16kHz ALSA recording on the physical MK20 device.
-   * MIC3 carries the physical microphone. Stops automatically after 600s if not finished.
+   * Triggers background ALSA recording on the physical MK20 device.
+   * Priority 1: Native TCP streaming from mk20-audio daemon (MIC3, 16kHz mono).
+   * Priority 2: Fallback to ADB arecord if daemon is unavailable.
    */
   public async startDeviceRecording(remotePath = "/tmp/snowball_voice.pcm"): Promise<void> {
+    this.recordingStartTime = Date.now();
+
+    // 1. Try Native TCP Audio Daemon (7702) first: zero ADB, streaming directly to host memory
+    const rawIp = this.deviceAddress.split(":")[0];
+    const targetHost =
+      (rawIp === "127.0.0.1" || rawIp === "localhost") && !this.tcpPort
+        ? (process.env.MK20_IP || process.env.SNOWBALL_MK20_IP || "192.168.1.248")
+        : (process.env.MK20_IP || process.env.SNOWBALL_MK20_IP || rawIp);
+    const targetPort =
+      this.tcpPort ||
+      (this.deviceAddress.includes(":") && !this.deviceAddress.endsWith(":5555")
+        ? parseInt(this.deviceAddress.split(":")[1], 10)
+        : parseInt(process.env.SNOWBALL_AUDIO_PORT || "7702", 10));
+
+    try {
+      await new Promise<void>((resolve, reject) => {
+        let connected = false;
+        let socket: net.Socket;
+        const timer = setTimeout(() => {
+          if (!connected) {
+            try { socket?.destroy(); } catch {}
+            reject(new Error("Connection to mk20-audio TCP port timed out"));
+          }
+        }, 1500);
+
+        socket = net.createConnection({ host: targetHost, port: targetPort }, () => {
+          connected = true;
+          clearTimeout(timer);
+          this.isUsingTcp = true;
+          this.recordedChunks = [];
+          this.recordSocket = socket;
+
+          const hdr = Buffer.alloc(16);
+          hdr.writeUInt32LE(SNAU_MAGIC, 0); // SNAU
+          hdr.writeUInt8(2, 4);             // MODE_RECORD
+          hdr.writeUInt8(1, 5);             // 1 ch mono
+          hdr.writeUInt8(100, 6);           // Volume 100
+          hdr.writeUInt8(0, 7);             // Not muted
+          hdr.writeUInt32LE(16000, 8);      // 16000 Hz
+          hdr.writeUInt32LE(0xFFFFFFFF, 12);// Streaming
+          socket.write(hdr);
+          resolve();
+        });
+
+        socket.on("data", (chunk) => {
+          this.recordedChunks.push(chunk);
+        });
+
+        socket.on("error", (err) => {
+          clearTimeout(timer);
+          if (!connected) {
+            reject(err);
+          }
+        });
+      });
+      return;
+    } catch (tcpErr: any) {
+      this.isUsingTcp = false;
+      this.recordSocket = undefined;
+      console.warn(`[AudioTransport] Native TCP daemon unreachable (${tcpErr.message}), falling back to ADB arecord...`);
+    }
+
+    // 2. Legacy ADB Fallback
     if (remotePath !== "/tmp/snowball_voice.pcm") throw new Error("Unsupported recording scratch path");
     await this.ensureConnected();
-    this.recordingStartTime = Date.now();
     // Clean up any old files first
     await this.execAdb([
       "-s",
@@ -252,7 +366,7 @@ export class AudioTransport {
   }
 
   /**
-   * Stops background recording on the physical MK20 device safely via SIGINT.
+   * Stops background recording on the physical MK20 device safely.
    */
   public async stopDeviceRecording(): Promise<void> {
     const elapsed = Date.now() - this.recordingStartTime;
@@ -260,7 +374,31 @@ export class AudioTransport {
       await new Promise((r) => setTimeout(r, 300 - elapsed));
     }
 
-    // Signal MK20 arecord to stop cleanly
+    if (this.isUsingTcp && this.recordSocket) {
+      const socket = this.recordSocket;
+      this.recordSocket = undefined;
+      await new Promise<void>((resolve) => {
+        const timer = setTimeout(() => {
+          try { socket.destroy(); } catch {}
+          resolve();
+        }, 1500);
+        socket.on("close", () => {
+          clearTimeout(timer);
+          resolve();
+        });
+        try {
+          socket.write(Buffer.from([0]));
+          setTimeout(() => { try { socket.end(); } catch {} }, 50);
+        } catch {
+          clearTimeout(timer);
+          try { socket.destroy(); } catch {}
+          resolve();
+        }
+      });
+      return;
+    }
+
+    // Signal MK20 arecord to stop cleanly via ADB
     const stopCmd = "if [ -s /tmp/snowball_arecord.pid ]; then p=$(cat /tmp/snowball_arecord.pid); case $p in ''|*[!0-9]*) exit 0;; esac; if [ -r /proc/$p/cmdline ] && tr '\\000' ' ' < /proc/$p/cmdline | grep -q 'arecord.*snowball_voice.pcm'; then kill -2 $p; fi; fi";
     await this.execAdb(["-s", this.deviceAddress, "shell", stopCmd]).catch(() => {});
 
@@ -281,9 +419,19 @@ export class AudioTransport {
   }
 
   /**
-   * Cancels in-flight recording and removes remote scratch files.
+   * Cancels in-flight recording and cleans up temporary resources.
    */
   public async cancelDeviceRecording(remotePath = "/tmp/snowball_voice.pcm"): Promise<void> {
+    if (this.isUsingTcp) {
+      if (this.recordSocket) {
+        try { this.recordSocket.destroy(); } catch {}
+        this.recordSocket = undefined;
+      }
+      this.recordedChunks = [];
+      this.isUsingTcp = false;
+      return;
+    }
+
     if (remotePath !== "/tmp/snowball_voice.pcm") throw new Error("Unsupported recording scratch path");
     await this.stopDeviceRecording();
     await this.execAdb(["-s", this.deviceAddress, "shell", `rm -f '${remotePath}' /tmp/snowball_arecord.pid`]).catch(() => {});
