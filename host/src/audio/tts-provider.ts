@@ -3,6 +3,7 @@ export interface TtsSynthesizeOptions {
   speed?: number;
   volume?: number;
   language?: string;
+  destination?: "device" | "host";
 }
 
 export interface TtsSynthesizeResult {
@@ -10,7 +11,7 @@ export interface TtsSynthesizeResult {
   durationMs: number;
   sampleRate: number;
   text: string;
-  engine: "kokoro-onnx" | "windows-sapi" | "macos-say" | "mock" | "error";
+  engine: "supertonic-gpu" | "supertonic-cpu" | "os-native" | "kokoro-onnx" | "windows-sapi" | "macos-say" | "mock" | "error";
 }
 
 /**

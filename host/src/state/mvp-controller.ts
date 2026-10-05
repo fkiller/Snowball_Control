@@ -6,7 +6,7 @@ import { ContextManager, wrapText } from "./context.js";
 import { VoiceDraft, type DraftDestination } from "../audio/draft.js";
 import type { NativeVoiceProvider } from "../audio/provider.js";
 import type { NativeTtsProvider } from "../audio/tts-provider.js";
-import { LocalKokoroProvider } from "../audio/local-kokoro.js";
+import { LocalSupertonicProvider } from "../audio/local-supertonic.js";
 import type { DeviceInputPacket } from "../protocol/messages.js";
 import type { KeyVisual, ProjectInfo, SessionInfo } from "../types.js";
 import { GitProvider } from "../vcs/git.js";
@@ -108,7 +108,7 @@ export class MvpController {
     private changed: () => void = () => {},
     private storagePath?: string,
     readonly desktop: MvpDesktopClient = new CodexDesktopClient(),
-    readonly tts: NativeTtsProvider = new LocalKokoroProvider()
+    readonly tts: NativeTtsProvider = new LocalSupertonicProvider()
   ) {
     const c = this.context;
     c.harnesses = [

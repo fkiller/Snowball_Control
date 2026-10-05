@@ -125,12 +125,65 @@ The MK20 hardware features a **428×142** header display (`/dev/fb21`) and 20 in
   - `K9`: Project selector
   - `K5`: Session selector
   - `K1`: New task draft
+  - `K12`: Speak on **MK20 onboard speaker** (synthesized WAV chunks are pushed to `/tmp` via ADB and played with ALSA `aplay` on `audiocodec`; press again to stop)
+  - `K8`: Speak on **host PC / Mac speaker** (label `Speak PC` on Windows/Linux, `Speak Mac` on macOS; press again to stop)
   - `K20`: Voice recording toggle
   - `K16`: Transcribe & Send
-  - `K4`: Cancel / Discard draft
+  - `K4`: Cancel / Discard draft / Cut off active speech on both destinations (host player kill + `killall -9 aplay` on MK20)
   - `Left Knob`: Scroll navigation and item commit
   - `Right Knob`: System volume and mute
   - `Dual-Knob Chord`: Simultaneous press toggles HOST Mode (keystroke masking) and HID Mode (keystroke passthrough to PC).
+
+### Speech Synthesis (TTS) 3-Tier Fallback Chain
+
+Voice responses utilize a local-first, low-latency synthesis pipeline:
+```mermaid
+flowchart TD
+  Text[Agent Turn Text] --> Split[Sentence Chunker]
+  Split --> P1[Prefetch Chunk 0]
+  P1 --> Play1[AudioPlayer Stream Play]
+  Play1 -->|Concurrent Background Prefetch| P2[Synthesize Chunk 1..N]
+  P2 --> Play2[Sequential Playback]
+  P1 -->|Failure| OS[OS Native TTS - Windows SAPI / macOS say / Linux espeak]
+```
+1. **Tier 1 (Supertonic Optimized ONNX)**: Supertonic-3 resident synthesis.
+   - **Throughput Profile**: Supertonic is an ONNX diffusion pipeline with multi-step NumPy loops. ONNX Runtime `CPUExecutionProvider` (AVX2 / AVX-512) achieves ultra-low latency (**~1.5s** per sentence, RTF 0.37) by eliminating the 200+ PCIe host-device `Memcpy` nodes that choke CUDA loops.
+   - **Sentence Pipelined Streaming**: Rather than batching 300+ characters into a single blocking synthesize call, `LocalSupertonicProvider` (`host/src/audio/local-supertonic.ts`) chunks text into natural sentences, synthesizes chunk 0 immediately to start playback in $< 1.5\text{s}$, and prefetches chunk $1\dots N$ in the background while the previous sentence plays on speakers.
+2. **Tier 2 (Supertonic Alternate EP)**: Dynamic Execution Provider evaluation (`CUDAExecutionProvider`, `DmlExecutionProvider`, `CoreMLExecutionProvider`) when requested.
+3. **Tier 3 (OS Native TTS)**: Emergency offline platform fallback using native OS speech synthesizers (`PowerShell SAPI` on Windows, `say` on macOS, `espeak` on Linux) so speech delivery never fails.
+
+#### Speech Text Sanitization (`host/src/audio/korean-transliterate.ts`)
+Every utterance passes through `cleanTextForSpeech()` before synthesis (used by both `LocalSupertonicProvider` and middleware `start-all.mjs`):
+1. **Markdown stripping**: code fences → "코드 블록 생략", inline code / links / headers / bullets / emphasis removed.
+2. **Meaningless token removal** (`stripMeaninglessHashes`): UUIDs, `0x…` pointers, `sha256:/sha1:/md5:` digests, and 7–64 char hex strings that contain both digits and a–f letters (Git hashes; pure numbers and words like `beef` are kept). `커밋 854fc69를` → `커밋을` with particle re-agreement (`attachParticle`).
+3. **English → Hangul pronunciation** (`transliterateEnglishToHangul`, only when the text is Korean): developer-term dictionary (`GitHub`→깃허브, `PowerShell`→파워셸, `MK20`→엠케이이십, `PC`→피씨 …), key names (`K12`→케이십이), and letter-by-letter reading of remaining 2–5 letter all-caps acronyms.
+   - *Library survey*: `hangulize` (PyPI, last release 2012) and `g2pK`/`g2pkk` (depends on `eunjeon` → `distutils`, removed in Python 3.12) do not install on the bundled Python 3.12 runtime, so a zero-dependency dictionary + rule engine is used.
+
+### Cross-Platform Hardware Acceleration Matrix (STT & TTS)
+
+Snowball automatically probes and binds the optimal hardware execution backend per platform without requiring manual user reconfiguration:
+
+| Platform & Hardware | Speech-to-Text (STT - Whisper) | Text-to-Speech (TTS - Supertonic) | Fallback Progression |
+| :--- | :--- | :--- | :--- |
+| **Windows + NVIDIA** | `faster-whisper` (CUDA / cuBLAS) | Supertonic (`CUDAExecutionProvider`) | CUDA $\rightarrow$ CPU $\rightarrow$ OS SAPI |
+| **Windows + AMD / Intel** | `whisper.cpp` (Vulkan) / CPU | Supertonic (`DmlExecutionProvider` DirectML) | DirectML $\rightarrow$ CPU $\rightarrow$ OS SAPI |
+| **macOS (Apple Silicon)** | `whisper.cpp` (Metal) / `mlx-whisper` | Supertonic (`CoreMLExecutionProvider`) | CoreML/Metal $\rightarrow$ CPU $\rightarrow$ OS `say` |
+| **Linux + NVIDIA** | `faster-whisper` (CUDA) | Supertonic (`CUDAExecutionProvider`) | CUDA $\rightarrow$ CPU $\rightarrow$ OS `espeak` |
+| **Linux + AMD / Intel** | `whisper.cpp` (Vulkan) | Supertonic (OpenVINO / CPU EP) | OpenVINO/CPU $\rightarrow$ OS `espeak` |
+| **Universal Fallback** | `faster-whisper` / `whisper.cpp` (CPU) | Supertonic (`CPUExecutionProvider`) | OS Native Synthesizer |
+
+#### Backend Roles:
+- **DirectML (DirectX 12)**: Used in the TTS ONNX pipeline (`DmlExecutionProvider`) on Windows to accelerate AMD Radeon and Intel Arc/Iris GPUs without requiring NVIDIA CUDA.
+- **MLX / Metal / CoreML**: Used on Apple Silicon macOS to leverage unified memory, the Apple Neural Engine (ANE), and Metal GPU for ultra-low latency STT (`whisper.cpp Metal` / `mlx-whisper`) and TTS (`CoreMLExecutionProvider`).
+- **Vulkan (`ggml-vulkan`)**: Used in the STT pipeline (`whisper.cpp`) as a cross-platform compute backend for AMD and Intel GPUs on Windows and Linux, utilizing standard SPIR-V compute shaders.
+
+### Multilingual Support Framework (i18n)
+
+Multilingual support is structured around complete language packages:
+$$\text{Language Package} = \text{UI Resources (Fonts \& Labels)} + \text{STT (Whisper)} + \text{TTS (Supertonic / OS Native)}$$
+
+- **Living OS Auto-Discovery**: Automatically queries OS display culture (`(Get-Culture).Name` on Windows, `LANG` on POSIX) on startup. Korean OS (`ko-KR`) configures `ko` as the primary language and activates D2Coding Korean font rendering on the MK20 HUD.
+- **Dynamic Configuration & Lifecycle**: Languages can be enabled, disabled, or set as primary via `/v1/settings` and `languageManager`. Adding a language ensures corresponding STT and TTS model weights exist locally.
 
 ---
 

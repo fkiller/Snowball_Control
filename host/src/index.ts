@@ -1,12 +1,12 @@
 import { CodexAdapter } from './codex/adapter.js';
 import { LocalWhisperProvider } from './audio/local-whisper.js';
-import { LocalKokoroProvider } from './audio/local-kokoro.js';
+import { LocalSupertonicProvider } from './audio/local-supertonic.js';
 import { UdpTransport } from './transport/udp.js';
 import { MvpController } from './state/mvp-controller.js';
 import { fileURLToPath } from 'node:url';
 
 const udp = new UdpTransport();
-const tts = new LocalKokoroProvider();
+const tts = new LocalSupertonicProvider();
 const controller = new MvpController(
   new CodexAdapter(),
   new LocalWhisperProvider(),
