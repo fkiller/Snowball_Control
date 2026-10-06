@@ -593,7 +593,13 @@ export class MvpController {
   }
   private async dispatch(packet: DeviceInputPacket) {
     const c = this.context;
-    if (packet.type === "knob_right") { packet.isClick ? c.onRightKnobClick() : c.onRightKnob(packet.delta || 0); return; }
+    if (packet.type === "knob_right") {
+      packet.isClick ? c.onRightKnobClick() : c.onRightKnob(packet.delta || 0);
+      if (this.tts?.setVolume) {
+        this.tts.setVolume(c.volume / 100, c.isMuted);
+      }
+      return;
+    }
     if (packet.type === "knob_left") {
       if (this.requestView) { this.questionOffset = Math.max(0, this.questionOffset + (packet.delta || 0)); return; }
       if (packet.isClick) {

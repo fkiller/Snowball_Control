@@ -186,6 +186,11 @@ Multilingual support is structured around complete language packages:
 $$\text{Language Package} = \text{UI Resources (Fonts \& Labels)} + \text{STT (Whisper)} + \text{TTS (Supertonic / OS Native)}$$
 
 - **Living OS Auto-Discovery**: Automatically queries OS display culture (`(Get-Culture).Name` on Windows, `LANG` on POSIX) on startup. Korean OS (`ko-KR`) configures `ko` as the primary language and activates D2Coding Korean font rendering on the MK20 HUD.
+- **Dual-Font Character Typography (`hardware/mk20/hud/unicode_text.c`)**:
+  - To prevent typographical visual inconsistency across mixed Korean and English lines, character routing strictly segregates codepoints:
+    - **ASCII Characters** (`cp < 128`): Directly rendered via the built-in fixed-pitch `font8x16` bitmap font (8px glyph width at baseline 13), perfectly matching all system header and status lines.
+    - **Korean & Unicode Characters** (`cp >= 128`): Rendered via FreeType using `D2Coding.ttf` (16px glyph width).
+  - This ensures 100% font uniformity: English characters look identical regardless of whether Korean appears on the line.
 - **Dynamic Configuration & Lifecycle**: Languages can be enabled, disabled, or set as primary via `/v1/settings` and `languageManager`. Adding a language ensures corresponding STT and TTS model weights exist locally.
 
 ### Native Audio Streaming Subsystem (`mk20-audio` & `SNAU` Protocol)
@@ -203,12 +208,12 @@ To eliminate high latency and flash wear from push-and-pull ADB commands, audio 
   | Field | Type | Size | Description |
   | :--- | :--- | :--- | :--- |
   | `magic` | `char[4]` | 4B | Protocol magic: `'S'`, `'N'`, `'A'`, `'U'` (`0x55414E53` in LE) |
-  | `mode` | `uint8_t` | 1B | `1` = PLAY (TTS), `2` = RECORD (STT), `3` = PING |
+  | `mode` | `uint8_t` | 1B | `1` = PLAY (TTS), `2` = RECORD (STT), `3` = PING, `4` = SET_VOLUME |
   | `channels` | `uint8_t` | 1B | `1` (mono) or `2` (stereo) |
   | `format` | `uint8_t` | 1B | Sample format: `16` (16-bit signed integer PCM, little-endian) |
-  | `volume` | `uint8_t` | 1B | Software attenuation volume factor (`0`..`100`) |
+  | `volume` | `uint8_t` | 1B | Hardware mixer & software attenuation factor (`0`..`100`) |
   | `sample_rate` | `uint32_t` | 4B | Sample rate: `16000` (STT), `24000` (TTS Supertonic), or custom |
-  | `data_len` | `uint32_t` | 4B | Payload byte count (`0` for continuous live streaming until socket close) |
+  | `data_len` | `uint32_t` | 4B | Payload byte count (`0` for continuous live streaming or volume packet) |
   | `is_muted` | `uint8_t` | 1B | `1` if audio output should be muted, `0` otherwise |
   | `reserved` | `uint8_t[3]` | 3B | Zero-padding alignment bytes |
 
@@ -219,13 +224,16 @@ To eliminate high latency and flash wear from push-and-pull ADB commands, audio 
 
 - **Speaker Playback (TTS Streaming)**:
   - The host connects with `MODE_PLAY`, transmitting the `SNAU` header with current knob volume and mute status.
-  - The daemon sets the hardware ALSA mixer levels (`LINEOUT volume` 0..31 and `Headphone volume` 0..7 via `amixer cset`), scales PCM samples in 16-bit integer space, and pipes them directly into `aplay -D hw:0,0 -r <rate> -f S16_LE -c <ch> -t raw`.
+  - The daemon sets the hardware ALSA mixer levels (`LINEOUT volume` 0..31 and `Headphone volume` 0..7 via `amixer sset`), scales PCM samples in 16-bit integer space, and pipes them directly into `aplay -D hw:0,0 -r <rate> -f S16_LE -c <ch> -t raw`.
   - Zero disk I/O on the device; speech plays back in real-time as chunks stream from the host.
 
-- **Volume & Mute Integration**:
+- **Volume & Mute Integration (Live Adjustment)**:
   - The MK20's physical `Right Knob` controls system volume (`0`..`100`) and click mute.
-  - **MK20 Hardware Speaker**: Volume is transmitted in the `SNAU` header and applied simultaneously at the hardware mixer and software scaling stages in `mk20-audio`.
-  - **Host PC / Mac Speaker**: Volume is scaled directly in-memory on the host's 16-bit PCM buffer before dispatching to the OS audio player (`PowerShell SoundPlayer` on Windows, `afplay` on macOS, `aplay` on Linux).
+  - **Dynamic In-Flight Volume Adjustment**: Rotating or clicking the Right Knob during active speech immediately adjusts hardware gain without disrupting playback:
+    - **Local MK20 Loop**: `mk20-hud` directly calls `apply_hardware_volume()` via ALSA mixer (`< 1ms` latency).
+    - **TCP Daemon Control**: Host sends a lightweight 16-byte `MODE_SET_VOLUME` packet to `mk20-audio` (port 7702), applying gain updates to `amixer` instantaneously.
+    - **Host PC / Mac Playback**: Host dynamically scales PCM samples in-memory across streaming sentence chunks 1..N.
+    - **Zero Premature Cutoff**: Player teardown avoids indiscriminate ADB `killall -9 aplay` commands, ensuring multi-sentence TTS streams finish naturally to the last word.
 
 - **Hardware Concurrency & Interruption Management**:
   - The Allwinner T113 `audiocodec` (`hw:0,0`) cannot operate in full-duplex mode. Active speaker playback (`aplay`) locks the audio device and must terminate before microphone recording (`arecord`) can begin.

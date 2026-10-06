@@ -1,10 +1,7 @@
-TOOLCHAIN_DIR ?= $(abspath ../Keyboard_T113_SourceCode_20260427_MK20/Tina-t113-pro/prebuilt/gcc/linux-x86/arm/toolchain-sunxi-glibc/toolchain/bin)
-CROSS_COMPILE ?= $(TOOLCHAIN_DIR)/arm-openwrt-linux-
-CC := $(CROSS_COMPILE)gcc
-CFLAGS := -O2 -Wall -march=armv7-a -mtune=cortex-a7 -mfpu=neon -mfloat-abi=hard
+CC ?= arm-linux-gnueabihf-gcc
+CFLAGS := -O2 -fno-stack-protector -U_TIME_BITS -D_TIME_BITS=32 -U_FILE_OFFSET_BITS -D_FILE_OFFSET_BITS=32 -Wall -march=armv7-a -mtune=cortex-a7 -mfpu=neon -mfloat-abi=hard
 LDFLAGS := -lm -ldl
-FREETYPE_HEADERS ?= .deps/freetype-2.6.1/include
-FREETYPE_ARCHIVE ?= ../Keyboard_T113_SourceCode_20260427_MK20/Tina-t113-pro/dl/freetype-2.6.1.tar.gz
+FREETYPE_HEADERS ?= /usr/include/freetype2
 CFLAGS += -I$(FREETYPE_HEADERS)
 
 SRCS := mk20-hud.c v2_state.c v2_render.c unicode_text.c

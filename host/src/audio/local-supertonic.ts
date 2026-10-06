@@ -46,6 +46,14 @@ export class LocalSupertonicProvider implements NativeTtsProvider {
   public readonly player = new AudioPlayer();
   private isSpawning = false;
   private currentAbort?: AbortController;
+  public currentVolume = 0.75;
+  public isMuted = false;
+
+  public setVolume(volume: number, isMuted = false): void {
+    this.currentVolume = Math.max(0, Math.min(1.0, volume));
+    this.isMuted = isMuted;
+    this.player.setVolume(this.currentVolume, isMuted);
+  }
 
   constructor(
     private computeDevice = process.env.SNOWBALL_TTS_DEVICE || "auto"
@@ -271,16 +279,21 @@ export class LocalSupertonicProvider implements NativeTtsProvider {
     const sentences = splitIntoSentences(cleaned);
     if (sentences.length === 0) return;
 
+    if (options?.volume !== undefined) {
+      this.currentVolume = Math.max(0, Math.min(1.0, options.volume));
+    }
+
     // Set up cancellation token for this speech invocation
     this.currentAbort?.abort();
     const abort = new AbortController();
     this.currentAbort = abort;
 
     const playChunk = async (wavPath: string) => {
+      const vol = this.isMuted ? 0 : this.currentVolume;
       if (options?.destination === "device") {
-        await this.player.playOnDevice(wavPath, options?.volume ?? 1.0);
+        await this.player.playOnDevice(wavPath, vol);
       } else {
-        await this.player.play(wavPath, options?.volume ?? 1.0);
+        await this.player.play(wavPath, vol);
       }
     };
 

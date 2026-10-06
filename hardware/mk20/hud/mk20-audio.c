@@ -43,9 +43,10 @@
 #define AUDIO_PORT 7702
 #define SNAU_MAGIC 0x55414E53 // 'SNAU' in little endian
 
-#define MODE_PLAY   1
-#define MODE_RECORD 2
-#define MODE_PING   3
+#define MODE_PLAY        1
+#define MODE_RECORD      2
+#define MODE_PING        3
+#define MODE_SET_VOLUME  4
 
 #pragma pack(push, 1)
 typedef struct {
@@ -377,6 +378,9 @@ int main(int argc, char **argv) {
                 handle_record(client_fd, &hdr);
             } else if (hdr.mode == MODE_PING) {
                 write_all(client_fd, "PONG", 4);
+            } else if (hdr.mode == MODE_SET_VOLUME) {
+                apply_hardware_volume(hdr.volume, hdr.muted);
+                write_all(client_fd, "OK\n", 3);
             }
         } else {
             fprintf(stderr, "[mk20-audio] Invalid or unrecognized SNAU header (got %zd bytes)\n", got);

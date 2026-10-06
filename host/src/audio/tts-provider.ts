@@ -21,4 +21,5 @@ export interface NativeTtsProvider {
   synthesize(text: string, options?: TtsSynthesizeOptions): Promise<TtsSynthesizeResult>;
   stop(): Promise<void>;
   close(): void;
+  setVolume?(volume: number, isMuted?: boolean): void;
 }

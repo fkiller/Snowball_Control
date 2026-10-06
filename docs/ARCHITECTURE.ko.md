@@ -184,6 +184,12 @@ flowchart TD
 | **Linux + AMD / Intel** | `whisper.cpp` (Vulkan) | Supertonic (OpenVINO / CPU EP) | OpenVINO/CPU $\rightarrow$ OS `espeak` |
 | **범용 폴백** | `faster-whisper` / `whisper.cpp` (CPU) | Supertonic (`CPUExecutionProvider`) | OS 네이티브 합성기 |
 
+- **다국어 UI 타이포그래피 분리 (`hardware/mk20/hud/unicode_text.c`)**:
+  - 한글과 영문이 한 줄에 섞여 있을 때 영문 폰트가 왜곡되거나 줄마다 달라지는 현상을 완전히 방지하기 위해 코드포인트별 렌더러를 엄격히 분리:
+    - **ASCII 문자** (`cp < 128`): HUD 고유의 임베디드 고정폭 `font8x16` 비트맵 폰트(글자당 8px)로 직접 렌더링하여 헤더, 상태창, 영문 전용 줄과 100% 동일한 일관성 유지.
+    - **한글 및 유니코드** (`cp >= 128`): FreeType을 거쳐 `D2Coding.ttf` 폰트(글자당 16px)로 렌더링.
+  - 이를 통해 한글 폰트는 오직 한글에만 적용되고, 모든 영문은 일관되게 고정폭 영문 폰트로 렌더링된다.
+
 ### 네이티브 오디오 스트리밍 서브시스템 (`mk20-audio` 및 `SNAU` 프로토콜)
 
 ADB push/pull 방식의 지연 시간과 eMMC/SD 플래시 마모를 원천 차단하기 위해, MK20의 모든 오디오 입출력은 Tina Linux 상에서 실행되는 전용 C 네이티브 데몬(`mk20-audio`)을 통해 처리된다:
@@ -199,12 +205,12 @@ ADB push/pull 방식의 지연 시간과 eMMC/SD 플래시 마모를 원천 차�
   | 필드 | 타입 | 크기 | 설명 |
   | :--- | :--- | :--- | :--- |
   | `magic` | `char[4]` | 4B | 프로토콜 매직: `'S'`, `'N'`, `'A'`, `'U'` (LE `0x55414E53`) |
-  | `mode` | `uint8_t` | 1B | `1` = PLAY (TTS), `2` = RECORD (STT), `3` = PING |
+  | `mode` | `uint8_t` | 1B | `1` = PLAY (TTS), `2` = RECORD (STT), `3` = PING, `4` = SET_VOLUME |
   | `channels` | `uint8_t` | 1B | `1` (모노) 또는 `2` (스테레오) |
   | `format` | `uint8_t` | 1B | 샘플 포맷: `16` (16비트 부호 있는 PCM, 리틀엔디언) |
-  | `volume` | `uint8_t` | 1B | 소프트웨어 감쇄 볼륨 계수 (`0`..`100`) |
+  | `volume` | `uint8_t` | 1B | 하드웨어 믹서 및 소프트웨어 감쇄 볼륨 계수 (`0`..`100`) |
   | `sample_rate` | `uint32_t` | 4B | 샘플링 레이트: `16000` (STT), `24000` (TTS), 또는 가변 |
-  | `data_len` | `uint32_t` | 4B | 페이로드 바이트 수 (`0`인 경우 소켓 종료까지 연속 실시간 스트리밍) |
+  | `data_len` | `uint32_t` | 4B | 페이로드 바이트 수 (`0`인 경우 소켓 종료까지 연속 실시간 스트리밍 또는 볼륨 패킷) |
   | `is_muted` | `uint8_t` | 1B | `1`이면 음소거, `0`이면 정상 출력 |
   | `reserved` | `uint8_t[3]` | 3B | 4바이트 정렬 패딩 |
 
@@ -216,6 +222,13 @@ ADB push/pull 방식의 지연 시간과 eMMC/SD 플래시 마모를 원천 차�
 - **스피커 재생 (TTS 스트리밍)**:
   - 호스트가 현재 노브 볼륨 및 음소거 플래그와 함께 `MODE_PLAY`로 연결.
   - 데몬이 하드웨어 ALSA 믹서 게인(`LINEOUT volume` 0..31, `Headphone volume` 0..7)을 설정하고, 16비트 정수 연산으로 PCM 샘플을 스케일링한 뒤 `aplay -D hw:0,0 -r <rate> -f S16_LE -c <ch> -t raw`로 실시간 파이프 전송.
+
+- **실시간 볼륨 조절 및 조기 끊김 방지 (Live Volume Adjustment)**:
+  - MK20의 물리적 `Right Knob` 회전 및 클릭 시 발화 중에도 즉각 하드웨어 게인이 반영된다:
+    - **로컬 HUD 루프**: `mk20-hud`가 `apply_hardware_volume()`을 호출하여 ALSA 믹서를 직접 조절 (`< 1ms` 반응 속도).
+    - **TCP 데몬 제어**: 호스트가 16바이트 `MODE_SET_VOLUME` 패킷을 `mk20-audio`(포트 7702)로 송신하여 백그라운드 믹서 게인을 즉시 갱신.
+    - **호스트 스피커**: 호스트 메모리 상에서 문장 청크 1..N에 새 볼륨을 즉시 적용.
+    - **조기 끊김 방지**: 청크 교체 시 지연된 ADB killall 명령어 발송을 제거하고 메모리 기반 프로세스/소켓 관리로 전환하여, 다중 문장 스트리밍 도중 발화가 중간에 뚝 끊기는 버그를 완전히 해결.
 
 - **하드웨어 단일 코덱 점유 및 중단 관리**:
   - Allwinner T113 내장 오디오 코덱(`hw:0,0`)은 재생과 녹음을 동시에 지원하지 않는 단독 배타적 장치다.

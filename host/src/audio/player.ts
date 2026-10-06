@@ -22,8 +22,43 @@ export class AudioPlayer extends EventEmitter {
     this.adbPath = adbPath || AudioTransport.discoverAdb();
   }
 
+  private currentVolume = 1.0;
+  private isMuted = false;
+
   get isPlaying(): boolean {
     return this._isPlaying;
+  }
+
+  public setVolume(volume: number, isMuted = false): void {
+    this.currentVolume = Math.max(0, Math.min(1.0, volume));
+    this.isMuted = isMuted;
+
+    // Send instantaneous hardware gain update to MK20 audio daemon (TCP 7702)
+    const rawIp = this.deviceAddress.split(":")[0];
+    const targetHost =
+      rawIp === "127.0.0.1" || rawIp === "localhost"
+        ? (process.env.MK20_IP || process.env.SNOWBALL_MK20_IP || "192.168.1.248")
+        : rawIp;
+    const targetPort = 7702;
+
+    try {
+      const volInt = Math.max(0, Math.min(100, Math.round(this.currentVolume * 100)));
+      const muteFlag = this.isMuted || volInt === 0 ? 1 : 0;
+      const sock = net.createConnection({ host: targetHost, port: targetPort, timeout: 200 }, () => {
+        const hdr = Buffer.alloc(16);
+        hdr.writeUInt32LE(SNAU_MAGIC, 0); // SNAU
+        hdr.writeUInt8(4, 4);             // MODE_SET_VOLUME
+        hdr.writeUInt8(1, 5);             // Channels
+        hdr.writeUInt8(volInt, 6);        // Volume 0-100
+        hdr.writeUInt8(muteFlag, 7);      // Muted flag
+        hdr.writeUInt32LE(24000, 8);      // Sample rate
+        hdr.writeUInt32LE(0, 12);         // Data length
+        sock.write(hdr, () => {
+          sock.end();
+        });
+      });
+      sock.on("error", () => {});
+    } catch {}
   }
 
   /**
@@ -35,8 +70,16 @@ export class AudioPlayer extends EventEmitter {
       throw new Error(`Audio file does not exist: ${wavPath}`);
     }
 
-    // Stop any in-flight playback first
-    await this.stop();
+    if (this.activeProc) {
+      try {
+        if (process.platform === "win32" && this.activeProc.pid) {
+          spawn("taskkill", ["/F", "/T", "/PID", String(this.activeProc.pid)], { windowsHide: true });
+        } else {
+          this.activeProc.kill("SIGTERM");
+        }
+      } catch {}
+      this.activeProc = undefined;
+    }
 
     const volClamped = Math.max(0, Math.min(1.0, volume));
     if (volClamped <= 0.001) {
@@ -135,7 +178,18 @@ export class AudioPlayer extends EventEmitter {
       throw new Error(`Audio file does not exist: ${wavPath}`);
     }
 
-    await this.stop();
+    if (this.activeDeviceSocket) {
+      try {
+        this.activeDeviceSocket.destroy();
+      } catch {}
+      this.activeDeviceSocket = undefined;
+    }
+    if (this.activeDeviceProc) {
+      try {
+        this.activeDeviceProc.kill("SIGKILL");
+      } catch {}
+      this.activeDeviceProc = undefined;
+    }
     this._isPlaying = true;
     this.emit("play", { wavPath, target: "device" });
 
