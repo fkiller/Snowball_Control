@@ -8,6 +8,28 @@ This document serves as the **Single Source of Truth (SSOT)** governing the desi
 
 ---
 
+## Product Philosophy: inter-Harness Local Control
+
+**Snowball is an inter-Harness local control interface: the user stays in control while moving between AI harnesses on their own computers.** Codex, AGY, and OpenCode share a physical desk terminal and local Web Supervisor for navigation, observation, and supported native actions. Here, **inter-Harness** means a common user control surface across harnesses, with a deliberate choice of `Machine > Harness > Project > Session` as the destination for work from the independent MK20 terminal.
+
+The product follows these principles:
+
+- **The user owns the work.** The user's PC owns projects, native processes, and session data. The user chooses where a prompt goes and which installed tool to use. MK20 makes those choices tangible through keys, knobs, displays, and voice input.
+- **A common interface preserves native differences.** Each harness retains its session history, model identifiers, supported effort values, and permission semantics. Adapters expose native capabilities; compatibility follows the installed version and observed behavior. Session conversion, conversation transfer between harnesses, and autonomous agent coordination are outside the current Preview scope.
+- **Local control comes first.** The control path does not require a cloud control plane. Once local dependencies are installed, device interaction and local observation/control should remain available without Internet access. Cloud model inference still depends on its provider's connectivity. The loopback Supervisor opens without a login or PIN; device pairing is a separate boundary.
+- **Reality is the source of truth.** Models, efforts, projects, and sessions come from native tools and local data. Execution and completion must be backed by native events, and approval or interruption must respect the harness's actual capabilities. Discovery failures and unsupported actions remain visible rather than being presented as success.
+- **Convenience carries explicit boundaries.** Plugin permissions should be limited while authorized host dispatch and observation remain possible. The current Preview is for personal workstations and trusted local networks; its documented security omissions and unfinished native integrations remain part of the product's stated limits.
+
+These principles define the product direction. The sections below distinguish the current implementation, verified behavior, and remaining work; this philosophy does not certify that every native control operation is implemented for every harness.
+
+### Independent MK20 and Multiple Middleware Machines
+
+The intended product flow is an MK20 that joins Wi-Fi as an independent device, discovers middleware hosts on its private LAN, and lets the user pair more than one host. Two paired hosts appear as two machines; three appear as three. Selecting a machine exposes that middleware's registered harnesses, projects, and sessions, and routes supported actions to that selected machine. Discovery finds candidates; pairing registers the user's chosen hosts. The device retains its paired host list and selection independently of any one PC.
+
+Adding or switching a middleware PC must be an ordinary discovery/pairing operation. It must not require editing the SD card, replacing a PC MAC address, reconnecting USB, or enabling ADB. SD image installation, Wi-Fi provisioning, firmware maintenance, and recovery are separate device setup tasks. The `DEV_PC_MAC` restriction in the current development bootstrap controls TCP ADB access; it is not the product's machine pairing registry.
+
+**Current implementation gap:** The inspected MK20 Preview path maintains one UDP host endpoint, and the integrated runtime initializes its machine list with the local PC only. The installer uses a configured MK20 address and ADB for deployment and readiness checks. These paths do not implement the intended device-owned multi-host discovery, persistent pairing, and machine switching. A machine selector or host-registry component alone does not establish that this end-to-end flow works; it requires validation with two or more real middleware PCs.
+
 ## 1. Repositories and Concrete Execution Paths
 
 | Subsystem | Location | Current Role & Responsibility |
@@ -125,12 +147,37 @@ The MK20 hardware features a **428×142** header display (`/dev/fb21`) and 20 in
   - `K9`: Project selector
   - `K5`: Session selector
   - `K1`: New task draft
+  - `K12`: Speak toggle (Manual speech of active turn & Auto-TTS mode toggle)
   - `K20`: Voice recording toggle
   - `K16`: Transcribe & Send
-  - `K4`: Cancel / Discard draft
+  - `K4`: Cancel / Discard draft / Cut off active speech
   - `Left Knob`: Scroll navigation and item commit
   - `Right Knob`: System volume and mute
   - `Dual-Knob Chord`: Simultaneous press toggles HOST Mode (keystroke masking) and HID Mode (keystroke passthrough to PC).
+
+### Speech Synthesis (TTS) 3-Tier Fallback Chain
+
+Voice responses utilize a local-first, low-latency synthesis pipeline:
+```mermaid
+flowchart TD
+  Text[Agent Turn Text] --> GPU[Supertonic GPU - CUDA EP]
+  GPU -->|Failure / Unsupported| CPU[Supertonic CPU - CPU EP]
+  CPU -->|Failure / Corrupt| OS[OS Native TTS - Windows SAPI / macOS say / Linux espeak]
+  GPU --> Audio[Playback via AudioPlayer]
+  CPU --> Audio
+  OS --> Audio
+```
+1. **Tier 1 (Supertonic GPU)**: CUDA-accelerated ONNX synthesis on NVIDIA GPU. Preloads required `cudnn` and `cublas` runtime sublibraries to guarantee deterministic GPU execution.
+2. **Tier 2 (Supertonic CPU)**: Graceful local CPU fallback using ONNX Runtime CPUExecutionProvider if GPU resources are exhausted or unavailable.
+3. **Tier 3 (OS Native TTS)**: Emergency offline platform fallback using native OS speech synthesizers so speech delivery never fails.
+
+### Multilingual Support Framework (i18n)
+
+Multilingual support is structured around complete language packages:
+$$\text{Language Package} = \text{UI Resources (Fonts \& Labels)} + \text{STT (Whisper)} + \text{TTS (Supertonic / OS Native)}$$
+
+- **Living OS Auto-Discovery**: Automatically queries OS display culture (`(Get-Culture).Name` on Windows, `LANG` on POSIX) on startup. Korean OS (`ko-KR`) configures `ko` as the primary language and activates D2Coding Korean font rendering on the MK20 HUD.
+- **Dynamic Configuration & Lifecycle**: Languages can be enabled, disabled, or set as primary via `/v1/settings` and `languageManager`. Adding a language ensures corresponding STT and TTS model weights exist locally.
 
 ---
 

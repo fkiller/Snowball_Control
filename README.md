@@ -8,7 +8,7 @@
 </h1>
 
 <p align="center">
-  <strong>Physical Terminal Firmware, Tina Linux HUD & Device Integration for AI Coding Agents</strong>
+  <strong>The Physical Terminal for Snowball's inter-Harness Local Control</strong>
 </p>
 
 <p align="center">
@@ -25,6 +25,10 @@
 ---
 
 ## 🌟 Overview
+
+**Snowball is an inter-Harness local control interface.** It gives developers a common way to navigate and control Codex, AGY, and OpenCode through an MK20 desk terminal and local Web Supervisor. The user chooses the harness, project, and session; each harness keeps its native runtime, history, models, and permissions.
+
+Our philosophy is to keep control in the user's hands and on their computer: make switching tools and following work immediate, discover capabilities from the installed environment, and show real results and limitations. The full [product philosophy](docs/ARCHITECTURE.md#product-philosophy-inter-harness-local-control) is maintained with the architecture.
 
 **Preview:** Intended exclusively for personal workstations and trusted local networks. The initial scope covers OpenAI Codex, Google Antigravity (AGY), OpenCode, MK20 hardware, and local Web UI. Certain security boundaries (such as unencrypted UDP sync and development TCP ADB) are omitted as documented in [Current Architecture and Boundaries](docs/ARCHITECTURE.md).
 
