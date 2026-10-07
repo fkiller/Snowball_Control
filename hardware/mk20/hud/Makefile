@@ -7,10 +7,13 @@ FREETYPE_HEADERS ?= .deps/freetype-2.6.1/include
 FREETYPE_ARCHIVE ?= ../Keyboard_T113_SourceCode_20260427_MK20/Tina-t113-pro/dl/freetype-2.6.1.tar.gz
 CFLAGS += -I$(FREETYPE_HEADERS)
 
-SRCS := mk20-hud.c v2_state.c v2_render.c unicode_text.c
+SRCS := mk20-hud.c mk20-network.c v2_state.c v2_render.c unicode_text.c
 OBJS := $(SRCS:.c=.o)
 
-all: mk20-hud
+all: mk20-hud mk20-audio
+
+mk20-audio: mk20-audio.c
+	$(CC) $(CFLAGS) -o $@ $<
 
 # Explicit lab target; not part of the normal HUD build or deployment.
 pcm-stream: pcm-stream.c
@@ -32,4 +35,4 @@ $(FREETYPE_HEADERS)/ft2build.h:
 	tar -xzf "$(FREETYPE_ARCHIVE)" -C .deps
 
 clean:
-	rm -f mk20-hud $(OBJS)
+	rm -f mk20-hud mk20-audio $(OBJS)

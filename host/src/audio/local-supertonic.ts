@@ -43,7 +43,7 @@ export class LocalSupertonicProvider implements NativeTtsProvider {
   private child?: ChildProcessWithoutNullStreams;
   private seq = 0;
   private pending = new Map<number, { resolve(value: any): void; reject(error: Error): void; timer: NodeJS.Timeout }>();
-  public readonly player = new AudioPlayer();
+  public readonly player: AudioPlayer;
   private isSpawning = false;
   private currentAbort?: AbortController;
   public currentVolume = 0.75;
@@ -56,8 +56,9 @@ export class LocalSupertonicProvider implements NativeTtsProvider {
   }
 
   constructor(
-    private computeDevice = process.env.SNOWBALL_TTS_DEVICE || "auto"
-  ) {}
+    private computeDevice = process.env.SNOWBALL_TTS_DEVICE || "auto",
+    player = new AudioPlayer()
+  ) { this.player = player; }
 
   public static resolvePythonRuntime(): { exec: string; workerPy: string } {
     const venvPyWin = path.resolve(__dirname, "../../.venv-whisper/Scripts/python.exe");
@@ -71,14 +72,14 @@ export class LocalSupertonicProvider implements NativeTtsProvider {
     const workerPy = candidates.find((c) => fs.existsSync(c)) || candidates[0];
 
     const venvList = [
+      process.env.PYTHON_BIN || "",
       process.env.VIRTUAL_ENV ? path.resolve(process.env.VIRTUAL_ENV, process.platform === "win32" ? "Scripts/python.exe" : "bin/python") : "",
       process.platform === "win32" ? venvPyWin : venvPyUnix,
-      "E:/developments/projects/Snowball_Control/host/.venv-whisper/Scripts/python.exe",
     ].filter(Boolean);
     for (const venv of venvList) {
       if (fs.existsSync(venv)) return { exec: venv, workerPy };
     }
-    return { exec: "python", workerPy };
+    return { exec: process.platform === "win32" ? "python" : "python3", workerPy };
   }
 
   public static async ensureDependencies(): Promise<{ ok: boolean; status: any }> {
@@ -90,7 +91,7 @@ export class LocalSupertonicProvider implements NativeTtsProvider {
     ];
     const script = scriptCandidates.find((s) => fs.existsSync(s));
     if (!script) {
-      return { ok: true, status: { note: "Runtime script not found, assuming pre-configured" } };
+      return { ok: false, status: { error: "TTS runtime verification script not found" } };
     }
 
     return new Promise<{ ok: boolean; status: any }>((resolve) => {
@@ -110,8 +111,8 @@ export class LocalSupertonicProvider implements NativeTtsProvider {
 
   public async warmup(): Promise<boolean> {
     try {
-      await this.ensureWorker();
-      return true;
+      const status=await this.request<{ready:boolean}>("status",{},15000);
+      return status.ready===true;
     } catch (e: any) {
       console.warn("[LocalSupertonicProvider] Warmup warning:", e.message);
       return false;
@@ -198,7 +199,7 @@ export class LocalSupertonicProvider implements NativeTtsProvider {
   public async synthesize(text: string, options?: TtsSynthesizeOptions): Promise<TtsSynthesizeResult> {
     const cleanText = cleanTextForSpeech(text, options?.language);
     if (!cleanText) {
-      return { wavPath: "", durationMs: 0, sampleRate: 44100, text: "", engine: "mock" };
+      throw Error("No speech text to synthesize");
     }
 
     const hasKorean = /[\uac00-\ud7af\u1100-\u11ff\u3130-\u318f]/.test(cleanText);
@@ -229,45 +230,27 @@ export class LocalSupertonicProvider implements NativeTtsProvider {
         timeoutMs
       );
 
+      if(!res.ok||res.wav_path!==path.resolve(tmpWav)||!fs.existsSync(res.wav_path)||!Number.isFinite(res.duration_ms)||res.duration_ms<=0||!['supertonic-gpu','supertonic-cpu','os-native'].includes(res.engine))throw Error("TTS worker returned no verifiable audio");
       const procMs = res.process_time_ms || 0;
       const rtf = res.duration_ms > 0 ? (procMs / res.duration_ms).toFixed(2) : "0.00";
-      console.log(`[Supertonic] Synth: "${cleanText.slice(0, 32)}..." -> ${res.duration_ms}ms audio in ${procMs}ms (RTF: ${rtf}, ${res.engine})`);
+      console.log(`[Supertonic] Synth: "${cleanText.length} characters" -> ${res.duration_ms}ms audio in ${procMs}ms (RTF: ${rtf}, ${res.engine})`);
 
       return {
         wavPath: res.wav_path,
         durationMs: res.duration_ms,
         sampleRate: res.sample_rate || 44100,
         text: cleanText,
-        engine: res.engine || "supertonic-gpu",
+        engine: res.engine,
       };
     } catch (err: any) {
-      console.warn("[LocalSupertonicProvider] Worker synthesis failed:", err.message, ". Executing emergency OS Native fallback...");
-      try {
-        if (process.platform === "win32") {
-          const { execSync } = await import("node:child_process");
-          const psScript = `Add-Type -AssemblyName System.Speech; $s = New-Object System.Speech.Synthesis.SpeechSynthesizer; $s.SetOutputToWaveFile('${tmpWav.replace(/\\/g, "/")}'); $s.Speak('${cleanText.replace(/'/g, "''")}'); $s.Dispose();`;
-          const b64 = Buffer.from(psScript, "utf16le").toString("base64");
-          execSync(`powershell -NoProfile -NonInteractive -EncodedCommand ${b64}`);
-          if (fs.existsSync(tmpWav)) {
-            return {
-              wavPath: tmpWav,
-              durationMs: 2000,
-              sampleRate: 22050,
-              text: cleanText,
-              engine: "os-native",
-            };
-          }
-        }
-      } catch (hostErr: any) {
-        console.error("[LocalSupertonicProvider] Emergency host fallback error:", hostErr.message);
-      }
-      return { wavPath: "", durationMs: 0, sampleRate: 44100, text: cleanText, engine: "error" };
+      try {fs.rmSync(tmpWav,{force:true});} catch {}
+      throw new Error("Local TTS synthesis failed: " + err.message);
     }
   }
 
   /**
    * Synthesize and immediately play audio on speakers with pipelined sentence streaming.
-   * Synthesizes the first sentence and starts playback immediately (< 0.5s),
+   * Synthesizes the first sentence and starts playback after native synthesis completes,
    * while prefetching subsequent sentences concurrently.
    * 
    * Destination:
@@ -299,32 +282,28 @@ export class LocalSupertonicProvider implements NativeTtsProvider {
 
     if (sentences.length === 1) {
       const res = await this.synthesize(sentences[0], options);
-      if (abort.signal.aborted) return;
+      if (abort.signal.aborted) {fs.rmSync(res.wavPath,{force:true});return;}
       if (res.wavPath && fs.existsSync(res.wavPath)) {
-        await playChunk(res.wavPath);
+        try {await playChunk(res.wavPath);} finally {fs.rmSync(res.wavPath,{force:true});}
       }
       return;
     }
 
-    // Pipelined streaming: start synthesizing sentence 0 immediately
-    console.log(`[Supertonic] Streaming speech pipeline started (${sentences.length} chunks, target: ${options?.destination || "host"})...`);
-    let nextSynthPromise = this.synthesize(sentences[0], options);
-
-    for (let i = 0; i < sentences.length; i++) {
-      if (abort.signal.aborted) break;
-
-      const currentRes = await nextSynthPromise;
-      if (abort.signal.aborted) break;
-
-      // Start synthesizing the NEXT sentence in the background while the current one is playing
-      if (i + 1 < sentences.length) {
-        nextSynthPromise = this.synthesize(sentences[i + 1], options);
+    // Resolve/reject prefetch explicitly so failed background synthesis cannot
+    // become an unhandled rejection while the preceding sentence is playing.
+    const synth=(sentence: string)=>this.synthesize(sentence,options).then(result=>({result}),error=>({error}));
+    let pending: ReturnType<typeof synth> | undefined=synth(sentences[0]);
+    try {
+      for(let i=0;i<sentences.length;i++){
+        const output=await pending!;pending=undefined;
+        if("error" in output)throw output.error;
+        const res=output.result;
+        if(abort.signal.aborted){fs.rmSync(res.wavPath,{force:true});break;}
+        if(i+1<sentences.length)pending=synth(sentences[i+1]);
+        try{await playChunk(res.wavPath);}finally{fs.rmSync(res.wavPath,{force:true});}
       }
-
-      // Play current audio chunk
-      if (currentRes.wavPath && fs.existsSync(currentRes.wavPath)) {
-        await playChunk(currentRes.wavPath);
-      }
+    } finally {
+      if(pending)void pending.then(output=>{if("result" in output)fs.rmSync(output.result.wavPath,{force:true});});
     }
   }
 

@@ -11,7 +11,7 @@ export interface TtsSynthesizeResult {
   durationMs: number;
   sampleRate: number;
   text: string;
-  engine: "supertonic-gpu" | "supertonic-cpu" | "os-native" | "kokoro-onnx" | "windows-sapi" | "macos-say" | "mock" | "error";
+  engine: "supertonic-gpu" | "supertonic-cpu" | "os-native" | "kokoro-onnx" | "windows-sapi" | "macos-say" | "error";
 }
 
 /**

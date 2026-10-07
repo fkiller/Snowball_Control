@@ -49,3 +49,14 @@ test('real loopback lab preview stays on pinned peer and spoofed sender cannot r
   peer.send(packet({type:'key',keyId:2,isDown:true,seq:1}),started.address.port,'127.0.0.1');await new Promise(r=>setTimeout(r,30));assert.equal(seen.length,1);
   const received=once(peer,'message');const result=await transport.preview(view);assert.equal(result.delivery,'unacknowledged_lab');assert.equal(JSON.parse((await received)[0]).type,'v2_sync');await transport.close();
 });
+
+test('lease overhead is included in preview datagram capacity',()=>{
+  const scoped={...view,controllerId:'ctl_aaaaaaaaaaaaaaaa',runId:'a'.repeat(32)};
+  const packet=encodeLegacyPreview({...scoped,leaseToken:'b'.repeat(32)},1);assert.equal(JSON.parse(packet).lease,'b'.repeat(32));
+  let nearLimit;
+  for(let count=1;count<=20;count++){
+    const candidate={...scoped,lines:Array(4).fill('x'.repeat(168)),keys:Array.from({length:count},(_,i)=>({id:i+1,main:'x'.repeat(23)}))};
+    try {if(encodeLegacyPreview(candidate,1).length>1357){nearLimit=candidate;break;}}catch{}
+  }
+  assert.ok(nearLimit);assert.throws(()=>encodeLegacyPreview({...nearLimit,leaseToken:'b'.repeat(32)},1),/datagram_capacity/);
+});

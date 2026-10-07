@@ -107,7 +107,7 @@ def get_supertonic_instance(device: str = "auto"):
     """
     global _GPU_TTS_INSTANCE, _CPU_TTS_INSTANCE, _GPU_INIT_FAILED
 
-    if device in ("auto", "cpu", "cuda", "directml", "dml", "coreml", "metal"):
+    if device in ("auto", "cuda", "directml", "dml", "coreml", "metal"):
         if _GPU_INIT_FAILED:
             return None
         if _GPU_TTS_INSTANCE is not None:
@@ -210,31 +210,37 @@ def synthesize_with_os_native(text: str, output_path: str, lang: str = "ko") -> 
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
 
     if sys.platform == "win32":
-        # Windows PowerShell SAPI SpeechSynthesizer
+        encoded_text=base64.b64encode(text.encode("utf-8")).decode("ascii")
+        output_literal=os.path.abspath(output_path).replace("'", "''")
+        # Text is data, never interpolated as PowerShell code.
         ps_script = f"""
+$ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Speech
 $s = New-Object System.Speech.Synthesis.SpeechSynthesizer
-$s.SetOutputToWaveFile('{os.path.abspath(output_path)}')
-$s.Speak('{text}')
+$s.SetOutputToWaveFile('{output_literal}')
+$text = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('{encoded_text}'))
+$s.Speak($text)
 $s.Dispose()
 """
         b64 = base64.b64encode(ps_script.encode("utf-16le")).decode("ascii")
-        res = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-EncodedCommand", b64], capture_output=True, text=True)
+        res = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-EncodedCommand", b64], capture_output=True, text=True, timeout=120)
         if res.returncode != 0 or not os.path.isfile(output_path):
             raise RuntimeError(f"PowerShell SAPI synthesis failed: {res.stderr}")
 
     elif sys.platform == "darwin":
         # macOS say command
-        res = subprocess.run(["say", "-o", output_path, "--data-format=LEI16@22050", text], capture_output=True, text=True)
+        res = subprocess.run(["say", "-o", output_path, "--data-format=LEI16@22050", text], capture_output=True, text=True, timeout=120)
         if res.returncode != 0 or not os.path.isfile(output_path):
             raise RuntimeError(f"macOS say synthesis failed: {res.stderr}")
 
     else:
         # Linux espeak / spd-say
-        res = subprocess.run(["espeak", "-w", output_path, text], capture_output=True, text=True)
+        res = subprocess.run(["espeak", "-w", output_path, text], capture_output=True, text=True, timeout=120)
         if res.returncode != 0 or not os.path.isfile(output_path):
             raise RuntimeError(f"Linux espeak synthesis failed: {res.stderr}")
 
+    data, rate = sf.read(output_path)
+    sf.write(output_path, data, rate, format="WAV", subtype="PCM_16")
     info = sf.info(output_path)
     return float(info.duration), int(info.samplerate)
 
@@ -334,8 +340,8 @@ def run_daemon(requested_device: str = "auto"):
         if method == "status":
             st = {
                 "ready": True,
-                "gpu_ready": _GPU_TTS_INSTANCE is not None and not _GPU_INIT_FAILED,
-                "cpu_ready": _CPU_TTS_INSTANCE is not None,
+                "gpu_ready": _GPU_TTS_INSTANCE is not None and any(p in _GPU_TTS_INSTANCE.model.vocoder_ort.get_providers() for p in ("CUDAExecutionProvider", "DmlExecutionProvider", "CoreMLExecutionProvider")),
+                "cpu_ready": _CPU_TTS_INSTANCE is not None or (_GPU_TTS_INSTANCE is not None and _GPU_TTS_INSTANCE.model.vocoder_ort.get_providers() == ["CPUExecutionProvider"]),
                 "engine_chain": ["supertonic-gpu", "supertonic-cpu", "os-native"],
                 "device": requested_device
             }

@@ -1,6 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { AudioTransport } from '../dist/audio/transport.js';
+import { AudioPlayer } from '../dist/audio/player.js';
+import net from 'node:net';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
 test('pcm3chToMonoWav correctly extracts Channel 3 into valid 16kHz mono WAV', () => {
   // Synthesize 100 frames of 3-channel 16-bit PCM (6 bytes per sample frame)
@@ -38,6 +43,39 @@ test('pcm3chToMonoWav correctly extracts Channel 3 into valid 16kHz mono WAV', (
     const val = wav.readInt16LE(44 + i * 2);
     const expected = (i * 10) & 0x7fff;
     assert.equal(val, expected, `Sample ${i} mismatch`);
+  }
+});
+
+test('TCP connect without codec readiness and explicit rejection never start capture or fall back to ADB', async t => {
+  for(const response of [null,'ERR1']){
+    const server=net.createServer(socket=>{socket.on('error',()=>{});socket.once('data',()=>socket.end(response||undefined));});
+    await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+    const capture=new AudioTransport('127.0.0.1','missing-maintenance-only-adb',server.address().port,'a'.repeat(32));
+    await assert.rejects(capture.startDeviceRecording(), /before readiness|rejected/);
+    await new Promise(resolve=>server.close(resolve));
+  }
+});
+
+test('playback is bound to the selected lease and requires real daemon completion', async t => {
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'snowball-audio-test-'));
+  t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));
+  const wav=path.join(dir,'fixture.wav');fs.writeFileSync(wav,AudioTransport.monoPcmToWav(Buffer.alloc(3200)));
+  for(const completion of ['DONE','ERR1']){
+    let bytes=Buffer.alloc(0),ready=false;
+    const server=net.createServer({allowHalfOpen:true},socket=>{
+      socket.on('error',()=>{});
+      socket.on('data',chunk=>{
+        bytes=Buffer.concat([bytes,chunk]);
+        if(!ready&&bytes.length>=48){ready=true;socket.write('RDY1');}
+      });
+      socket.on('end',()=>socket.end(completion));
+    });
+    await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+    const player=new AudioPlayer('127.0.0.1',undefined,'a'.repeat(32),server.address().port);
+    if(completion==='DONE')await player.playOnDevice(wav);else await assert.rejects(player.playOnDevice(wav),/failed|interrupted/);
+    assert.equal(bytes[4],0x81);assert.equal(bytes.subarray(16,48).toString(),'a'.repeat(32));
+    assert.equal(bytes.length,48+3200);
+    await new Promise(resolve=>server.close(resolve));
   }
 });
 
@@ -98,7 +136,7 @@ test('AudioTransport native TCP streaming: captures 16kHz mono PCM and creates W
           for (let i = 0; i < 2000; i++) {
             chunk.writeInt16LE(1234, i * 2);
           }
-          socket.write(chunk);
+          socket.write(Buffer.concat([Buffer.from("RDY1"),chunk]));
         }
       } else {
         // Stop signal received (client sent 1 byte stop)
@@ -145,4 +183,16 @@ test('AudioTransport native TCP streaming: captures 16kHz mono PCM and creates W
     else delete process.env.MK20_IP;
     mockServer.close();
   }
+});
+
+test('cancel fences microphone readiness arriving after cancellation',async t=>{
+  const sockets=new Set();
+  const server=net.createServer(socket=>{sockets.add(socket);socket.on('error',()=>{});socket.once('data',()=>setTimeout(()=>{if(!socket.destroyed)socket.write('RDY1');},50));socket.on('close',()=>sockets.delete(socket));});
+  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+  t.after(async()=>{for(const socket of sockets)socket.destroy();await new Promise(resolve=>server.close(resolve));});
+  const transport=new AudioTransport('127.0.0.1',undefined,server.address().port,'a'.repeat(32));
+  const start=transport.startDeviceRecording();
+  await transport.cancelDeviceRecording();
+  await assert.rejects(start,/cancelled before readiness/);
+  await assert.rejects(transport.pullDeviceWav(),/insufficient/);
 });

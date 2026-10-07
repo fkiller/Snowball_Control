@@ -27,6 +27,7 @@ coverage/
 __pycache__/
 *.py[cod]
 /hardware/mk20/hud/mk20-hud
+/hardware/mk20/hud/mk20-audio
 /hardware/mk20/hud/pcm-stream
 /hardware/mk20/hud/.deps/
 /hardware/mk20/hud/font-probe

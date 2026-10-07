@@ -1,5 +1,36 @@
 #!/bin/sh
 
+# Only stop processes executing our managed runtime, including replaced binaries.
+stop_native() {
+    path="/mnt/SDCARD/$1"
+    for runtime_pid in $(pidof "$1" 2>/dev/null); do
+        case "$(readlink /proc/$runtime_pid/exe 2>/dev/null)" in
+            "$path"|"$path (deleted)")
+                kill "$runtime_pid" 2>/dev/null
+                sleep 1
+                case "$(readlink /proc/$runtime_pid/exe 2>/dev/null)" in
+                    "$path"|"$path (deleted)") kill -9 "$runtime_pid" 2>/dev/null ;;
+                esac ;;
+        esac
+    done
+}
+start_runtime() {
+    /etc/init.d/qt_app2 disable 2>/dev/null
+    /etc/init.d/qt_app2 stop 2>/dev/null
+    killall KeyboardDevice 2>/dev/null
+    stop_native mk20-hud
+    stop_native mk20-audio
+    [ -x /mnt/SDCARD/mk20-audio ] && [ -x /mnt/SDCARD/mk20-hud ] || return 1
+    /mnt/SDCARD/mk20-audio -d >> /tmp/mk20-audio.log 2>&1 < /dev/null
+    /mnt/SDCARD/mk20-hud -d >> /tmp/mk20-hud.log 2>&1 < /dev/null
+    sleep 1
+    pidof mk20-audio >/dev/null && pidof mk20-hud >/dev/null
+}
+if [ "$1" = "--restart-runtime" ]; then
+    start_runtime
+    exit $?
+fi
+
 # Bring up development Wi-Fi and restrict TCP-only ADB before starting it.
 # This is a trusted-private-LAN Preview, without cryptographic ADB authentication.
 # This script
@@ -83,16 +114,10 @@ EOF
         log_msg "ADB disabled: development firewall could not be installed"
     fi
 
-    # Free /dev/ttyS1 and /dev/fb0 from vendor Qt app
-    /etc/init.d/qt_app2 disable 2>/dev/null
-    /etc/init.d/qt_app2 stop 2>/dev/null
-    killall -9 KeyboardDevice 2>/dev/null
-
-    # Launch native low-latency HUD engine
-    if [ -x "/mnt/SDCARD/mk20-hud" ]; then
-        killall mk20-hud 2>/dev/null
-        /mnt/SDCARD/mk20-hud -d
-        log_msg "mk20-hud launched in ultra-low latency mode"
+    if start_runtime; then
+        log_msg "Native HUD and LAN audio services running"
+    else
+        log_msg "Native runtime failed to start; inspect /tmp/mk20-audio.log"
     fi
 
     sync

@@ -39,6 +39,8 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <sys/time.h>
+#include <time.h>
+#include <fcntl.h>
 
 #define AUDIO_PORT 7702
 #define SNAU_MAGIC 0x55414E53 // 'SNAU' in little endian
@@ -47,6 +49,7 @@
 #define MODE_RECORD      2
 #define MODE_PING        3
 #define MODE_SET_VOLUME  4
+#define MODE_STOP 5
 
 #pragma pack(push, 1)
 typedef struct {
@@ -61,6 +64,23 @@ typedef struct {
 #pragma pack(pop)
 
 static volatile sig_atomic_t g_running = 1;
+static char g_owner_ip[INET_ADDRSTRLEN],g_lease[33];
+static int selected_owner(void) {
+    FILE *f=fopen("/tmp/snowball-audio.owner","r"); char ip[INET_ADDRSTRLEN],lease[33];
+    if(!f)return 0;
+    long long expires=0;int got=fscanf(f,"%15s %32s %lld",ip,lease,&expires);fclose(f);
+    return got==3&&expires>=time(NULL)&&!strcmp(ip,g_owner_ip)&&!strcmp(lease,g_lease);
+}
+static int finish_child(pid_t pid,int allow_drain) {
+    int status=0;
+    for(int i=0;i<(allow_drain?1500:20);i++){
+        if(waitpid(pid,&status,WNOHANG)==pid)return WIFEXITED(status)&&WEXITSTATUS(status)==0;
+        if(!g_running||!selected_owner())break;
+        usleep(100000);
+    }
+    kill(pid,SIGTERM);for(int i=0;i<10;i++){if(waitpid(pid,&status,WNOHANG)==pid)return 0;usleep(20000);}
+    kill(pid,SIGKILL);waitpid(pid,&status,0);return 0;
+}
 
 static void handle_sigterm(int sig) {
     (void)sig;
@@ -155,11 +175,18 @@ static void handle_playback(int client_fd, const SnauHeader *hdr) {
     // Parent: read from socket, scale volume in software, and stream into pipe
     close(pipe_fd[0]);
 
-    uint8_t eff_vol = hdr->muted ? 0 : (hdr->volume > 100 ? 100 : hdr->volume);
+    /* Live mixer gain is controlled by the accepting parent, avoiding double attenuation. */
+    uint8_t eff_vol = 100;
+    if(write_all(client_fd,"RDY1",4)<0){close(pipe_fd[1]);kill(pid,SIGTERM);finish_child(pid,0);return;}
     int16_t buffer[2048];
     size_t remaining = (hdr->data_len != 0xFFFFFFFF) ? hdr->data_len : (size_t)-1;
 
-    while (g_running) {
+    time_t last_data=time(NULL),started=last_data;
+    while (g_running && selected_owner() && time(NULL)-last_data<5 && time(NULL)-started<120) {
+        struct pollfd ready={.fd=client_fd,.events=POLLIN};
+        int available=poll(&ready,1,200);
+        if(available<0&&errno!=EINTR)break;
+        if(available<=0)continue;
         size_t to_read = sizeof(buffer);
         if (remaining != (size_t)-1 && to_read > remaining) {
             to_read = remaining;
@@ -168,6 +195,7 @@ static void handle_playback(int client_fd, const SnauHeader *hdr) {
 
         ssize_t n = recv(client_fd, buffer, to_read, 0);
         if (n <= 0) break; // Client finished or disconnected
+        last_data=time(NULL);
 
         // Apply software volume scaling
         if (eff_vol == 0) {
@@ -198,8 +226,8 @@ static void handle_playback(int client_fd, const SnauHeader *hdr) {
 
 play_done:
     close(pipe_fd[1]);
-    int status = 0;
-    waitpid(pid, &status, 0);
+    int ok=finish_child(pid,remaining==0);
+    write_all(client_fd,ok&&remaining==0?"DONE":"ERR1",4);
     printf("[mk20-audio] Playback finished\n");
 }
 
@@ -245,6 +273,8 @@ static void handle_record(int client_fd, const SnauHeader *hdr) {
     uint8_t in_buf[12288];
     uint8_t mono_buf[4096];
     size_t carry = 0;
+    int sent_ready=0;
+    time_t started=time(NULL);
 
     struct pollfd pfd[2];
     pfd[0].fd = pipe_fd[0];
@@ -252,7 +282,7 @@ static void handle_record(int client_fd, const SnauHeader *hdr) {
     pfd[1].fd = client_fd;
     pfd[1].events = POLLIN;
 
-    while (g_running) {
+    while (g_running && selected_owner() && time(NULL)-started<120) {
         int pr = poll(pfd, 2, 200);
         if (pr < 0 && errno == EINTR) continue;
         if (pr <= 0) continue;
@@ -282,6 +312,7 @@ static void handle_record(int client_fd, const SnauHeader *hdr) {
             }
 
             if (frames > 0) {
+                if(!sent_ready){if(write_all(client_fd,"RDY1",4)<0)break;sent_ready=1;}
                 if (write_all(client_fd, mono_buf, frames * 2) < 0) {
                     break; // Client closed connection
                 }
@@ -291,8 +322,7 @@ static void handle_record(int client_fd, const SnauHeader *hdr) {
 
     close(pipe_fd[0]);
     kill(pid, SIGINT);
-    int status = 0;
-    waitpid(pid, &status, 0);
+    finish_child(pid,0);
     printf("[mk20-audio] Recording finished\n");
 }
 
@@ -349,45 +379,46 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    while (g_running) {
-        struct sockaddr_in client_addr;
-        socklen_t client_len = sizeof(client_addr);
-        int client_fd = accept(server_fd, (struct sockaddr *)&client_addr, &client_len);
-        if (client_fd < 0) {
-            if (errno == EINTR) continue;
-            perror("accept");
-            break;
-        }
-
-        // Set TCP nodelay & socket timeouts
-        struct timeval tv = { .tv_sec = 5, .tv_usec = 0 };
-        setsockopt(client_fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-        setsockopt(client_fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
-
+    pid_t worker=0;
+    while(g_running){
+        if(worker&&waitpid(worker,NULL,WNOHANG)==worker)worker=0;
+        struct pollfd incoming={.fd=server_fd,.events=POLLIN};
+        if(poll(&incoming,1,100)<=0)continue;
+        struct sockaddr_in peer;socklen_t len=sizeof peer;
+        int fd=accept(server_fd,(struct sockaddr *)&peer,&len);if(fd<0)continue;
+        struct timeval timeout={.tv_sec=0,.tv_usec=300000};
+        setsockopt(fd,SOL_SOCKET,SO_RCVTIMEO,&timeout,sizeof timeout);
+        timeout.tv_sec=2;timeout.tv_usec=0;setsockopt(fd,SOL_SOCKET,SO_SNDTIMEO,&timeout,sizeof timeout);
         SnauHeader hdr;
-        ssize_t got = read_exact(client_fd, &hdr, sizeof(hdr));
-        if (got == sizeof(hdr) && hdr.magic == SNAU_MAGIC) {
-            if (hdr.mode == MODE_PLAY) {
-                // Clear read timeout for long streaming playback
-                struct timeval zero_tv = { .tv_sec = 0, .tv_usec = 0 };
-                setsockopt(client_fd, SOL_SOCKET, SO_RCVTIMEO, &zero_tv, sizeof(zero_tv));
-                handle_playback(client_fd, &hdr);
-            } else if (hdr.mode == MODE_RECORD) {
-                struct timeval zero_tv = { .tv_sec = 0, .tv_usec = 0 };
-                setsockopt(client_fd, SOL_SOCKET, SO_RCVTIMEO, &zero_tv, sizeof(zero_tv));
-                handle_record(client_fd, &hdr);
-            } else if (hdr.mode == MODE_PING) {
-                write_all(client_fd, "PONG", 4);
-            } else if (hdr.mode == MODE_SET_VOLUME) {
-                apply_hardware_volume(hdr.volume, hdr.muted);
-                write_all(client_fd, "OK\n", 3);
-            }
-        } else {
-            fprintf(stderr, "[mk20-audio] Invalid or unrecognized SNAU header (got %zd bytes)\n", got);
+        if(read_exact(fd,&hdr,sizeof hdr)!=sizeof hdr||hdr.magic!=SNAU_MAGIC){close(fd);continue;}
+        if(hdr.mode==MODE_PING){write_all(fd,"PONG",4);close(fd);continue;}
+        int versioned=hdr.mode&0x80;hdr.mode&=0x7f;
+        inet_ntop(AF_INET,&peer.sin_addr,g_owner_ip,sizeof g_owner_ip);
+        memset(g_lease,0,sizeof g_lease);
+        if(!versioned||read_exact(fd,g_lease,32)!=32||!selected_owner()){
+            write_all(fd,"ERR1",4);close(fd);continue;
         }
-
-        close(client_fd);
+        if(hdr.mode==MODE_STOP){
+            if(worker){kill(-worker,SIGTERM);for(int i=0;i<25;i++){if(waitpid(worker,NULL,WNOHANG)==worker){worker=0;break;}usleep(20000);}
+                if(worker){kill(-worker,SIGKILL);waitpid(worker,NULL,0);worker=0;}}
+            write_all(fd,"RDY1",4);close(fd);continue;
+        }
+        if(hdr.mode==MODE_SET_VOLUME){apply_hardware_volume(hdr.volume,hdr.muted);write_all(fd,"RDY1",4);close(fd);continue;}
+        if(worker||(hdr.mode!=MODE_PLAY&&hdr.mode!=MODE_RECORD)||hdr.channels<1||hdr.channels>2||hdr.sample_rate<8000||hdr.sample_rate>48000||
+            (hdr.mode==MODE_PLAY&&(hdr.data_len==0||hdr.data_len>16000000||hdr.data_len%(hdr.channels*2)))){
+            write_all(fd,"ERR1",4);close(fd);continue;
+        }
+        worker=fork();
+        if(worker==0){
+            setpgid(0,0);close(server_fd);
+            struct timeval stream_timeout={.tv_sec=5,.tv_usec=0};setsockopt(fd,SOL_SOCKET,SO_RCVTIMEO,&stream_timeout,sizeof stream_timeout);
+            if(hdr.mode==MODE_PLAY)handle_playback(fd,&hdr);else handle_record(fd,&hdr);
+            close(fd);_exit(0);
+        }
+        if(worker<0){worker=0;write_all(fd,"ERR1",4);}else setpgid(worker,worker);
+        close(fd);
     }
+    if(worker){kill(-worker,SIGTERM);usleep(300000);kill(-worker,SIGKILL);waitpid(worker,NULL,0);}
 
     close(server_fd);
     printf("[mk20-audio] Daemon terminated cleanly.\n");

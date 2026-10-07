@@ -93,7 +93,7 @@ def check_runtime_status() -> dict:
 
 def install_dependencies() -> bool:
     """Auto-install supertonic and soundfile using pip."""
-    cmd = [sys.executable, "-m", "pip", "install", "supertonic", "--no-deps", "soundfile", "huggingface-hub"]
+    cmd = [sys.executable, "-m", "pip", "install", "supertonic", "soundfile", "huggingface-hub"]
     sys.stderr.write(f"[EnsureTts] Installing required Python dependencies: {' '.join(cmd)}\n")
     res = subprocess.run(cmd, capture_output=True, text=True)
     if res.returncode != 0:
@@ -121,7 +121,7 @@ def ensure_tts(auto_fix: bool = True) -> dict:
     if not auto_fix:
         return status
 
-    if not status["supertonic_installed"] or not status["soundfile_installed"]:
+    if not status["supertonic_installed"] or not status["soundfile_installed"] or not status["onnxruntime_installed"]:
         install_dependencies()
 
     status = check_runtime_status()

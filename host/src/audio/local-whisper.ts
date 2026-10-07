@@ -15,16 +15,17 @@ export class LocalWhisperProvider implements NativeVoiceProvider {
   private pending = new Map<number, { resolve(value: any): void; reject(error: Error): void; timer: NodeJS.Timeout }>();
   private audioTransport: Pick<AudioTransport, "startDeviceRecording" | "stopDeviceRecording" | "cancelDeviceRecording" | "pullDeviceWav">;
   private currentCaptureId?: string;
+  private captureGeneration=0;
   private activeRecording = false;
 
   constructor(
     private model = process.env.SNOWBALL_WHISPER_MODEL || "large-v3-turbo",
-    private deviceAdb = process.env.SNOWBALL_DEVICE_ADB || "192.168.1.248:5555",
+    private deviceAddress = process.env.SNOWBALL_MK20_ADDRESS || "",
     private modelDir = process.env.SNOWBALL_MODELS_DIR,
     private computeDevice = process.env.SNOWBALL_WHISPER_DEVICE || "auto",
     captureTransport?: Pick<AudioTransport, "startDeviceRecording" | "stopDeviceRecording" | "cancelDeviceRecording" | "pullDeviceWav">
   ) {
-    this.audioTransport = captureTransport || new AudioTransport(this.deviceAdb);
+    this.audioTransport = captureTransport || new AudioTransport(this.deviceAddress);
   }
 
   public static resolvePythonRuntime(): { exec: string; workerPy: string } {
@@ -335,12 +336,15 @@ export class LocalWhisperProvider implements NativeVoiceProvider {
    * Starts hardware recording on MK20.
    */
   public async start(captureId: string): Promise<void> {
+    const generation=++this.captureGeneration;
     this.currentCaptureId = captureId;
     this.activeRecording = true;
 
     try {
       await Promise.all([this.ensureWorkerStarted(), this.audioTransport.startDeviceRecording()]);
+      if(generation!==this.captureGeneration||!this.activeRecording||this.currentCaptureId!==captureId)throw Error('Capture cancelled during microphone startup');
     } catch (error) {
+      if(generation!==this.captureGeneration)throw error;
       this.activeRecording = false; this.currentCaptureId = undefined;
       await this.audioTransport.cancelDeviceRecording().catch(() => {});
       throw error;
@@ -364,13 +368,14 @@ export class LocalWhisperProvider implements NativeVoiceProvider {
       console.log(`[LocalWhisper] Transcribing ${wavPath} with resident Whisper model...`);
       const resp = await this.request("transcribe", { wavPath });
       const text = typeof resp.text === "string" ? resp.text.trim() : "";
-      console.log(`[LocalWhisper] Transcription result (${resp.durationMs}ms, lang=${resp.language}): "${text}"`);
+      console.log(`[LocalWhisper] Transcription result (${resp.durationMs}ms, lang=${resp.language}, ${text.length} characters)`);
       return text;
     } finally {
       try {
         fs.rmSync(wavPath, { force: true });
+        if(path.basename(path.dirname(wavPath)).startsWith("snowball-voice-"))fs.rmdirSync(path.dirname(wavPath));
       } catch {}
-      this.currentCaptureId = undefined;
+      if(this.currentCaptureId===captureId)this.currentCaptureId = undefined;
     }
   }
 
@@ -378,6 +383,8 @@ export class LocalWhisperProvider implements NativeVoiceProvider {
    * Cancels in-flight recording and cleans up temporary resources.
    */
   public async cancel(captureId: string): Promise<void> {
+    if(this.currentCaptureId!==captureId)return;
+    this.captureGeneration++;
     console.log(`[LocalWhisper] Cancelling capture for ${captureId}...`);
     this.activeRecording = false;
     this.currentCaptureId = undefined;
@@ -401,6 +408,7 @@ export class LocalWhisperProvider implements NativeVoiceProvider {
    * Releases any stuck capture state.
    */
   public async resetStuck(): Promise<void> {
+    this.captureGeneration++;
     this.activeRecording = false;
     this.currentCaptureId = undefined;
     await this.audioTransport.cancelDeviceRecording().catch(() => {});

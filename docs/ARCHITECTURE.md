@@ -28,7 +28,13 @@ The intended product flow is an MK20 that joins Wi-Fi as an independent device, 
 
 Adding or switching a middleware PC must be an ordinary discovery/pairing operation. It must not require editing the SD card, replacing a PC MAC address, reconnecting USB, or enabling ADB. SD image installation, Wi-Fi provisioning, firmware maintenance, and recovery are separate device setup tasks. The `DEV_PC_MAC` restriction in the current development bootstrap controls TCP ADB access; it is not the product's machine pairing registry.
 
-**Current implementation gap:** The inspected MK20 Preview path maintains one UDP host endpoint, and the integrated runtime initializes its machine list with the local PC only. The installer uses a configured MK20 address and ADB for deployment and readiness checks. These paths do not implement the intended device-owned multi-host discovery, persistent pairing, and machine switching. A machine selector or host-registry component alone does not establish that this end-to-end flow works; it requires validation with two or more real middleware PCs.
+**Implemented Preview path:** The native HUD owns discovery, pairing and the machine selector (K17). Middleware advertises its stable host ID and real OS hostname; the device stores up to 16 paired hosts plus its last selection in `/mnt/SDCARD/snowball-hosts.v1`. The selected PC alone receives controller input and supplies its local native catalog. UI state and ongoing native operations stay in that PC's controller context when the device leaves and returns. Each selection re-reads native sessions/projects, retains objects owned by pending operations, and separates identically named project directories by their actual paths. This implementation still needs a physical two/three-PC field run; a test fixture or multiple processes on one PC is not that evidence.
+
+- `SNMK1` discovery uses bounded UTF-8 UDP messages: `DISCOVER` queries go to subnet broadcast port 47772. PCs also broadcast `OFFER` every two seconds from a socket bound to the chosen NIC. Devices send `SELECT`/`RELEASE` and selection heartbeats to that advertised socket's actual source endpoint. This supports Windows unicast responses without silently adding firewall rules. Networks that block broadcasts or unicast responses need local network/firewall configuration; no Internet discovery service is used.
+- K17 opens Machines, the left knob moves and commits, K16 also commits, K4 returns, and K8 forgets the focused pairing. Unpaired candidates expire; paired offline PCs remain visible. Discovery alone cannot select a PC. Stable host IDs prevent DHCP/hostname changes from creating extra paired machines. Automatic NIC selection is repeated at startup; an explicitly supplied `-Bind` remains the owner's override.
+- Each selection creates a fresh device lease. Frames require the selected address and lease, plus controller/run/sequence checks. Old leases and replayed input are rejected. Leaving a PC stops device/host speech, finishes already captured audio into its originating session draft and retains running native turns on their originating PC. Returning to the PC reuses the same controller context and owned Stop handles. An ambiguous native send remains `unknown` and is not automatically resubmitted.
+- These leases are cleartext routing fences for a **trusted-LAN Preview**, not encrypted identity proof or production authentication. ADB is used only by explicit maintenance/debug tools. The ordinary `mk20` PC profile builds host libraries and local speech dependencies, advertises the PC, and does not deploy firmware, discover ADB or rewrite device Wi-Fi/debug access.
+
 
 ## 1. Repositories and Concrete Execution Paths
 
@@ -40,11 +46,11 @@ The common Windows entry point is `Snowball_Middleware/install.ps1 -Profile web|
 | --- | --- | --- |
 | `web` | Middleware + all three Harness repositories | None; does not import Control, device transport or STT |
 | `m5stack` | Middleware + all three Harness repositories + Device M5Stack | Private Python venv, physical UART/ESP32 interrogation, detected 4MB/16MB build setting, full flash backup, USB upload, real firmware/FACES check and gateway enrollment |
-| `mk20` | Middleware + all three Harness repositories + Control | ADB discovery/SD Wi-Fi bootstrap, guided physical QMK DFU, SHA-256 checked native runtime bundle, device-file backup, verified HUD deployment, STT dependencies/model resolution |
+| `mk20` | Middleware + all three Harness repositories + Control host libraries | Local speech dependencies and LAN host advertisement; device-owned pairing on MK20. Firmware/Wi-Fi preparation is separate maintenance. |
 
 `Start-Snowball.ps1` and the desktop shortcut start `scripts/start-suite.mjs` without reinstallation. It rejects an occupied loopback port, verifies installed plugin digests before starting their isolated processes, starts the common `scripts/start-all.mjs` native-session/journal API, verifies a real API response and opens the browser. Only MK20 initializes its transport/context/STT; M5Stack starts its gateway with its own controller identity. Each child stops on its parent's IPC shutdown/disconnect. Port/data-directory overrides allow independent verification without replacing the owner's live runtime. Web Supervisor remains loopback-only with no PIN; hardware LAN gateways retain their existing pairing/security boundaries.
 
-Windows bootstrap prepares supported Node (official LTS ZIP plus official SHA-256), Git and Python where needed. macOS source installation needs Node/Git/Python beforehand; Linux is not yet supported by the suite's native plugin workers. USB/DFU reconnects, MK20 full raw SD disk-image backup and vendor sign-in remain physical/owner steps in the guided installation. `-NoFlash` validates an existing installation; it never pretends a firmware write occurred. Repository README headers share identical banner/icon assets and the `Snowball <component> · <provider> — Preview` naming pattern.
+Windows bootstrap prepares supported Node (official LTS ZIP plus official SHA-256), Git and Python where needed. macOS source installation needs Node/Git/Python beforehand; Linux is not yet supported by the suite's native plugin workers. M5Stack USB/DFU preparation and vendor sign-in remain owner steps. `-NoFlash` applies to M5Stack verification. MK20 SD image backup is recommended before device maintenance; adding another PC does not touch the SD image. Repository README headers share identical banner/icon assets and the `Snowball <component> · <provider> — Preview` naming pattern.
 
 | Subsystem | Location | Current Role & Responsibility |
 | --- | --- | --- |
@@ -86,10 +92,12 @@ The MK20 terminal handles screen rendering, physical keys, knobs, and dual-way v
 
 ---
 
+**2026-10-07 verification:** Vendor SDK HUD/audio builds, native discovery/scope contracts, Control host tests (69 passed, 2 optional skips), device plugin tests (15 passed), Middleware tests, MK20 UX parity and native harness switching were run. A real Wi-Fi MK20 restored a saved host selection and rendered that PC's native Codex project/session; the saved record was provisioned through maintenance tooling for this recovery check, not a physical pairing-button test. Native TCP captured 28,000 bytes of microphone PCM; invalid leases were rejected, live volume replied in 64 ms and Stop in 141 ms. Local CUDA Whisper processed real ambient capture (empty transcript), CPU Supertonic synthesized 2,120 ms of speech, and muted native ALSA playback returned DONE. No native harness prompt was submitted. Two/three physical PC switching, manual key/knob pairing and full SD-image restore remain field checks. Device runtime files were backed up privately before deployment; that filesystem copy is not a full-card image. The existing port-8765 middleware could not be restarted because automatic approval rejected the process operation without a detailed reason; verification used independent state and loopback port 8766.
+
 ## 2. Preview Security Boundaries
 
 - **Web Supervisor Loopback Binding**: Binds strictly to **`127.0.0.1:8765`** without authentication/PIN for personal loopback ergonomics. It must never be exposed to public network interfaces or unauthenticated reverse proxies.
-- **LAN Communication**: MK20 UDP status packets, key events, and development TCP ADB operate over the local network. Preview UDP contains no cryptographic signature or replay protection; IP pinning is an operational sanity check, not a cryptographic security boundary.
+- **LAN Communication**: MK20 UDP status packets, key events, and development TCP ADB operate over the local network. Preview UDP uses lease/controller/run/sequence routing and replay checks, but has no encrypted identity proof or cryptographic signatures. These checks do not provide security against a hostile LAN.
 - **Development ADB Shell**: The Tina Linux developer image omits ADB authentication keys. The MAC address filter in `lunch.sh` is an internal LAN guard and does not constitute cryptographic identity verification or access control.
 - **Plugin Sandboxing**: `packages/plugin-host` validates entrypoint digests, manifest capabilities, and payload limits, isolating failures into child Node.js processes. This child process model is not an OS-level filesystem sandbox; untrusted arbitrary plugins must not be loaded without additional isolation.
 - **Native Privilege Execution**: Tool approvals and command execution defer strictly to each harness's native policy engine. Observed stdout events or console timeouts are never converted into synthetic physical approvals.
@@ -167,7 +175,7 @@ The MK20 hardware features a **428×142** header display (`/dev/fb21`) and 20 in
   - `K9`: Project selector
   - `K5`: Session selector
   - `K1`: New task draft
-  - `K12`: Speak on **MK20 onboard speaker** (Destination: `device`. Audio is streamed natively via TCP port 7702 `SNAU` binary protocol directly to `mk20-audio` $\rightarrow$ ALSA `aplay`, zero disk I/O, software + hardware gain scaling; press again to stop)
+  - `K12`: Speak on **MK20 onboard speaker** (Destination: `device`. Audio is streamed natively via TCP port 7702 `SNAU` binary protocol directly to `mk20-audio` $\rightarrow$ ALSA `aplay`, zero device audio scratch files, live hardware gain; press again to stop)
   - `K8`: Speak on **host PC / Mac speaker** (Destination: `host`. Label `Speak PC` on Windows/Linux, `Speak Mac` on macOS; in-memory PCM volume scaled to match Right Knob; press again to stop)
   - `K20`: Voice recording toggle (Initiates TCP port 7702 streaming capture directly to host; interrupts active TTS playback immediately to avoid acoustic echo and ALSA device conflicts)
   - `K16`: Transcribe & Send
@@ -190,9 +198,9 @@ flowchart TD
 ```
 1. **Tier 1 (Supertonic Optimized ONNX)**: Supertonic-3 resident synthesis.
    - **Throughput Profile**: Supertonic is an ONNX diffusion pipeline with multi-step NumPy loops. ONNX Runtime `CPUExecutionProvider` (AVX2 / AVX-512) achieves ultra-low latency (**~1.5s** per sentence, RTF 0.37) by eliminating the 200+ PCIe host-device `Memcpy` nodes that choke CUDA loops.
-   - **Sentence Pipelined Streaming**: Rather than batching 300+ characters into a single blocking synthesize call, `LocalSupertonicProvider` (`host/src/audio/local-supertonic.ts`) chunks text into natural sentences, synthesizes chunk 0 immediately to start playback in $< 1.5\text{s}$, and prefetches chunk $1\dots N$ in the background while the previous sentence plays on speakers.
-2. **Tier 2 (Supertonic Alternate EP)**: Dynamic Execution Provider evaluation (`CUDAExecutionProvider`, `DmlExecutionProvider`, `CoreMLExecutionProvider`) when requested.
-3. **Tier 3 (OS Native TTS)**: Emergency offline platform fallback using native OS speech synthesizers (`PowerShell SAPI` on Windows, `say` on macOS, `espeak` on Linux) so speech delivery never fails.
+   - **Sentence Pipelined Streaming**: Rather than batching 300+ characters into a single blocking synthesize call, `LocalSupertonicProvider` (`host/src/audio/local-supertonic.ts`) chunks text into natural sentences, starts playback after actual synthesis of chunk 0 completes, and prefetches chunk $1\dots N$ in the background while the previous sentence plays on speakers.
+2. **Tier 2 (Supertonic Alternate EP)**: Explicit selection of an available Execution Provider (`CUDAExecutionProvider`, `DmlExecutionProvider`, `CoreMLExecutionProvider`) when requested.
+3. **Tier 3 (OS Native TTS)**: Emergency offline platform fallback using native OS speech synthesizers (`PowerShell SAPI` on Windows, `say` on macOS, `espeak` on Linux) when its native engine is installed; if every engine fails, the request reports an error.
 
 #### Speech Text Sanitization (`host/src/audio/korean-transliterate.ts`)
 Every utterance passes through `cleanTextForSpeech()` before synthesis (used by both `LocalSupertonicProvider` and middleware `start-all.mjs`):
@@ -203,21 +211,14 @@ Every utterance passes through `cleanTextForSpeech()` before synthesis (used by 
 
 ### Cross-Platform Hardware Acceleration Matrix (STT & TTS)
 
-Snowball automatically probes and binds the optimal hardware execution backend per platform without requiring manual user reconfiguration:
+The shipped resident STT provider is `faster-whisper` on CPU or CUDA. The diagnostic script can probe Vulkan/Metal, but those results do not activate a resident whisper.cpp/MLX adapter: the composition explicitly selects CPU and a CPU-sized model when that backend is unavailable. Supertonic defaults to its actual CPU ONNX provider; explicit accelerator selection requires that provider to be installed. Native workers report their measured execution backend, and unavailable engines report errors.
 
-| Platform & Hardware | Speech-to-Text (STT - Whisper) | Text-to-Speech (TTS - Supertonic) | Fallback Progression |
+| Host environment | Resident STT | Default TTS | Offline fallback |
 | :--- | :--- | :--- | :--- |
-| **Windows + NVIDIA** | `faster-whisper` (CUDA / cuBLAS) | Supertonic (`CUDAExecutionProvider`) | CUDA $\rightarrow$ CPU $\rightarrow$ OS SAPI |
-| **Windows + AMD / Intel** | `whisper.cpp` (Vulkan) / CPU | Supertonic (`DmlExecutionProvider` DirectML) | DirectML $\rightarrow$ CPU $\rightarrow$ OS SAPI |
-| **macOS (Apple Silicon)** | `whisper.cpp` (Metal) / `mlx-whisper` | Supertonic (`CoreMLExecutionProvider`) | CoreML/Metal $\rightarrow$ CPU $\rightarrow$ OS `say` |
-| **Linux + NVIDIA** | `faster-whisper` (CUDA) | Supertonic (`CUDAExecutionProvider`) | CUDA $\rightarrow$ CPU $\rightarrow$ OS `espeak` |
-| **Linux + AMD / Intel** | `whisper.cpp` (Vulkan) | Supertonic (OpenVINO / CPU EP) | OpenVINO/CPU $\rightarrow$ OS `espeak` |
-| **Universal Fallback** | `faster-whisper` / `whisper.cpp` (CPU) | Supertonic (`CPUExecutionProvider`) | OS Native Synthesizer |
-
-#### Backend Roles:
-- **DirectML (DirectX 12)**: Used in the TTS ONNX pipeline (`DmlExecutionProvider`) on Windows to accelerate AMD Radeon and Intel Arc/Iris GPUs without requiring NVIDIA CUDA.
-- **MLX / Metal / CoreML**: Used on Apple Silicon macOS to leverage unified memory, the Apple Neural Engine (ANE), and Metal GPU for ultra-low latency STT (`whisper.cpp Metal` / `mlx-whisper`) and TTS (`CoreMLExecutionProvider`).
-- **Vulkan (`ggml-vulkan`)**: Used in the STT pipeline (`whisper.cpp`) as a cross-platform compute backend for AMD and Intel GPUs on Windows and Linux, utilizing standard SPIR-V compute shaders.
+| Windows + working NVIDIA CUDA runtime | faster-whisper CUDA; CPU on runtime failure | Supertonic CPU | Installed Windows SAPI |
+| Windows AMD/Intel or unavailable CUDA | faster-whisper CPU | Supertonic CPU | Installed Windows SAPI |
+| macOS source installation | faster-whisper CPU; physical Mac field check pending | Supertonic CPU | Installed macOS `say` |
+| Linux | CPU/CUDA speech worker code exists; full suite not supported | Supertonic CPU | Installed `espeak` |
 
 ### Multilingual Support Framework (i18n)
 
@@ -234,52 +235,26 @@ $$\text{Language Package} = \text{UI Resources (Fonts \& Labels)} + \text{STT (W
 
 ### Native Audio Streaming Subsystem (`mk20-audio` & `SNAU` Protocol)
 
-To eliminate high latency and flash wear from push-and-pull ADB commands, audio I/O on the MK20 operates via a dedicated native C daemon (`mk20-audio`) running on Tina Linux:
+The device boot hook launches both native HUD and audio services. The audio daemon accepts TCP 7702 while an owned playback/recording worker runs separately, so Ping, Stop and volume control remain responsive. Only the daemon's owned ALSA process group is interrupted; there is no ADB fallback or global `killall aplay`. The Tina SDK Makefile builds both binaries against the board's glibc.
 
-- **Daemon Architecture & Deployment**:
-  - Source: `hardware/mk20/hud/mk20-audio.c`.
-  - Statically linked ARMv7 binary (`arm-linux-gnueabihf-gcc -static -O2`) deployed to `/mnt/SDCARD/mk20-audio`.
-  - Automatically launched at boot via `/mnt/SDCARD/lunch.sh` (`/mnt/SDCARD/mk20-audio &`), listening on TCP port **7702** (`INADDR_ANY`).
-  - Cross-platform network model: Windows host initiates outbound connections to `192.168.1.248:7702`, traversing Windows Defender Firewall without administrator elevation prompts.
+The fixed little-endian header is **16 bytes**, in this order:
 
-- **`SNAU` Binary Streaming Protocol**:
-  Communication over TCP port 7702 uses a compact 16-byte binary header (`struct snau_header`):
-  | Field | Type | Size | Description |
-  | :--- | :--- | :--- | :--- |
-  | `magic` | `char[4]` | 4B | Protocol magic: `'S'`, `'N'`, `'A'`, `'U'` (`0x55414E53` in LE) |
-  | `mode` | `uint8_t` | 1B | `1` = PLAY (TTS), `2` = RECORD (STT), `3` = PING, `4` = SET_VOLUME |
-  | `channels` | `uint8_t` | 1B | `1` (mono) or `2` (stereo) |
-  | `format` | `uint8_t` | 1B | Sample format: `16` (16-bit signed integer PCM, little-endian) |
-  | `volume` | `uint8_t` | 1B | Hardware mixer & software attenuation factor (`0`..`100`) |
-  | `sample_rate` | `uint32_t` | 4B | Sample rate: `16000` (STT), `24000` (TTS Supertonic), or custom |
-  | `data_len` | `uint32_t` | 4B | Payload byte count (`0` for continuous live streaming or volume packet) |
-  | `is_muted` | `uint8_t` | 1B | `1` if audio output should be muted, `0` otherwise |
-  | `reserved` | `uint8_t[3]` | 3B | Zero-padding alignment bytes |
+| Field | Bytes | Meaning |
+| --- | --- | --- |
+| `magic` | 4 | `SNAU` |
+| `mode` | 1 | 1 playback, 2 capture, 3 ping, 4 volume, 5 stop; bit `0x80` marks a leased operation |
+| `channels` | 1 | 1 mono or 2 stereo, PCM16 LE |
+| `volume` | 1 | 0..100 |
+| `muted` | 1 | 0 or 1 |
+| `sample_rate` | 4 | LE32; capture 16000 Hz |
+| `data_len` | 4 | LE32; playback byte count, capture `0xffffffff`, control 0 |
 
-- **Microphone Capture (STT Streaming)**:
-  - The host connects with `MODE_RECORD`. The daemon spawns ALSA `arecord -D hw:0,0 -r 16000 -f S16_LE -c 1 -t raw` bound to the onboard MIC3 channel.
-  - Raw PCM samples are streamed directly over the TCP socket to Node.js `AudioTransport` (`host/src/audio/transport.ts`).
-  - Upon user release or completion, the host closes the stream, prepends an in-memory 44-byte canonical WAV header (`monoPcmToWav`), and passes the buffer directly to the local Whisper worker. Zero temporary files are written to MK20 storage.
+Leased operations append **32 ASCII hex bytes**, making the request prefix 48 bytes. HUD publishes the selected host IP, lease and a six-second expiry in a mode-0600 RAM file, renewed while the host is live. The audio daemon checks that selection before accepting an operation and throughout streaming; a HUD crash, switch or disconnect revokes ownership. Unselected/legacy writes receive `ERR1`; unauthenticated Ping can only return `PONG`.
 
-- **Speaker Playback (TTS Streaming)**:
-  - The host connects with `MODE_PLAY`, transmitting the `SNAU` header with current knob volume and mute status.
-  - The daemon sets the hardware ALSA mixer levels (`LINEOUT volume` 0..31 and `Headphone volume` 0..7 via `amixer sset`), scales PCM samples in 16-bit integer space, and pipes them directly into `aplay -D hw:0,0 -r <rate> -f S16_LE -c <ch> -t raw`.
-  - Zero disk I/O on the device; speech plays back in real-time as chunks stream from the host.
-
-- **Volume & Mute Integration (Live Adjustment)**:
-  - The MK20's physical `Right Knob` controls system volume (`0`..`100`) and click mute.
-  - **Dynamic In-Flight Volume Adjustment**: Rotating or clicking the Right Knob during active speech immediately adjusts hardware gain without disrupting playback:
-    - **Local MK20 Loop**: `mk20-hud` directly calls `apply_hardware_volume()` via ALSA mixer (`< 1ms` latency).
-    - **TCP Daemon Control**: Host sends a lightweight 16-byte `MODE_SET_VOLUME` packet to `mk20-audio` (port 7702), applying gain updates to `amixer` instantaneously.
-    - **Host PC / Mac Playback**: Host dynamically scales PCM samples in-memory across streaming sentence chunks 1..N.
-    - **Zero Premature Cutoff**: Player teardown avoids indiscriminate ADB `killall -9 aplay` commands, ensuring multi-sentence TTS streams finish naturally to the last word.
-
-- **Hardware Concurrency & Interruption Management**:
-  - The Allwinner T113 `audiocodec` (`hw:0,0`) cannot operate in full-duplex mode. Active speaker playback (`aplay`) locks the audio device and must terminate before microphone recording (`arecord`) can begin.
-  - Pressing `Talk` (Key 20) or `Cancel` (Key 4) issues an immediate cutoff signal, killing active playback and resetting socket buffers before recording begins.
-
-- **Legacy Fallback & Fault Tolerance**:
-  - If TCP port 7702 is unreachable (e.g. older SD card image without `mk20-audio`), `AudioTransport` transparently falls back to the ADB pipeline (`arecord /tmp/snowball_rec.wav` $\rightarrow$ `adb pull`), guaranteeing backward compatibility and zero crash risk.
+- **Capture:** `arecord -D hw:0,0 -f S16_LE -r 16000 -c 3 -t raw` captures three hardware channels; the worker extracts MIC3 into mono PCM. `RDY1` is sent only after actual microphone bytes arrive. The host bounds capture to 120 seconds/3.84MB, waits for real readiness, wraps PCM in a WAV, and passes a private temporary host file to Whisper, deleting it afterward. No device audio scratch file is written.
+- **Playback:** A leased PCM16 stream feeds `aplay -D default`. `RDY1` admits the stream; `DONE` requires the owned player to exit successfully after all expected bytes. Failure, busy codec, stale lease or an interrupted connection cannot be reported as completed playback. Live device volume uses the hardware mixer without duplicate software attenuation; host PCM volume is applied per sentence chunk.
+- **Half duplex:** Stop waits for termination of the owned worker before microphone capture begins. Speaker and microphone are mutually exclusive on this codec. Late readiness/cancellation cannot attach an old capture or playback to a new operation. ASR results are bound to the initiating host/controller/harness/session/capture ID, and stay as drafts until explicit Send.
+- **Failures:** A missing/outdated daemon produces an actionable audio error. Ordinary runtime does not connect ADB, upload helper scripts, pull audio or modify Wi-Fi. Explicit `hardware/mk20/dev-tools/install-mk20.ps1` maintenance accepts a reviewed local `-RuntimeZip` with `-RuntimeSha256`, backs up existing device files and installs the actual HUD/audio/boot bundle. A full SD image backup is recommended for recovery.
 
 ---
 
@@ -319,7 +294,7 @@ The Supervisor uses a tab-local controller ID and a held Web Lock to distinguish
 
 Native catalogs, installations, projects and session scans run in a bounded worker pool outside the API/MK20 heartbeat event loop. A model request scans only its requested harness; concurrent identical reads coalesce, and a later read observes the living source again. Worker timeouts/capacity failures return unavailable rather than fabricated models. Windows worker environments preserve the main process's native `PATH` casing.
 
-MK20 lab packets carry the stable physical controller ID, a fresh transport run ID and a monotonic sequence. The HUD rejects foreign controllers, replayed/out-of-order frames and its last 16 retired runs before mutating display/theme state; input echoes the current scope and uses its own sequence. Once scoped, legacy preview/KEY/DIAL datagrams cannot change that state or inject physical navigation. The peer IP remains pinned, and hardware UART/GPIO events still use the real input path. Disconnect rendering preserves the last native state. The installed HUD's `-d` option detaches it from the ADB launch session. These routing/replay guards do not turn the existing unpaired UDP lab firmware into authenticated production pairing; USB/LAN control identities are not merged from address or VID/PID alone. The MK20 lab identity is obtained through the owner's native ADB board MAC observation, not its routing IP.
+MK20 lab packets carry the stable physical controller ID, a fresh transport run ID and a monotonic sequence. The HUD rejects foreign controllers, replayed/out-of-order frames and its last 16 retired runs before mutating display/theme state; input echoes the current scope and uses its own sequence. Once scoped, legacy preview/KEY/DIAL datagrams cannot change that state or inject physical navigation. The peer IP remains pinned, and hardware UART/GPIO events still use the real input path. Disconnect rendering preserves the last native state. The installed HUD's `-d` option detaches it from the ADB launch session. These routing/replay guards do not turn the existing unpaired UDP lab firmware into authenticated production pairing; USB/LAN control identities are not merged from address or VID/PID alone. The device derives its stable identity from its native Wi-Fi MAC and announces it in SNMK1 discovery; ordinary host identity discovery has no ADB dependency. This self-reported identity is a Preview routing identity, not a cryptographic enrollment proof.
 
 ## 6. Installation & Verification
 

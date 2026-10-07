@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([string]$Device, [string]$Adb, [Parameter(Mandatory)][string]$Output, [switch]$NoDeploy)
+param([string]$Device, [string]$Adb, [Parameter(Mandatory)][string]$Output, [switch]$NoDeploy, [string]$RuntimeZip, [string]$RuntimeSha256)
 $ErrorActionPreference = 'Stop'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 $control = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
@@ -84,17 +84,29 @@ if (-not $Device -or -not (Test-Mk20 $Device)) {
 $network = Invoke-Adb @('-s',$Device,'shell','ip -4 addr show wlan0')
 if ($network -notmatch 'inet ((?:\d{1,3}\.){3}\d{1,3})/') { throw 'MK20 has no Wi-Fi IPv4 address.' }
 $mk20Address = $Matches[1]
-$release = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'release.json') -Raw | ConvertFrom-Json
-$zip = Join-Path $tools 'mk20-runtime.zip'
-if (-not (Test-Path -LiteralPath $zip) -or (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant() -ne $release.sha256) {
-    Invoke-WebRequest $release.url -OutFile $zip -UseBasicParsing
+# Explicit maintenance command only; ordinary PC profile installation never calls ADB.
+if ($RuntimeZip) {
+    if ($RuntimeSha256 -notmatch '^[a-fA-F0-9]{64}$') { throw 'Supply -RuntimeSha256 for the reviewed local bundle.' }
+    $zip = (Resolve-Path -LiteralPath $RuntimeZip).Path
+    $expectedHash = $RuntimeSha256.ToLowerInvariant()
+} else {
+    $release = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'release.json') -Raw | ConvertFrom-Json
+    $zip = Join-Path $tools 'mk20-runtime.zip'
+    $expectedHash = $release.sha256
+    if (-not (Test-Path -LiteralPath $zip) -or (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expectedHash) {
+        Invoke-WebRequest $release.url -OutFile $zip -UseBasicParsing
+    }
 }
-if ((Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant() -ne $release.sha256) { throw 'MK20 runtime checksum mismatch.' }
+if ((Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expectedHash) { throw 'MK20 runtime checksum mismatch.' }
 $bundle = Join-Path $tools 'mk20-runtime'
 Expand-Archive -LiteralPath $zip -DestinationPath $bundle -Force
 $manifest = Get-Content -LiteralPath (Join-Path $bundle 'manifest.json') -Raw | ConvertFrom-Json
+$allowedDeploy = @('mk20-hud','mk20-audio','lunch.sh','fonts/D2Coding.ttf')
+$missingDeploy = @($allowedDeploy | Where-Object { $_ -notin $manifest.deploy })
+if ($manifest.deviceProtocol -ne 'SNMK1' -or $manifest.audioProtocol -ne 'SNAU-lease-v1' -or $missingDeploy.Count -ne 0) { throw 'This bundle does not implement device-owned discovery and native leased audio. Supply the reviewed LAN runtime bundle with -RuntimeZip and -RuntimeSha256.' }
+if (@($manifest.deploy | Where-Object { $_ -notin $allowedDeploy }).Count) { throw 'Unexpected runtime deployment target.' }
 foreach ($file in $manifest.files) {
-    if ($file.path -match '(^|[/\\])\.\.([/\\]|$)' -or [IO.Path]::IsPathRooted($file.path)) { throw 'Invalid bundle path.' }
+    if ($file.path -notmatch '^[a-zA-Z0-9_./-]+$' -or $file.path -match '(^|[/\\])\.\.([/\\]|$)' -or [IO.Path]::IsPathRooted($file.path)) { throw 'Invalid bundle path.' }
     if ((Get-FileHash -LiteralPath (Join-Path $bundle $file.path) -Algorithm SHA256).Hash.ToLowerInvariant() -ne $file.sha256) { throw 'Invalid bundle file digest.' }
 }
 if (-not $NoDeploy) {
@@ -102,7 +114,7 @@ if (-not $NoDeploy) {
     $backup = Join-Path $state ('backups\mk20-' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
     New-Item -ItemType Directory -Path $backup -Force | Out-Null
     [void](Invoke-Adb @('-s',$Device,'pull','/mnt/SDCARD', $backup))
-    Write-Host "Device files backed up privately at $backup. Full SD block-image backup remains the recovery prerequisite."
+    Write-Host "Device files backed up privately at $backup. A full SD image backup is recommended for recovery."
     # Factory QMK must be replaced in physical DFU mode. Existing Snowball HUD
     # installations already passed this step. Do not claim a keyboard was flashed by merely downloading a file.
     $installed = Invoke-Adb @('-s',$Device,'shell','test -x /mnt/SDCARD/mk20-hud && echo snowball || echo factory')
@@ -125,11 +137,18 @@ if (-not $NoDeploy) {
         if (($remoteSum -split '\s')[0] -ne $md5) { throw 'Device file verification failed; old file retained.' }
         [void](Invoke-Adb @('-s',$Device,'shell',("mv '" + $remote + ".new' '" + $remote + "'")))
     }
-    [void](Invoke-Adb @('-s',$Device,'shell','chmod +x /mnt/SDCARD/mk20-hud /mnt/SDCARD/voice_rec.sh /mnt/SDCARD/pcm-stream; /etc/init.d/qt_app2 disable; /etc/init.d/qt_app2 stop; killall KeyboardDevice 2>/dev/null; killall mk20-hud 2>/dev/null; /mnt/SDCARD/mk20-hud -d'))
+    [void](Invoke-Adb @('-s',$Device,'shell','chmod +x /mnt/SDCARD/mk20-hud /mnt/SDCARD/mk20-audio /mnt/SDCARD/lunch.sh; /mnt/SDCARD/lunch.sh --restart-runtime'))
     Start-Sleep -Seconds 2
 }
-$verified = Invoke-Adb @('-s',$Device,'shell','pidof mk20-hud; test -e /dev/fb21 && test -e /dev/ttyS1 && echo hardware-ready; if test -r /mnt/SDCARD/fonts/D2Coding.ttf || test -r /usr/share/fonts/D2Coding.ttf; then echo font-ready; fi')
-if ($verified -notmatch '\d+' -or $verified -notmatch 'hardware-ready' -or $verified -notmatch 'font-ready') { throw 'Native MK20 HUD/keyboard/font readiness was not verified.' }
+foreach ($native in @('mk20-hud','mk20-audio')) {
+    $runtimePid = Invoke-Adb @('-s',$Device,'shell',('pidof ' + $native))
+    if ($runtimePid -notmatch '^\d+$') { throw 'Expected one managed native service.' }
+    $runningDigest = Invoke-Adb @('-s',$Device,'shell',('md5sum /proc/' + $runtimePid + '/exe'))
+    $expectedDigest = (Get-FileHash -LiteralPath (Join-Path $bundle $native) -Algorithm MD5).Hash.ToLowerInvariant()
+    if (($runningDigest -split '\s')[0] -ne $expectedDigest) { throw 'The running device process does not match the reviewed runtime bundle.' }
+}
+$verified = Invoke-Adb @('-s',$Device,'shell','pidof mk20-hud >/dev/null && echo hud-ready; pidof mk20-audio >/dev/null && echo audio-ready; test -e /dev/fb21 && test -e /dev/ttyS1 && echo hardware-ready; if test -r /mnt/SDCARD/fonts/D2Coding.ttf || test -r /usr/share/fonts/D2Coding.ttf; then echo font-ready; fi')
+if (($verified -notmatch 'hud-ready' -or $verified -notmatch 'audio-ready') -or $verified -notmatch 'hardware-ready' -or $verified -notmatch 'font-ready') { throw 'Native MK20 HUD/audio/keyboard/font readiness was not verified.' }
 $record = @{mk20Address=$mk20Address;mk20AdbDevice=$Device;adb=$script:Adb}
 [IO.File]::WriteAllText([IO.Path]::GetFullPath($Output),($record | ConvertTo-Json) + "`n",[Text.UTF8Encoding]::new($false))
-Write-Host "Verified native MK20 HUD at $mk20Address; middleware will connect to UDP 7701."
+Write-Host "Verified MK20 native runtime at $mk20Address; select your middleware from Machines (K17)."

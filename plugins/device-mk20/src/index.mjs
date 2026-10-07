@@ -59,6 +59,7 @@ export function encodeLegacyPreview(view, sequence) {
   });
   const packet={type:'v2_sync',seq:sequence,viewMode:text(view.mode ?? 'lab',15),topTitle:text(view.title,63),topSubtitle:text(view.subtitle ?? '',63),topBody:view.lines.map(line=>text(line,168)).join('\n'),topScroll:view.scroll,topTotalLines:view.totalLines,volume:view.volume,isMuted:view.muted,keys};
   if(view.controllerId!==undefined||view.runId!==undefined){requireThat(/^ctl_[a-f0-9]{16}$/.test(view.controllerId)&&/^[a-f0-9]{32}$/.test(view.runId)&&int(sequence,1,0x7fffffff),'invalid_scope');packet.controllerId=view.controllerId;packet.runId=view.runId;}
+  if(view.leaseToken!==undefined){requireThat(/^[a-f0-9]{32}$/.test(view.leaseToken),'invalid_lease');packet.lease=view.leaseToken;}
   if (view.skinId !== undefined) {
     requireThat(typeof view.skinId === 'string' && /^[a-z0-9][a-z0-9-_]{1,31}$/.test(view.skinId), 'invalid_skin_id');
     packet.skinId = view.skinId;
@@ -77,10 +78,11 @@ import { DeviceSkinManager } from './skin.mjs';
 export class Mk20LabTransport extends EventEmitter {
   #socket; #starting=false; #generation=0; #sequence=0; #lastSequence=-1; #window=Date.now(); #count=0; #scoped=false;
   skinManager;
-  constructor({labEnabled=false,localAddress,targetAddress,targetPort=7701,localPort=0,skinManager,controllerId}) {
+  constructor({labEnabled=false,localAddress,targetAddress,targetPort=7701,localPort=0,skinManager,controllerId,leaseToken}) {
     super();requireThat(labEnabled === true,'lab_opt_in_required');
     requireThat(local(localAddress)&&local(targetAddress)&&int(targetPort,1,65535)&&int(localPort,0,65535),'invalid_endpoint');
     this.endpoint=Object.freeze({localAddress,targetAddress,targetPort,localPort});
+    requireThat(leaseToken===undefined||/^[a-f0-9]{32}$/.test(leaseToken),'invalid_lease'); this.leaseToken=leaseToken;
     this.skinManager = skinManager || new DeviceSkinManager();
     requireThat(controllerId===undefined||/^ctl_[a-f0-9]{16}$/.test(controllerId),'invalid_controller');this.controllerId=controllerId;
   }
@@ -107,6 +109,7 @@ export class Mk20LabTransport extends EventEmitter {
       if(this.#socket!==socket||generation!==this.#generation||remote.address!==this.endpoint.targetAddress||remote.port!==this.endpoint.targetPort)return;
       if(Date.now()-this.#window>=1000){this.#window=Date.now();this.#count=0;}if(++this.#count>100)return;
       try {const input=decodeLegacyInput(bytes);
+        if(this.leaseToken&&(input.controllerId!==this.controllerId||input.runId!==this.runId))return;
         if(input.controllerId!==undefined){if(input.controllerId!==this.controllerId||input.runId!==this.runId)return;if(!this.#scoped)this.#lastSequence=-1;this.#scoped=true;}
         else if(this.#scoped)return;
         if(input.sequence!==undefined){if(input.sequence<=this.#lastSequence)return;this.#lastSequence=input.sequence;}
@@ -122,7 +125,7 @@ export class Mk20LabTransport extends EventEmitter {
   async preview(view) {
     const socket=this.#socket;requireThat(socket&&!this.#starting,'not_running');
     const enriched = (view && view.skinId) ? view : this.skinManager.applyToPreview(view);
-    const bytes=encodeLegacyPreview({...enriched,...(this.controllerId?{controllerId:this.controllerId,runId:this.runId}:{})},++this.#sequence);
+    const bytes=encodeLegacyPreview({...enriched,...(this.leaseToken?{leaseToken:this.leaseToken}:{}),...(this.controllerId?{controllerId:this.controllerId,runId:this.runId}:{})},++this.#sequence);
     await new Promise((resolve,reject)=>socket.send(bytes,this.endpoint.targetPort,this.endpoint.targetAddress,error=>error?reject(new Mk20Fault('preview_failed')):resolve()));
     return {sentBytes:bytes.length,delivery:'unacknowledged_lab'};
   }

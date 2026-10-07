@@ -42,6 +42,7 @@
 #include <errno.h>
 
 #include "v2_state.h"
+#include "mk20-network.h"
 #include "v2_render.h"
 
 #undef KEY_W
@@ -1677,6 +1678,41 @@ static int read_cpu_percent(void) {
     return 28;
 }
 
+static Mk20Network g_network;
+static V2_State g_machine_saved;
+static void machine_view(void) {
+    if(!g_network.menu)return;
+    memset(&g_v2_state,0,sizeof g_v2_state);
+    g_v2_state.volume=g_machine_saved.volume;g_v2_state.is_muted=g_machine_saved.is_muted;
+    strcpy(g_v2_state.view_mode,"workspace");
+    strcpy(g_v2_state.top_title,"Machines");
+    snprintf(g_v2_state.top_subtitle,sizeof g_v2_state.top_subtitle,"Select to pair / K8 forget / K4 back");
+    size_t used=0; int first=g_network.focus>=4?g_network.focus-3:0;
+    if(!g_network.count)strcpy(g_v2_state.top_body,"Searching local Wi-Fi for middleware...\nStart the MK20 profile on your PC.");
+    for(int i=first;i<g_network.count&&i<first+4;i++){
+        Mk20Host *h=&g_network.hosts[i]; int online=h->seen&&get_time_ms()-h->seen<8000;
+        used+=snprintf(g_v2_state.top_body+used,sizeof g_v2_state.top_body-used,"%c %s [%s%s]\n",i==g_network.focus?'>':' ',h->name,h->paired?"paired":"new",online?" / online":" / offline");
+    }
+    const int ids[]={17,16,4,8}; const char *labels[]={"Machines","Pair / Select","Back","Forget"};
+    for(int j=0;j<4;j++){V2_Key *k=&g_v2_state.keys[ids[j]]; k->id=ids[j];strcpy(k->main,labels[j]);}
+    g_host_offline=0; g_dirty_keys=0x1FFFFE;g_dirty_top=1;
+}
+static void machine_reset_scope(void) {
+    g_has_host_addr=0;g_v2_controller_id[0]=0;g_v2_run_id[0]=0;g_v2_sequence=0;
+    v2_init_defaults();g_host_offline=1;g_last_host_sync_ms=0;
+    g_dirty_keys=0x1FFFFE;g_dirty_top=1;
+}
+static void machine_menu(int open) {
+    if(open&&!g_network.menu){g_machine_saved=g_v2_state;g_network.menu=1;if(g_network.selected>=0)g_network.focus=g_network.selected;machine_view();}
+    else if(!open&&g_network.menu){g_network.menu=0;g_v2_state=g_machine_saved;g_host_offline=!g_has_host_addr;g_dirty_keys=0x1FFFFE;g_dirty_top=1;}
+}
+static void machine_commit(void) {
+    if(mk20_network_select(&g_network,g_sockfd,g_network.focus,get_time_ms())){
+        g_network.menu=0;machine_reset_scope();
+        strcpy(g_v2_state.top_title,"Connecting to middleware");
+        strcpy(g_v2_state.top_subtitle,g_network.hosts[g_network.selected].name);
+    } else {machine_view();strcpy(g_v2_state.top_subtitle,"Machine offline; select an online machine");}
+}
 // Forward declarations for knob handlers
 static void on_left_knob(int direction);
 static void on_left_knob_click(void);
@@ -1700,6 +1736,13 @@ static void on_key_event(int row, int col, int pressed) {
     if (key_idx < 1 || key_idx > 20) return;
 
     g_key_pressed[key_idx] = pressed;
+    if(g_mode_v2&&key_idx==17){if(pressed)machine_menu(!g_network.menu);return;}
+    if(g_mode_v2&&g_network.menu){
+        if(pressed&&key_idx==4)machine_menu(0);
+        else if(pressed&&key_idx==16)machine_commit();
+        else if(pressed&&key_idx==8){mk20_network_forget(&g_network,g_sockfd,g_network.focus);machine_reset_scope();machine_view();}
+        return;
+    }
 
     if (g_mode_v2) {
         if (g_sockfd >= 0 && g_has_host_addr) {
@@ -1809,6 +1852,7 @@ static void on_key_event(int row, int col, int pressed) {
 
 // Handle Left Rotary Knob (controls Card 1 & Key 11)
 static void on_left_knob(int direction) {
+    if(g_mode_v2&&g_network.menu){g_network.focus+=direction;if(g_network.focus<0)g_network.focus=0;if(g_network.focus>=g_network.count)g_network.focus=g_network.count?g_network.count-1:0;machine_view();return;}
     if (g_mode_v2) {
         if (g_sockfd >= 0 && g_has_host_addr) {
             char pkt[128];
@@ -1841,6 +1885,7 @@ static void on_left_knob(int direction) {
 }
 
 static void on_left_knob_click(void) {
+    if(g_mode_v2&&g_network.menu){machine_commit();return;}
     if (g_mode_v2) {
         if (g_sockfd >= 0 && g_has_host_addr) {
             char pkt[128];
@@ -2065,6 +2110,10 @@ static void parse_qmk_byte(uint8_t byte) {
 }
 
 static void handle_udp_packet(const char *buf, int len, const struct sockaddr_in *sender) {
+    if(g_mode_v2){
+        if(mk20_network_packet(&g_network,buf,sender,get_time_ms())){if(g_network.menu)machine_view();return;}
+        if(g_network.menu||!mk20_network_accept(&g_network,buf,sender))return;
+    }
     if(sender&&g_v2_controller_id[0]&&g_has_host_addr&&sender->sin_addr.s_addr!=g_host_addr.sin_addr.s_addr)return;
     int prev_vol = g_v2_state.volume;
     int prev_mute = g_v2_state.is_muted;
@@ -2275,6 +2324,7 @@ int main(int argc, char *argv[]) {
     if (g_mode_v2) {
         printf("[MK20-HUD] Mode: Product Design V2\n");
         v2_init_defaults();
+        mk20_network_init(&g_network);
     } else {
         printf("[MK20-HUD] Mode: 12-Pattern Showcase\n");
     }
@@ -2390,6 +2440,8 @@ int main(int argc, char *argv[]) {
         bind(sockfd, (const struct sockaddr *)&servaddr, sizeof(servaddr));
     }
 
+    if(g_mode_v2&&!g_network.selected_id[0])machine_menu(1);
+
     // 7. Event Loop with Animation & Telemetry Timers
     struct pollfd pfd[8];
     int pfd_count = 0;
@@ -2479,6 +2531,12 @@ int main(int argc, char *argv[]) {
         }
 
         long long now = get_time_ms();
+        if(g_mode_v2){
+            char old_lease[33];strcpy(old_lease,g_network.lease);
+            mk20_network_tick(&g_network,sockfd,now);
+            if(strcmp(old_lease,g_network.lease)){machine_reset_scope();if(g_network.menu)machine_view();}
+            if(g_network.menu&&now-g_network.last_tick<20)machine_view();
+        }
         if (g_knob_toggle_pending) {
             g_knob_toggle_pending = 0; // Retain a chord even if press/release arrive in one UART batch.
             if (g_saved_keymap_valid) {
@@ -2489,7 +2547,7 @@ int main(int argc, char *argv[]) {
         }
 
         if (g_mode_v2) {
-            if (now - g_last_host_sync_ms > 15000 && !g_host_offline) {
+            if (!g_network.menu && now - g_last_host_sync_ms > 8000 && !g_host_offline) {
                 g_host_offline = 1;
                 // Renderer shows the disconnect screen; keep the last actual
                 // controller state intact for recovery and diagnostics.
