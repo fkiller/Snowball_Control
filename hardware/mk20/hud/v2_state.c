@@ -2,11 +2,19 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <limits.h>
+#include <errno.h>
 
 V2_State g_v2_state;
 V2_Theme g_v2_theme;
 int g_mode_v2 = 1; // Default to V2 mode
 uint32_t g_v2_tick_count = 0;
+char g_v2_controller_id[21];
+char g_v2_run_id[33];
+uint32_t g_v2_sequence;
+static char retired_runs[16][33];
+static unsigned retired_count;
+static unsigned retired_next;
 
 static const V2_Theme s_builtin_themes[] = {
     {
@@ -348,7 +356,9 @@ static int parse_int_field_bounded(const char *json, const char *end, const char
     if (!found) return 0;
 
     pos = skip_whitespace(found);
-    *out = atoi(pos);
+    char *tail;errno=0;long value=strtol(pos,&tail,10);
+    if(tail==pos||errno==ERANGE||value<INT_MIN||value>INT_MAX||(*skip_whitespace(tail)!=','&&*skip_whitespace(tail)!='}'&&*skip_whitespace(tail)!=']'))return 0;
+    *out = (int)value;
     return 1;
 }
 
@@ -399,6 +409,22 @@ int v2_parse_sync_packet(const char *json, int len) {
     if (!strstr(json, "\"type\":\"v2_sync\"") && !strstr(json, "\"type\": \"v2_sync\"")) {
         return 0;
     }
+
+    // Scope/replay checks precede every display/theme mutation. This is a lab
+    // routing boundary, not cryptographic pairing or command authorization.
+    char controller[64]="",run[64]="";int sequence=0;
+    int has_controller=parse_string_field(json,"controllerId",controller,sizeof controller);
+    int has_run=parse_string_field(json,"runId",run,sizeof run);
+    if(has_controller||has_run){
+        if(!has_controller||!has_run||strlen(controller)!=20||strncmp(controller,"ctl_",4)||strspn(controller+4,"0123456789abcdef")!=16||strlen(run)!=32||strspn(run,"0123456789abcdef")!=32||!parse_int_field(json,"seq",&sequence)||sequence<=0)return 0;
+        if(g_v2_controller_id[0]&&strcmp(controller,g_v2_controller_id))return 0;
+        if(!strcmp(run,g_v2_run_id)){if((uint32_t)sequence<=g_v2_sequence)return 0;}
+        else {
+            for(unsigned i=0;i<retired_count;i++)if(!strcmp(retired_runs[i],run))return 0;
+            if(g_v2_run_id[0]){strcpy(retired_runs[retired_next],g_v2_run_id);retired_next=(retired_next+1)%16;if(retired_count<16)retired_count++;}
+        }
+        strcpy(g_v2_controller_id,controller);strcpy(g_v2_run_id,run);g_v2_sequence=(uint32_t)sequence;
+    } else if(g_v2_controller_id[0])return 0;
 
     parse_string_field(json, "viewMode", g_v2_state.view_mode, sizeof(g_v2_state.view_mode));
     if (parse_string_field(json, "skinId", g_v2_state.skin_id, sizeof(g_v2_state.skin_id))) {

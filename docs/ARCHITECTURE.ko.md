@@ -30,6 +30,20 @@
 
 ## 1. 저장소와 실제 실행 경로
 
+**Snowball**은 전체 로컬 제어 시스템이며, **Snowball Middleware**가 공통 설치·PC 실행·Web UI를 담당한다. **Snowball Control**은 MK20 기기 구성 요소와 이 공통 아키텍처 문서를 관리한다. 두 번째 미들웨어가 아니다. **Snowball Device · M5Stack**은 ESP32 펌웨어·게이트웨이를 관리하고, **Snowball Harness · Codex / Antigravity / OpenCode**는 모든 설치에 포함하는 독립 빌드 플러그인이다.
+
+Windows 공통 진입점은 `Snowball_Middleware/install.ps1 -Profile web|mk20|m5stack`이다. `scripts/setup.mjs`가 누락된 공식 저장소를 복제하고 미들웨어·하네스 3종을 빌드한 뒤, 실제 격리 워커의 초기화를 검사한다. `.snowball/suite.json`에 소스 커밋·승인된 진입점 다이제스트를 기록한다. 기존 추적 파일 수정은 거부하고 체크아웃을 강제로 초기화하지 않는다. 네이티브 공급자 앱·계정 로그인은 공급자별 사용자 단계이며, 앱이 없으면 사용 불가로 유지한다. 모델·Effort·세션은 네이티브 CLI/캐시에서 관찰한다.
+
+| 프로필 | 설치 저장소 | 기기 준비 |
+| --- | --- | --- |
+| `web` | Middleware + Harness 3종 | 없음. Control·기기 전송·STT를 불러오지 않는다. |
+| `m5stack` | Middleware + Harness 3종 + Device M5Stack | Python venv, 실제 UART/ESP32 확인, 4MB/16MB 용량별 빌드, 전체 플래시 백업, USB 업로드, 실제 펌웨어/FACES 확인, 게이트웨이 등록 |
+| `mk20` | Middleware + Harness 3종 + Control | ADB 탐지/SD Wi-Fi 초기 설정, 물리 QMK DFU 안내, SHA-256 검사된 네이티브 번들, 기기 파일 백업, HUD 배포 확인, STT 의존성·모델 확인 |
+
+`Start-Snowball.ps1`과 바탕화면 바로가기는 재설치 없이 `scripts/start-suite.mjs`를 시작한다. 점유된 루프백 포트를 거부하고 설치된 플러그인 다이제스트를 검사한 뒤 격리 프로세스를 실행한다. 공통 `scripts/start-all.mjs`가 실제 네이티브 세션·명령 저널·Web API를 제공하고, 실제 API 응답 후 브라우저를 연다. MK20만 전송·UI 컨텍스트·STT를 초기화하며 M5Stack은 별도 컨트롤러 ID의 게이트웨이를 시작한다. 부모 IPC 종료/연결 해제로 자식 프로세스도 정리한다. 포트·데이터 경로 옵션으로 기존 런타임에 영향을 주지 않고 확인할 수 있다. Web UI는 PIN 없는 루프백 전용이며 기기 LAN의 기존 페어링·보안 경계를 유지한다.
+
+Windows 부트스트랩은 지원 Node(공식 LTS ZIP·SHA-256 검사), Git, 필요한 Python을 준비한다. macOS 소스 설치는 Node/Git/Python 사전 준비가 필요하고, Linux 전체 플러그인 워커는 아직 지원하지 않는다. USB 재연결·DFU 진입·MK20 전체 raw SD 이미지 백업·네이티브 공급자 로그인은 물리/사용자 단계로 남는다. `-NoFlash`는 기존 기기 설치 확인이며 실제 플래싱을 했다고 처리하지 않는다. 모든 README는 동일 배너·아이콘과 `Snowball <구성 요소> · <공급자> — Preview` 명칭을 사용한다.
+
 | 구성 | 위치 | 현재 역할 |
 | --- | --- | --- |
 | 키보드 MCU | `Snowball_Control/hardware/mk20/qmk/` | QMK 키 스캔, USB HID, Tina Linux와 UART 통신 |
