@@ -36,6 +36,12 @@ export class LocalWhisperProvider implements NativeVoiceProvider {
     const venvPaths = [
       path.resolve(__dirname, "../../.venv-whisper"),
       path.resolve(__dirname, "../../.venv"),
+      ...(process.env.SNOWBALL_CONTROL_ROOT ? [
+        path.resolve(process.env.SNOWBALL_CONTROL_ROOT, "host/.venv-whisper"),
+        path.resolve(process.env.SNOWBALL_CONTROL_ROOT, ".venv-whisper"),
+      ] : []),
+      "E:/developments/projects/Snowball_Control/host/.venv-whisper",
+      "E:/developments/projects/Snowball_Control/.venv-whisper",
       path.resolve(process.cwd(), ".venv-whisper"),
       path.resolve(process.cwd(), ".venv"),
       path.resolve(process.cwd(), "host/.venv-whisper"),

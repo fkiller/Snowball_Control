@@ -212,6 +212,8 @@ export class ContextManager {
   public volume = 75; // 0..100
   public isMuted = false;
   public isSpeaking = false;
+  public isSpeakingHost = false;
+  public autoTts = false;
   public isRecordingVoice = false;
   public isTranscribingVoice = false;
   public voiceDraftText = "";
@@ -343,8 +345,7 @@ export class ContextManager {
   }
 
   public getProjectsForCurrentScope(): ProjectInfo[] {
-    const key = this.getScopeKey();
-    return this.projectsByScope[key] || [];
+    return this.projectsByScope[this.getScopeKey()] || [];
   }
 
   public getSessionsForCurrentScope(): SessionInfo[] {
@@ -1340,7 +1341,15 @@ export class ContextManager {
       // Row 3: Other, Submit, Speak, Later, Stop
       keys.push({ keyId: 20, labelTop: "INPUT", labelMain: "Other", isFilled: false, isEditing: false, isFocused: false });
       keys.push({ keyId: 16, labelTop: "ACTION", labelMain: "Submit", isFilled: true, isEditing: false, isFocused: false });
-      keys.push({ keyId: 12, labelTop: "VOICE", labelMain: "Speak", isFilled: this.isSpeaking, isEditing: false, isFocused: false });
+      keys.push({
+        keyId: 12,
+        labelTop: this.autoTts ? "AUTO TTS" : "VOICE",
+        labelMain: "Speak",
+        labelSub: this.autoTts ? (this.isSpeaking ? "Speaking" : "ON") : "Off",
+        isFilled: this.autoTts || this.isSpeaking,
+        isEditing: this.autoTts,
+        isFocused: false,
+      });
       keys.push({ keyId: 8, labelTop: "DISMISS", labelMain: "Later", isFilled: false, isEditing: false, isFocused: false });
       keys.push({ keyId: 4, labelTop: "ABORT", labelMain: "Stop", isFilled: false, isEditing: false, isFocused: false });
     } else {
@@ -1645,8 +1654,26 @@ export class ContextManager {
           isEditing: false,
           isFocused: false,
         });
-        keys.push({ keyId: 12, labelTop: "AUDIO", labelMain: "Speak", isFilled: this.isSpeaking, isEditing: false, isFocused: false });
-        keys.push({ keyId: 8, labelTop: "", labelMain: "", isFilled: false, isEditing: false, isFocused: false, isDisabled: true });
+        keys.push({
+          keyId: 12,
+          labelTop: this.autoTts ? "AUTO TTS" : "AUDIO",
+          labelMain: "Speak",
+          labelSub: this.autoTts ? (this.isSpeaking ? "Speaking" : "ON") : "Off",
+          isFilled: this.autoTts || this.isSpeaking,
+          isEditing: this.autoTts,
+          isFocused: false,
+          isDisabled: false,
+        });
+        keys.push({
+          keyId: 8,
+          labelTop: process.platform === "darwin" ? "MAC AUDIO" : "PC AUDIO",
+          labelMain: process.platform === "darwin" ? "Speak Mac" : "Speak PC",
+          labelSub: this.isSpeakingHost ? "Speaking" : "",
+          isFilled: this.isSpeakingHost,
+          isEditing: false,
+          isFocused: false,
+          isDisabled: false,
+        });
         keys.push({
           keyId: 4,
           labelTop: "ABORT",
@@ -1661,7 +1688,7 @@ export class ContextManager {
     // The same disabled state is enforced by the input dispatcher.
     for (const key of keys) {
       if (this.viewMode === "session" || this.viewMode === "editor") {
-        if (key.keyId === 12) key.isDisabled = true; // TTS is outside this MVP.
+        if (key.keyId === 12 && !this.autoTts) key.isDisabled = true;
         if (key.keyId === 16 && !this.isRecordingVoice && !this.voiceDraftText.trim()) key.isDisabled = true;
         if ([20, 16, 4].includes(key.keyId) && this.voiceSubmission !== "idle") {
           key.isDisabled = true;
@@ -1689,6 +1716,7 @@ export class ContextManager {
       volume: this.volume,
       isMuted: this.isMuted,
       isSpeaking: this.isSpeaking,
+      isSpeakingHost: this.isSpeakingHost,
       topTitle: this.readerTitle,
       topSubtitle: this.readerSubtitle,
       topBodyLines: this.readerLines,

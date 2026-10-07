@@ -5,6 +5,8 @@ import * as path from "node:path";
 import { ContextManager, wrapText } from "./context.js";
 import { VoiceDraft, type DraftDestination } from "../audio/draft.js";
 import type { NativeVoiceProvider } from "../audio/provider.js";
+import type { NativeTtsProvider } from "../audio/tts-provider.js";
+import { LocalSupertonicProvider } from "../audio/local-supertonic.js";
 import type { DeviceInputPacket } from "../protocol/messages.js";
 import type { KeyVisual, ProjectInfo, SessionInfo } from "../types.js";
 import { GitProvider } from "../vcs/git.js";
@@ -42,6 +44,21 @@ export function turnContainsUserPrompt(turn: any, prompt: string): boolean {
   });
 }
 
+export function extractSpokenAgentResponse(rawText: string): string {
+  if (!rawText) return "";
+  const clean = rawText.trim();
+  // If the agent response consists of multiple messages joined by newlines,
+  // extract the final concluding message rather than all intermediate tool/thought messages
+  const msgs = clean.split(/\n(?=[^\s])/).map(m => m.trim()).filter(Boolean);
+  const target = msgs.length > 0 ? msgs[msgs.length - 1] : clean;
+  // Cap length to 500 characters so synthesis remains instant and natural
+  if (target.length > 500) {
+    const end = target.slice(0, 500).search(/[.!?]\s+(?=[^\s])/);
+    if (end > 100) return target.slice(0, end + 1).trim();
+    return target.slice(0, 500).trim();
+  }
+  return target;
+}
 export interface MvpDesktopClient {
   isConnected: boolean;
   connect(): Promise<boolean>;
@@ -90,7 +107,8 @@ export class MvpController {
     readonly voice: NativeVoiceProvider,
     private changed: () => void = () => {},
     private storagePath?: string,
-    readonly desktop: MvpDesktopClient = new CodexDesktopClient()
+    readonly desktop: MvpDesktopClient = new CodexDesktopClient(),
+    readonly tts: NativeTtsProvider = new LocalSupertonicProvider()
   ) {
     const c = this.context;
     c.harnesses = [
@@ -245,8 +263,83 @@ export class MvpController {
       const t = this.tasks.get(id) || { text: "", phase: "" };
       t.phase = p.turn.status; t.turnId = p.turn.id; this.tasks.set(id, t);
       for (let i = this.pending.length - 1; i >= 0; i--) if (this.pending[i].params.threadId === id && this.pending[i].params.turnId === p.turn.id) this.pending.splice(i, 1);
-      if (id === this.target() && this.context.viewMode === "session" && !this.draft.snapshot?.text && !this.refreshing) void this.load().catch(e => this.info("Read failed", String(e)));
+      if (id === this.target() && this.context.viewMode === "session" && !this.draft.snapshot?.text && !this.refreshing) {
+        void this.load().then(() => {
+          if (this.context.autoTts) {
+            const turns = this.context.currentTurns;
+            const latest = turns.length > 0 ? turns[turns.length - 1] : null;
+            if (latest?.agentResponse) {
+              const text = extractSpokenAgentResponse(latest.agentResponse);
+              if (text) void this.speakText(text);
+            }
+          }
+        }).catch(e => this.info("Read failed", String(e)));
+      }
     }
+    this.paint();
+  }
+  public async toggleAutoTts(): Promise<void> {
+    this.context.autoTts = !this.context.autoTts;
+    if (this.context.autoTts) {
+      this.clearNotice();
+      const turns = this.context.currentTurns;
+      const latestWithResponse = turns.slice().reverse().find(t => t.agentResponse && t.agentResponse.trim());
+      const rawText = latestWithResponse?.agentResponse || this.context.getCurrentSession().preview;
+      const text = extractSpokenAgentResponse(rawText);
+      if (text && text.trim()) {
+        await this.speakText(text);
+      } else {
+        this.info("Auto TTS ON", "Ready for voice input. No turns in this session yet.");
+      }
+    } else {
+      this.clearNotice();
+      await this.stopSpeaking();
+    }
+    this.paint();
+  }
+  public async speakText(text: string, destination: "device" | "host" = "device"): Promise<void> {
+    if (this.context.isMuted || !text.trim()) return;
+    if (destination === "device") {
+      this.context.isSpeaking = true;
+    } else {
+      this.context.isSpeakingHost = true;
+    }
+    this.paint();
+    try {
+      if ((this.tts as any).speak) {
+        await (this.tts as any).speak(text, { volume: this.context.volume / 100, destination });
+      } else {
+        await this.tts.synthesize(text, { volume: this.context.volume / 100, destination });
+      }
+    } catch (e: any) {
+      console.warn("[MvpController] Speech synthesis error:", e?.message || e);
+    } finally {
+      this.context.isSpeaking = false;
+      this.context.isSpeakingHost = false;
+      this.paint();
+    }
+  }
+  public async speakOnHost(): Promise<void> {
+    if (this.context.isSpeakingHost) {
+      await this.stopSpeaking();
+      return;
+    }
+    const turns = this.context.currentTurns;
+    const latestWithResponse = turns.slice().reverse().find(t => t.agentResponse && t.agentResponse.trim());
+    const rawText = latestWithResponse?.agentResponse || this.context.getCurrentSession().preview;
+    const text = extractSpokenAgentResponse(rawText);
+    if (text && text.trim()) {
+      await this.speakText(text, "host");
+    } else {
+      this.info(process.platform === "darwin" ? "Speak Mac" : "Speak PC", "No agent response to speak.");
+    }
+  }
+  public async stopSpeaking(): Promise<void> {
+    this.context.isSpeaking = false;
+    this.context.isSpeakingHost = false;
+    try {
+      await this.tts.stop();
+    } catch {}
     this.paint();
   }
   private receive(request: any) {
@@ -257,6 +350,7 @@ export class MvpController {
   }
   private activeRequest() { return this.pending[0]; }
   private async stopTask(id = this.target()) {
+    await this.stopSpeaking();
     const task = this.tasks.get(id);
     if (!task?.turnId || !["inProgress", "stopping"].includes(task.phase)) return this.info("Stop unavailable", "No confirmed running turn. Refresh the task.");
     if (task.phase === "stopping") return;
@@ -268,6 +362,9 @@ export class MvpController {
     } catch (e) { task.phase = "inProgress"; this.info("Stop unconfirmed", String(e)); }
   }
   private async startVoice() {
+    this.context.isSpeaking = false;
+    this.context.isSpeakingHost = false;
+    void this.tts.stop();
     if (this.startingVoice || this.cancellingVoice) return;
     const prior = this.draft.snapshot;
     if (prior && ["sending", "unknown", "recording", "transcribing"].includes(prior.phase)) return;
@@ -496,7 +593,13 @@ export class MvpController {
   }
   private async dispatch(packet: DeviceInputPacket) {
     const c = this.context;
-    if (packet.type === "knob_right") { packet.isClick ? c.onRightKnobClick() : c.onRightKnob(packet.delta || 0); return; }
+    if (packet.type === "knob_right") {
+      packet.isClick ? c.onRightKnobClick() : c.onRightKnob(packet.delta || 0);
+      if (this.tts?.setVolume) {
+        this.tts.setVolume(c.volume / 100, c.isMuted);
+      }
+      return;
+    }
     if (packet.type === "knob_left") {
       if (this.requestView) { this.questionOffset = Math.max(0, this.questionOffset + (packet.delta || 0)); return; }
       if (packet.isClick) {
@@ -593,6 +696,7 @@ export class MvpController {
       else if (k === 8) this.requestView = false;
       else if (k === 4) await this.stopTask(request.params.threadId);
       else if (k === 20) await this.startVoice();
+      else if (k === 12) await this.toggleAutoTts();
       else if (k === 16) {
         if (request.method === "item/tool/requestUserInput") {
           const q = request.params.questions[request.question];
@@ -770,7 +874,11 @@ export class MvpController {
       }
     } else if (k === 20) { if (this.draft.snapshot?.phase === "recording") await this.finishVoice(); else await this.startVoice(); }
     else if (k === 16) { if (this.draft.snapshot?.phase === "unknown") await this.reconcile(); else if (this.draft.snapshot?.phase === "recording") await this.finishVoice(); else await this.send(); }
-    else if (k === 8) this.restoreDraft();
+    else if (k === 12) await this.toggleAutoTts();
+    else if (k === 8) {
+      if (this.replacing) this.restoreDraft();
+      else await this.speakOnHost();
+    }
     else if (k === 4) {
       if (this.draft.snapshot && ["review","recording","transcribing"].includes(this.draft.snapshot.phase)) await this.cancelVoice();
       else if (this.draft.snapshot?.phase === "unknown") {
@@ -792,7 +900,31 @@ export class MvpController {
     for (const key of state.keys) key.isDisabled = !!key.isDisabled;
     const replace = (key: KeyVisual) => { state.keys = state.keys.map(k => k.keyId === key.keyId ? key : k); };
     if (c.viewMode === "session") {
-      for (const id of [10,12]) { const key = state.keys.find(k => k.keyId === id)!; key.isDisabled = true; }
+      for (const id of [10]) { const key = state.keys.find(k => k.keyId === id)!; key.isDisabled = true; }
+      replace({
+        keyId: 12,
+        labelTop: c.autoTts ? "AUTO TTS" : "AUDIO",
+        labelMain: "Speak",
+        labelSub: c.autoTts ? (c.isSpeaking ? "Speaking" : "Auto ON") : "Off",
+        isFilled: c.autoTts || c.isSpeaking,
+        isEditing: c.autoTts,
+        isFocused: false,
+        isDisabled: false,
+      });
+
+      const hostLabel = process.platform === "darwin" ? "Speak Mac" : "Speak PC";
+      const hostTop = process.platform === "darwin" ? "MAC AUDIO" : "PC AUDIO";
+      replace({
+        keyId: 8,
+        labelTop: this.replacing ? "DRAFT" : hostTop,
+        labelMain: this.replacing ? "Undo" : hostLabel,
+        labelSub: this.replacing ? "Restore" : (c.isSpeakingHost ? "Speaking" : ""),
+        isFilled: this.replacing ? false : c.isSpeakingHost,
+        isEditing: false,
+        isFocused: false,
+        isDisabled: false,
+      });
+
       if (c.activeEditor === "none") replace(this.key(3, this.pending.length ? `Requests ${this.pending.length}` : this.connected ? "Refresh" : "Reconnect", this.connecting));
       for (const id of [1,18,14,20,16]) if (!this.connected || this.connecting) state.keys.find(k => k.keyId === id)!.isDisabled = true;
       if (this.target() === "none") for (const id of [20,16,4,5]) state.keys.find(k => k.keyId === id)!.isDisabled = true;
@@ -852,7 +984,13 @@ export class MvpController {
         const i = this.questionOffset + row, text = options[i]?.label || "";
         ids.forEach((id,col) => { const key = this.key(id, col === 0 ? (r.selected === i ? "[X]" : "[ ]") : Array.from(text).slice((col-1)*5,col*5).join(""), !options[i] || !!r.sending); key.isFilled = r.selected === i; state.keys.push(key); });
       }
-      state.keys.push(this.key(20,"Other", !q || !q.isOther || q.isSecret || !!r.sending), this.key(16,q ? "Next / Send" : "Submit", r.selected < 0 || !!r.sending),this.key(12,"",true),this.key(8,"Later"),this.key(4,"Stop",this.tasks.get(r.params.threadId)?.phase !== "inProgress"));
+      state.keys.push(
+        this.key(20, "Other", !q || !q.isOther || q.isSecret || !!r.sending),
+        this.key(16, q ? "Next / Send" : "Submit", r.selected < 0 || !!r.sending),
+        this.key(12, "Speak", false, c.autoTts ? "Auto ON" : "Off"),
+        this.key(8, "Later"),
+        this.key(4, "Stop", this.tasks.get(r.params.threadId)?.phase !== "inProgress")
+      );
     }
     if (c.viewMode !== "changes") {
       state.topBodyLines = state.topBodyLines.flatMap(line => wrapText(line));
@@ -896,7 +1034,7 @@ export class MvpController {
   }
   async close() {
     this.paint(); // persist final draft state before disposing
-    this.disposed = true;
+    this.tts.close();
     this.voice.close();
     try { this.desktop.disconnect(); } catch {}
     await this.backend.stop();

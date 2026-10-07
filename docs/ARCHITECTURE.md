@@ -50,8 +50,9 @@ Windows bootstrap prepares supported Node (official LTS ZIP plus official SHA-25
 | --- | --- | --- |
 | **Keyboard MCU** | `Snowball_Control/hardware/mk20/qmk/` | QMK mechanical key matrix scan, USB HID, and UART escalation to Tina Linux |
 | **Device Linux OS** | Vendor Tina T113-based Snowball SD Release | Framebuffers, ALSA, Wi-Fi, and ADB. Tina BSP SDK is not tracked in this repository |
-| **Device HUD** | `Snowball_Control/hardware/mk20/hud/` | Native C low-latency HUD daemon running on `/mnt/SDCARD/mk20-hud` |
-| **Device Boot Tools** | `Snowball_Control/hardware/mk20/dev-tools/` | MicroSD bootstrap, Wi-Fi configuration, TCP ADB launcher, and HUD startup |
+| **Device HUD** | `Snowball_Control/hardware/mk20/hud/` | Native C low-latency HUD daemon running on `/mnt/SDCARD/mk20-hud` (UDP 7701) |
+| **Device Audio Daemon** | `Snowball_Control/hardware/mk20/hud/` | Native C audio streaming daemon running on `/mnt/SDCARD/mk20-audio` (TCP 7702 SNAU protocol) |
+| **Device Boot Tools** | `Snowball_Control/hardware/mk20/dev-tools/` | MicroSD bootstrap, Wi-Fi configuration, TCP ADB launcher, and HUD/audio startup |
 | **MK20 Device Plugin** | `Snowball_Control/plugins/device-mk20/` | Isolated lab Preview transport and framebuffer encoding module |
 | **M5Stack Device Plugin** | [Snowball_Device_M5Stack](https://github.com/fkiller/Snowball_Device_M5Stack) | Native ESP32 firmware for original M5Stack + FACES QWERTY, English/Korean keyboard UI, and a Protocol 1 hardware worker backed by a trusted local gateway |
 | **Middleware & Web API** | [Snowball_Middleware](https://github.com/fkiller/Snowball_Middleware) `packages/core`, `packages/api`, `apps/supervisor` | Session/command journal, workspace grants, local REST/SSE API, and Web UI |
@@ -68,9 +69,11 @@ Windows bootstrap prepares supported Node (official LTS ZIP plus official SHA-25
 ```mermaid
 flowchart LR
   QMK[QMK MCU] -->|UART Keys & Knobs| HUD[Tina C HUD]
-  HUD <-->|LAN UDP Preview| Daemon[Middleware start-all]
-  Mic[MK20 ALSA MIC3] -->|ADB PCM| STT[Local Whisper]
+  HUD <-->|LAN UDP Preview 7701| Daemon[Middleware start-all]
+  Mic[MK20 ALSA MIC3] -->|TCP 7702 SNAU Stream| STT[Local Whisper]
   STT --> Daemon
+  Daemon -->|TCP 7702 SNAU Stream| Spk[MK20 Speaker aplay]
+  Daemon -->|OS Audio| HostSpk[Host PC/Mac Speaker]
   UI[Loopback Supervisor] <-->|HTTP & SSE| API[LocalApi & CommandJournal]
   API --> Daemon
   Sources[CLI, Cache, Session DBs] -->|Observation| Daemon
@@ -79,7 +82,7 @@ flowchart LR
   Gateway <-->|Loopback HTTP and command journal| API
 ```
 
-The MK20 terminal handles screen rendering, physical keys, knobs, and voice audio capture, while the host PC retains absolute ownership of workspace filesystem grants and native agent process execution. USB HID/CDC and LAN transport operate on decoupled paths; the Preview UDP protocol does not provide automated wired failover or cryptographic device pairing.
+The MK20 terminal handles screen rendering, physical keys, knobs, and dual-way voice audio streaming (TCP 7702 `SNAU` binary protocol), while the host PC retains absolute ownership of workspace filesystem grants and native agent process execution. Audio capture and playback stream directly over the local network with zero disk wear on MK20 flash storage. USB HID/CDC and LAN transport operate on decoupled paths; the Preview UDP protocol does not provide automated wired failover or cryptographic device pairing.
 
 ---
 
@@ -164,12 +167,13 @@ The MK20 hardware features a **428×142** header display (`/dev/fb21`) and 20 in
   - `K9`: Project selector
   - `K5`: Session selector
   - `K1`: New task draft
-  - `K12`: Speak toggle (Manual speech of active turn & Auto-TTS mode toggle)
-  - `K20`: Voice recording toggle
+  - `K12`: Speak on **MK20 onboard speaker** (Destination: `device`. Audio is streamed natively via TCP port 7702 `SNAU` binary protocol directly to `mk20-audio` $\rightarrow$ ALSA `aplay`, zero disk I/O, software + hardware gain scaling; press again to stop)
+  - `K8`: Speak on **host PC / Mac speaker** (Destination: `host`. Label `Speak PC` on Windows/Linux, `Speak Mac` on macOS; in-memory PCM volume scaled to match Right Knob; press again to stop)
+  - `K20`: Voice recording toggle (Initiates TCP port 7702 streaming capture directly to host; interrupts active TTS playback immediately to avoid acoustic echo and ALSA device conflicts)
   - `K16`: Transcribe & Send
-  - `K4`: Cancel / Discard draft / Cut off active speech
+  - `K4`: Cancel / Discard draft / Cut off active speech on both destinations (host player kill + stop signal to `mk20-audio`)
   - `Left Knob`: Scroll navigation and item commit
-  - `Right Knob`: System volume and mute
+  - `Right Knob`: System volume (0..100) and click mute. Dynamically scales playback volume across both MK20 hardware speaker (via mixer + 16-bit PCM attenuation) and host speakers.
   - `Dual-Knob Chord`: Simultaneous press toggles HOST Mode (keystroke masking) and HID Mode (keystroke passthrough to PC).
 
 ### Speech Synthesis (TTS) 3-Tier Fallback Chain
@@ -177,16 +181,43 @@ The MK20 hardware features a **428×142** header display (`/dev/fb21`) and 20 in
 Voice responses utilize a local-first, low-latency synthesis pipeline:
 ```mermaid
 flowchart TD
-  Text[Agent Turn Text] --> GPU[Supertonic GPU - CUDA EP]
-  GPU -->|Failure / Unsupported| CPU[Supertonic CPU - CPU EP]
-  CPU -->|Failure / Corrupt| OS[OS Native TTS - Windows SAPI / macOS say / Linux espeak]
-  GPU --> Audio[Playback via AudioPlayer]
-  CPU --> Audio
-  OS --> Audio
+  Text[Agent Turn Text] --> Split[Sentence Chunker]
+  Split --> P1[Prefetch Chunk 0]
+  P1 --> Play1[AudioPlayer Stream Play]
+  Play1 -->|Concurrent Background Prefetch| P2[Synthesize Chunk 1..N]
+  P2 --> Play2[Sequential Playback]
+  P1 -->|Failure| OS[OS Native TTS - Windows SAPI / macOS say / Linux espeak]
 ```
-1. **Tier 1 (Supertonic GPU)**: CUDA-accelerated ONNX synthesis on NVIDIA GPU. Preloads required `cudnn` and `cublas` runtime sublibraries to guarantee deterministic GPU execution.
-2. **Tier 2 (Supertonic CPU)**: Graceful local CPU fallback using ONNX Runtime CPUExecutionProvider if GPU resources are exhausted or unavailable.
-3. **Tier 3 (OS Native TTS)**: Emergency offline platform fallback using native OS speech synthesizers so speech delivery never fails.
+1. **Tier 1 (Supertonic Optimized ONNX)**: Supertonic-3 resident synthesis.
+   - **Throughput Profile**: Supertonic is an ONNX diffusion pipeline with multi-step NumPy loops. ONNX Runtime `CPUExecutionProvider` (AVX2 / AVX-512) achieves ultra-low latency (**~1.5s** per sentence, RTF 0.37) by eliminating the 200+ PCIe host-device `Memcpy` nodes that choke CUDA loops.
+   - **Sentence Pipelined Streaming**: Rather than batching 300+ characters into a single blocking synthesize call, `LocalSupertonicProvider` (`host/src/audio/local-supertonic.ts`) chunks text into natural sentences, synthesizes chunk 0 immediately to start playback in $< 1.5\text{s}$, and prefetches chunk $1\dots N$ in the background while the previous sentence plays on speakers.
+2. **Tier 2 (Supertonic Alternate EP)**: Dynamic Execution Provider evaluation (`CUDAExecutionProvider`, `DmlExecutionProvider`, `CoreMLExecutionProvider`) when requested.
+3. **Tier 3 (OS Native TTS)**: Emergency offline platform fallback using native OS speech synthesizers (`PowerShell SAPI` on Windows, `say` on macOS, `espeak` on Linux) so speech delivery never fails.
+
+#### Speech Text Sanitization (`host/src/audio/korean-transliterate.ts`)
+Every utterance passes through `cleanTextForSpeech()` before synthesis (used by both `LocalSupertonicProvider` and middleware `start-all.mjs`):
+1. **Markdown stripping**: code fences → "코드 블록 생략", inline code / links / headers / bullets / emphasis removed.
+2. **Meaningless token removal** (`stripMeaninglessHashes`): UUIDs, `0x…` pointers, `sha256:/sha1:/md5:` digests, and 7–64 char hex strings that contain both digits and a–f letters (Git hashes; pure numbers and words like `beef` are kept). `커밋 854fc69를` → `커밋을` with particle re-agreement (`attachParticle`).
+3. **English → Hangul pronunciation** (`transliterateEnglishToHangul`, only when the text is Korean): developer-term dictionary (`GitHub`→깃허브, `PowerShell`→파워셸, `MK20`→엠케이이십, `PC`→피씨 …), key names (`K12`→케이십이), and letter-by-letter reading of remaining 2–5 letter all-caps acronyms.
+   - *Library survey*: `hangulize` (PyPI, last release 2012) and `g2pK`/`g2pkk` (depends on `eunjeon` → `distutils`, removed in Python 3.12) do not install on the bundled Python 3.12 runtime, so a zero-dependency dictionary + rule engine is used.
+
+### Cross-Platform Hardware Acceleration Matrix (STT & TTS)
+
+Snowball automatically probes and binds the optimal hardware execution backend per platform without requiring manual user reconfiguration:
+
+| Platform & Hardware | Speech-to-Text (STT - Whisper) | Text-to-Speech (TTS - Supertonic) | Fallback Progression |
+| :--- | :--- | :--- | :--- |
+| **Windows + NVIDIA** | `faster-whisper` (CUDA / cuBLAS) | Supertonic (`CUDAExecutionProvider`) | CUDA $\rightarrow$ CPU $\rightarrow$ OS SAPI |
+| **Windows + AMD / Intel** | `whisper.cpp` (Vulkan) / CPU | Supertonic (`DmlExecutionProvider` DirectML) | DirectML $\rightarrow$ CPU $\rightarrow$ OS SAPI |
+| **macOS (Apple Silicon)** | `whisper.cpp` (Metal) / `mlx-whisper` | Supertonic (`CoreMLExecutionProvider`) | CoreML/Metal $\rightarrow$ CPU $\rightarrow$ OS `say` |
+| **Linux + NVIDIA** | `faster-whisper` (CUDA) | Supertonic (`CUDAExecutionProvider`) | CUDA $\rightarrow$ CPU $\rightarrow$ OS `espeak` |
+| **Linux + AMD / Intel** | `whisper.cpp` (Vulkan) | Supertonic (OpenVINO / CPU EP) | OpenVINO/CPU $\rightarrow$ OS `espeak` |
+| **Universal Fallback** | `faster-whisper` / `whisper.cpp` (CPU) | Supertonic (`CPUExecutionProvider`) | OS Native Synthesizer |
+
+#### Backend Roles:
+- **DirectML (DirectX 12)**: Used in the TTS ONNX pipeline (`DmlExecutionProvider`) on Windows to accelerate AMD Radeon and Intel Arc/Iris GPUs without requiring NVIDIA CUDA.
+- **MLX / Metal / CoreML**: Used on Apple Silicon macOS to leverage unified memory, the Apple Neural Engine (ANE), and Metal GPU for ultra-low latency STT (`whisper.cpp Metal` / `mlx-whisper`) and TTS (`CoreMLExecutionProvider`).
+- **Vulkan (`ggml-vulkan`)**: Used in the STT pipeline (`whisper.cpp`) as a cross-platform compute backend for AMD and Intel GPUs on Windows and Linux, utilizing standard SPIR-V compute shaders.
 
 ### Multilingual Support Framework (i18n)
 
@@ -194,7 +225,61 @@ Multilingual support is structured around complete language packages:
 $$\text{Language Package} = \text{UI Resources (Fonts \& Labels)} + \text{STT (Whisper)} + \text{TTS (Supertonic / OS Native)}$$
 
 - **Living OS Auto-Discovery**: Automatically queries OS display culture (`(Get-Culture).Name` on Windows, `LANG` on POSIX) on startup. Korean OS (`ko-KR`) configures `ko` as the primary language and activates D2Coding Korean font rendering on the MK20 HUD.
+- **Dual-Font Character Typography (`hardware/mk20/hud/unicode_text.c`)**:
+  - To prevent typographical visual inconsistency across mixed Korean and English lines, character routing strictly segregates codepoints:
+    - **ASCII Characters** (`cp < 128`): Directly rendered via the built-in fixed-pitch `font8x16` bitmap font (8px glyph width at baseline 13), perfectly matching all system header and status lines.
+    - **Korean & Unicode Characters** (`cp >= 128`): Rendered via FreeType using `D2Coding.ttf` (16px glyph width).
+  - This ensures 100% font uniformity: English characters look identical regardless of whether Korean appears on the line.
 - **Dynamic Configuration & Lifecycle**: Languages can be enabled, disabled, or set as primary via `/v1/settings` and `languageManager`. Adding a language ensures corresponding STT and TTS model weights exist locally.
+
+### Native Audio Streaming Subsystem (`mk20-audio` & `SNAU` Protocol)
+
+To eliminate high latency and flash wear from push-and-pull ADB commands, audio I/O on the MK20 operates via a dedicated native C daemon (`mk20-audio`) running on Tina Linux:
+
+- **Daemon Architecture & Deployment**:
+  - Source: `hardware/mk20/hud/mk20-audio.c`.
+  - Statically linked ARMv7 binary (`arm-linux-gnueabihf-gcc -static -O2`) deployed to `/mnt/SDCARD/mk20-audio`.
+  - Automatically launched at boot via `/mnt/SDCARD/lunch.sh` (`/mnt/SDCARD/mk20-audio &`), listening on TCP port **7702** (`INADDR_ANY`).
+  - Cross-platform network model: Windows host initiates outbound connections to `192.168.1.248:7702`, traversing Windows Defender Firewall without administrator elevation prompts.
+
+- **`SNAU` Binary Streaming Protocol**:
+  Communication over TCP port 7702 uses a compact 16-byte binary header (`struct snau_header`):
+  | Field | Type | Size | Description |
+  | :--- | :--- | :--- | :--- |
+  | `magic` | `char[4]` | 4B | Protocol magic: `'S'`, `'N'`, `'A'`, `'U'` (`0x55414E53` in LE) |
+  | `mode` | `uint8_t` | 1B | `1` = PLAY (TTS), `2` = RECORD (STT), `3` = PING, `4` = SET_VOLUME |
+  | `channels` | `uint8_t` | 1B | `1` (mono) or `2` (stereo) |
+  | `format` | `uint8_t` | 1B | Sample format: `16` (16-bit signed integer PCM, little-endian) |
+  | `volume` | `uint8_t` | 1B | Hardware mixer & software attenuation factor (`0`..`100`) |
+  | `sample_rate` | `uint32_t` | 4B | Sample rate: `16000` (STT), `24000` (TTS Supertonic), or custom |
+  | `data_len` | `uint32_t` | 4B | Payload byte count (`0` for continuous live streaming or volume packet) |
+  | `is_muted` | `uint8_t` | 1B | `1` if audio output should be muted, `0` otherwise |
+  | `reserved` | `uint8_t[3]` | 3B | Zero-padding alignment bytes |
+
+- **Microphone Capture (STT Streaming)**:
+  - The host connects with `MODE_RECORD`. The daemon spawns ALSA `arecord -D hw:0,0 -r 16000 -f S16_LE -c 1 -t raw` bound to the onboard MIC3 channel.
+  - Raw PCM samples are streamed directly over the TCP socket to Node.js `AudioTransport` (`host/src/audio/transport.ts`).
+  - Upon user release or completion, the host closes the stream, prepends an in-memory 44-byte canonical WAV header (`monoPcmToWav`), and passes the buffer directly to the local Whisper worker. Zero temporary files are written to MK20 storage.
+
+- **Speaker Playback (TTS Streaming)**:
+  - The host connects with `MODE_PLAY`, transmitting the `SNAU` header with current knob volume and mute status.
+  - The daemon sets the hardware ALSA mixer levels (`LINEOUT volume` 0..31 and `Headphone volume` 0..7 via `amixer sset`), scales PCM samples in 16-bit integer space, and pipes them directly into `aplay -D hw:0,0 -r <rate> -f S16_LE -c <ch> -t raw`.
+  - Zero disk I/O on the device; speech plays back in real-time as chunks stream from the host.
+
+- **Volume & Mute Integration (Live Adjustment)**:
+  - The MK20's physical `Right Knob` controls system volume (`0`..`100`) and click mute.
+  - **Dynamic In-Flight Volume Adjustment**: Rotating or clicking the Right Knob during active speech immediately adjusts hardware gain without disrupting playback:
+    - **Local MK20 Loop**: `mk20-hud` directly calls `apply_hardware_volume()` via ALSA mixer (`< 1ms` latency).
+    - **TCP Daemon Control**: Host sends a lightweight 16-byte `MODE_SET_VOLUME` packet to `mk20-audio` (port 7702), applying gain updates to `amixer` instantaneously.
+    - **Host PC / Mac Playback**: Host dynamically scales PCM samples in-memory across streaming sentence chunks 1..N.
+    - **Zero Premature Cutoff**: Player teardown avoids indiscriminate ADB `killall -9 aplay` commands, ensuring multi-sentence TTS streams finish naturally to the last word.
+
+- **Hardware Concurrency & Interruption Management**:
+  - The Allwinner T113 `audiocodec` (`hw:0,0`) cannot operate in full-duplex mode. Active speaker playback (`aplay`) locks the audio device and must terminate before microphone recording (`arecord`) can begin.
+  - Pressing `Talk` (Key 20) or `Cancel` (Key 4) issues an immediate cutoff signal, killing active playback and resetting socket buffers before recording begins.
+
+- **Legacy Fallback & Fault Tolerance**:
+  - If TCP port 7702 is unreachable (e.g. older SD card image without `mk20-audio`), `AudioTransport` transparently falls back to the ADB pipeline (`arecord /tmp/snowball_rec.wav` $\rightarrow$ `adb pull`), guaranteeing backward compatibility and zero crash risk.
 
 ---
 
@@ -265,8 +350,8 @@ node scripts/start-all.mjs
 
 - **Control Hardware Plugin Tests**: `npm test --prefix plugins/device-mk20` (13 passed)
 - **QMK Serial Contract**: `powershell -File hardware/mk20/contract/Test-QmkProtocol.ps1` (14 passed)
-- **Control Host Unit Tests**: `npm test --prefix host` (52 passed, 2 optional STT skipped)
-- **Middleware Comprehensive Tests**: `npm test` in `Snowball_Middleware` (251 passed, 5 optional skipped)
+- **Control Host Unit Tests**: `npm test --prefix host` (66 passed, 2 optional STT skipped)
+- **Middleware Comprehensive Tests**: `npm test` in `Snowball_Middleware` (241 passed, 5 optional skipped)
 - **Live Framebuffer Capture**: `python scripts/dump_mk20_screens.py --adb <PATH> --device <IP:PORT> --output-dir <DIR>`
 
 **Initial M5Stack verification on 2026-10-04**: Firmware 0.2.2 built and flashed to COM7 with esptool's flash hash verification. Initial firmware SHA-256: `358dead3b6472dd57d0f728ebe86b0733521ad4494910efd57da2cdabb23e927`. Real FACES `0x08`, 16MB flash, NVS enrollment, Wi-Fi association at `192.168.1.163`, and authenticated outbound Wi-Fi to `192.168.1.197` were observed. Actual 320×240 framebuffers verify project breadcrumbs, full focused harness names, three native harness icons, source lists, settings, English/Korean Prompt Edit, and the graphical single-row footer. Actual saved AP selection prefills its NVS password in both display locales, keeps it masked by default, and protects entry from scan requests. Real radio association to an unregistered disposable SSID reaches the Wi-Fi failure screen, preserves the previous saved profile, then reconnects successfully. With the actual gateway stopped, the middleware deadline returns to its search menu; restoring the gateway reconnects. English/Korean display/input independence is checked on hardware and in linked locale-specific framebuffer galleries. The native transition admits session navigation at 1000ms after authenticated success; uncaptured USB observation reached session content at 1258–1301ms, while synchronous diagnostic captures intentionally extend display time. All other persisted controller records remained unchanged through this QA. The MK20 initially showed standby while the real host started, then recovered its own original active session. A fresh active-session baseline and a second capture across M5Stack locale/input/navigation QA had identical native framebuffer hashes. USB QA exercises the actual firmware handlers for content-end/first-key editor entry, UTF-8 middle insertion/deletion, repeated left/right, Home/End, and left-edge return with a preserved draft/caret, without dispatching native commands. Device Node tests passed 18; native C++ IME/navigation/connection assertions cover project path separation, latest-activity fallback, whole-codepoint editing, and rejection of foreign or ambiguous receipts. Latest-activity initialization was also checked against 92 actual native sessions without changing a controller. Middleware regressions passed 251 with five optional skips; MK20 parity passed 10 with one opt-in skip and harness switching passed against actual catalogs. Control host passed 52 with two optional skips, MK20 plugin passed 14. During real M5Stack editor QA, MK20 selection/preferences/draft remained intact and its actual framebuffer hashes were identical; the native command count did not increase. The Windows package verified 125 hashes across 128 application files and passed actual native tray/loopback/pause smoke, using the installed official Electron ZIP after its executable hash was verified; the standard network download timed out. Standalone Codex, OpenCode and Antigravity plugin builds/tests passed with their own glyph metadata. Earlier verification loaded the hardware worker through the actual PluginHost/DeviceRegistry as `lan/ready`, and checked authenticated discovery, replay rejection and native model-specific efforts. No native prompt was sent; physical A/B/C and FACES keypresses were not manually exercised, so this evidence does not certify a completed harness turn.

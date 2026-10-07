@@ -98,6 +98,7 @@ export interface V2DeviceState {
   volume: number; // 0..100
   isMuted: boolean;
   isSpeaking: boolean;
+  isSpeakingHost?: boolean;
   
   // Reader state
   topTitle: string;

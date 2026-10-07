@@ -40,6 +40,31 @@ static inline uint16_t blend_rgb565(uint16_t fg, uint16_t bg, uint8_t alpha) {
     return (uint16_t)((r << 11) | (g << 5) | b);
 }
 
+static void draw_ascii_glyph(uint16_t *fb, int stride, int x, int y, char c, uint16_t color, int scale,
+                             int clip_x, int clip_y, int clip_w, int clip_h, int height) {
+    if (c < 32 || c > 126) c = ' ';
+    const uint8_t *glyph = font8x16[c - 32];
+    for (int row = 0; row < 16; row++) {
+        uint8_t bits = glyph[row];
+        if (!bits) continue;
+        for (int col = 0; col < 8; col++) {
+            if (bits & (0x80 >> col)) {
+                for (int sy = 0; sy < scale; sy++) {
+                    for (int sx = 0; sx < scale; sx++) {
+                        int px = x + col * scale + sx;
+                        int py = y + row * scale + sy;
+                        if (px >= clip_x && px < (clip_x + clip_w) &&
+                            py >= clip_y && py < (clip_y + clip_h) &&
+                            px >= 0 && px < stride && py >= 0 && py < height) {
+                            fb[py * stride + px] = color;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 int unicode_draw_clipped(uint16_t *fb, int stride, int x, int y, const char *s, uint16_t color, int scale, int clip_x, int clip_y, int clip_w, int clip_h) {
     static FT_Face face;
     static time_t retry_at;
@@ -71,30 +96,39 @@ int unicode_draw_clipped(uint16_t *fb, int stride, int x, int y, const char *s, 
     int baseline = 13; // Optimized for D2Coding at 16px
     while (*s) {
         unsigned cp; s += unicode_step(s, &cp);
-        if (!load(face, cp, FT_LOAD_RENDER)) {
-            FT_GlyphSlot glyph = face->glyph;
-            FT_Bitmap *b = &glyph->bitmap;
-            for (unsigned row = 0; row < b->rows; row++) {
-                for (unsigned col = 0; col < b->width; col++) {
-                    unsigned char alpha = b->buffer[row * b->pitch + col];
-                    if (alpha < 12) continue;
-                    for (int dy = 0; dy < scale; dy++) {
-                        for (int dx = 0; dx < scale; dx++) {
-                            int px = x + (glyph->bitmap_left + (int)col) * scale + dx;
-                            int py = y + (baseline - glyph->bitmap_top + (int)row) * scale + dy;
-                            if (px >= 0 && px < stride && py >= 0 && py < height && px >= clip_x && px < clip_x + clip_w && py >= clip_y && py < clip_y + clip_h) {
-                                if (alpha >= 240) {
-                                    fb[py * stride + px] = color;
-                                } else {
-                                    fb[py * stride + px] = blend_rgb565(color, fb[py * stride + px], alpha);
+        if (cp < 128) {
+            // Strictly render English / ASCII using the standard font8x16 bitmap font
+            draw_ascii_glyph(fb, stride, x, y, (char)cp, color, scale, clip_x, clip_y, clip_w, clip_h, height);
+            x += 8 * scale;
+        } else {
+            // Strictly render Korean / Unicode using FreeType D2Coding font
+            if (!load(face, cp, FT_LOAD_RENDER)) {
+                FT_GlyphSlot glyph = face->glyph;
+                FT_Bitmap *b = &glyph->bitmap;
+                for (unsigned row = 0; row < b->rows; row++) {
+                    for (unsigned col = 0; col < b->width; col++) {
+                        unsigned char alpha = b->buffer[row * b->pitch + col];
+                        if (alpha < 12) continue;
+                        for (int dy = 0; dy < scale; dy++) {
+                            for (int dx = 0; dx < scale; dx++) {
+                                int px = x + (glyph->bitmap_left + (int)col) * scale + dx;
+                                int py = y + (baseline - glyph->bitmap_top + (int)row) * scale + dy;
+                                if (px >= 0 && px < stride && py >= 0 && py < height &&
+                                    px >= clip_x && px < clip_x + clip_w &&
+                                    py >= clip_y && py < clip_y + clip_h) {
+                                    if (alpha >= 240) {
+                                        fb[py * stride + px] = color;
+                                    } else {
+                                        fb[py * stride + px] = blend_rgb565(color, fb[py * stride + px], alpha);
+                                    }
                                 }
                             }
                         }
                     }
                 }
             }
+            x += 16 * scale;
         }
-        x += (cp < 128 ? 8 : 16) * scale;
     }
     return 1;
 }

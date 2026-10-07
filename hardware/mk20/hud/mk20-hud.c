@@ -1860,6 +1860,15 @@ static void on_left_knob_click(void) {
     g_dirty_top = 1;
 }
 
+static void apply_hardware_volume(int volume, int is_muted) {
+    int eff_vol = is_muted ? 0 : (volume < 0 ? 0 : (volume > 100 ? 100 : volume));
+    int lineout_val = (eff_vol * 31) / 100;
+    int hp_val = (eff_vol * 7) / 100;
+    char cmd[128];
+    snprintf(cmd, sizeof(cmd), "amixer -q sset 'LINEOUT volume' %d 2>/dev/null; amixer -q sset 'Headphone volume' %d 2>/dev/null", lineout_val, hp_val);
+    system(cmd);
+}
+
 // Handle Right Rotary Knob (controls Card 2 & Key 12)
 static void on_right_knob(int direction) {
     if (g_mode_v2) {
@@ -1871,6 +1880,7 @@ static void on_right_knob(int direction) {
         g_v2_state.volume += direction * 5;
         if (g_v2_state.volume < 0) g_v2_state.volume = 0;
         if (g_v2_state.volume > 100) g_v2_state.volume = 100;
+        apply_hardware_volume(g_v2_state.volume, g_v2_state.is_muted);
         g_dirty_top = 1;
         return;
     }
@@ -1899,6 +1909,7 @@ static void on_right_knob_click(void) {
             if(!g_host_offline)send_input_to_host(pkt,n);
         }
         g_v2_state.is_muted = !g_v2_state.is_muted;
+        apply_hardware_volume(g_v2_state.volume, g_v2_state.is_muted);
         g_dirty_top = 1;
         return;
     }
@@ -2055,6 +2066,8 @@ static void parse_qmk_byte(uint8_t byte) {
 
 static void handle_udp_packet(const char *buf, int len, const struct sockaddr_in *sender) {
     if(sender&&g_v2_controller_id[0]&&g_has_host_addr&&sender->sin_addr.s_addr!=g_host_addr.sin_addr.s_addr)return;
+    int prev_vol = g_v2_state.volume;
+    int prev_mute = g_v2_state.is_muted;
     if (v2_parse_sync_packet(buf, len)) {
         if (sender) {
             g_host_addr = *sender;
@@ -2064,6 +2077,9 @@ static void handle_udp_packet(const char *buf, int len, const struct sockaddr_in
         g_host_offline = 0;
         g_dirty_keys = 0x1FFFFE;
         g_dirty_top = 1;
+        if (g_v2_state.volume != prev_vol || g_v2_state.is_muted != prev_mute) {
+            apply_hardware_volume(g_v2_state.volume, g_v2_state.is_muted);
+        }
         return;
     } else if (strstr(buf, "\"type\":\"v2_sync\"") || strstr(buf, "\"type\": \"v2_sync\"")) {
         fprintf(stderr, "[MK20-HUD] Failed to parse v2_sync packet (len=%d)\n", len);

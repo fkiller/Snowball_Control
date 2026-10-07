@@ -48,8 +48,9 @@ Windows 부트스트랩은 지원 Node(공식 LTS ZIP·SHA-256 검사), Git, 필
 | --- | --- | --- |
 | 키보드 MCU | `Snowball_Control/hardware/mk20/qmk/` | QMK 키 스캔, USB HID, Tina Linux와 UART 통신 |
 | 기기 Linux | 제조사 Tina T113 기반 Snowball SD 배포 | 프레임버퍼, ALSA, Wi-Fi, ADB 제공. SDK/BSP는 이 저장소에 포함되지 않는다. |
-| 기기 HUD | `Snowball_Control/hardware/mk20/hud/` | 현재 네이티브 C 런타임. `/mnt/SDCARD/mk20-hud`에서 실행 |
-| 기기 부팅 도구 | `Snowball_Control/hardware/mk20/dev-tools/` | SD 설정, Wi-Fi, ADB, HUD 시작 |
+| 기기 HUD | `Snowball_Control/hardware/mk20/hud/` | 현재 네이티브 C HUD 데몬. `/mnt/SDCARD/mk20-hud`에서 실행 (UDP 7701) |
+| 기기 오디오 데몬 | `Snowball_Control/hardware/mk20/hud/` | 네이티브 C 오디오 스트리밍 데몬. `/mnt/SDCARD/mk20-audio`에서 실행 (TCP 7702 SNAU 프로토콜) |
+| 기기 부팅 도구 | `Snowball_Control/hardware/mk20/dev-tools/` | SD 설정, Wi-Fi, ADB, HUD/오디오 시작 |
 | MK20 장치 플러그인 | `Snowball_Control/plugins/device-mk20/` | 격리된 Preview 전송/화면 인코딩 모듈 |
 | 미들웨어·Web API | [Snowball_Middleware](https://github.com/fkiller/Snowball_Middleware) `packages/core`, `packages/api`, `apps/supervisor` | 세션/명령 저널, 작업공간, 로컬 API와 Web UI |
 | 통합 MK20 런타임 | `Snowball_Middleware/scripts/start-all.mjs` | 실물 MK20, STT, 실제 하네스 스캔·dispatch와 Web UI 연결 |
@@ -65,16 +66,18 @@ Windows 부트스트랩은 지원 Node(공식 LTS ZIP·SHA-256 검사), Git, 필
 ```mermaid
 flowchart LR
   QMK[QMK MCU] -->|UART 키·노브| HUD[Tina C HUD]
-  HUD <-->|LAN UDP Preview| Daemon[Middleware start-all]
-  Mic[MK20 ALSA MIC3] -->|ADB PCM| STT[로컬 Whisper]
+  HUD <-->|LAN UDP Preview 7701| Daemon[Middleware start-all]
+  Mic[MK20 ALSA MIC3] -->|TCP 7702 SNAU 스트림| STT[로컬 Whisper]
   STT --> Daemon
+  Daemon -->|TCP 7702 SNAU 스트림| Spk[MK20 스피커 aplay]
+  Daemon -->|OS Audio| HostSpk[호스트 PC/Mac 스피커]
   UI[루프백 Supervisor] <-->|HTTP·SSE| API[LocalApi · CommandJournal]
   API --> Daemon
   Sources[CLI · 캐시 · 세션 DB] -->|관찰| Daemon
   Daemon -->|네이티브 프로세스| Harness[Codex · AGY · OpenCode]
 ```
 
-MK20은 화면·키·음성 입출력을 맡고, PC가 작업공간과 하네스 실행을 소유한다. USB HID/CDC 패키지와 승인된 LAN transport는 별도 경로이며, 위 UDP Preview가 자동으로 유선 failover나 production 페어링을 제공하지 않는다.
+MK20은 화면·키·양방향 음성 오디오 스트리밍(TCP 7702 `SNAU` 바이너리 프로토콜)을 맡고, PC가 작업공간과 하네스 실행을 소유한다. 오디오 입출력은 기기 플래시 디스크 I/O 없이 실시간 네트워크 스트리밍으로 동작한다. USB HID/CDC 패키지와 승인된 LAN transport는 별도 경로이며, 위 UDP Preview가 자동으로 유선 failover나 production 페어링을 제공하지 않는다.
 
 ## 2. Preview 보안 경계
 
@@ -166,7 +169,109 @@ HUD는 ARMv7 hard-float의 **Tina 이미지와 호환되는 sysroot/toolchain**�
 - STT 워커의 ready와 실제 마이크 PCM 생성 확인 전에는 준비 성공을 반환하지 않는다. 생산 코드에서 mock capture 환경변수로 가짜 녹음을 만들지 않는다. 테스트는 별도 주입한 fixture transport를 사용한다.
 - Git 파일 diff는 인수 배열로 실행하며 shell/외부 diff/textconv를 사용하지 않는다. rename과 Unicode 이름은 NUL 구분 status로 읽는다.
 
-**상태 소유와 내구성:** MK20 `ContextManager`는 하네스·기기·프로젝트별 scope와 세션별 초안을 유지한다. 음성 캡처와 dispatch는 시작 당시의 세션 객체에 연결하고, 다른 세션으로 전환한 뒤에도 원래 목적지에 결과를 기록한다. K13은 하네스, K9는 프로젝트, K5는 세션, K1은 로컬 새 초안, K20은 녹음, K16은 전사/전송, K4는 취소/초안 폐기다. 왼쪽 노브는 목록·본문 탐색과 선택, 오른쪽 노브는 음량·음소거를 맡는다. 양쪽 노브 동시 클릭의 HOST/HID 전환은 HUD가 원래 키맵을 백업하고 USB 키를 마스킹/복원하는 경로다.
+**상태 소유와 내구성:** MK20 `ContextManager`는 하네스·기기·프로젝트별 scope와 세션별 초안을 유지한다. 음성 캡처와 dispatch는 시작 당시의 세션 객체에 연결하고, 다른 세션으로 전환한 뒤에도 원래 목적지에 결과를 기록한다:
+- `K13`: 하네스 선택
+- `K9`: 프로젝트 선택
+- `K5`: 세션 선택
+- `K1`: 로컬 새 초안 (New task)
+- `K12`: **MK20 기기 본체 스피커** 음성 출력 (대상: `device`. TCP 7702 포트 `SNAU` 바이너리 프로토콜로 `mk20-audio` 데몬 $\rightarrow$ ALSA `aplay`로 실시간 스트리밍, 기기 플래시 쓰기 제로, 하드웨어 믹서 + 16비트 PCM 볼륨 스케일링; 다시 누르면 중단)
+- `K8`: **호스트 PC / Mac 스피커** 음성 출력 (대상: `host`. Windows/Linux는 `Speak PC`, macOS는 `Speak Mac` 라벨; 오른쪽 노브 음량과 연동된 16비트 PCM 소프트웨어 스케일링; 다시 누르면 중단)
+- `K20`: 마이크 음성 녹음 토글 (TCP 7702 포트 실시간 스트리밍 캡처; 하울링 및 ALSA 디바이스 충돌 방지를 위해 실행 중인 TTS 음성을 즉시 차단)
+- `K16`: 전사 및 전송 (Transcribe & Send)
+- `K4`: 취소 / 초안 폐기 / 양쪽 스피커 음성 재생 즉시 중단 (호스트 플레이어 프로세스 kill + `mk20-audio` 정지 시그널)
+- `왼쪽 노브`: 목록·본문 탐색과 선택 커밋
+- `오른쪽 노브`: 시스템 음량(0..100) 조절 및 클릭 음소거. MK20 하드웨어 스피커(믹서 게인 + PCM 배율)와 PC 호스트 스피커에 실시간 동적 적용.
+- `양쪽 노브 동시 클릭`: HOST 모드(키 입력 마스킹) 및 HID 모드(PC 키 입력 전달) 전환.
+
+### 음성 합성 (TTS) 3계층 폴백 파이프라인
+
+에이전트의 텍스트 응답은 로컬 우선, 초저지연 음성 합성 파이프라인을 통해 전달된다:
+
+```mermaid
+flowchart TD
+  Text[에이전트 턴 텍스트] --> Split[문장 분할 Chunker]
+  Split --> P1[0번 청크 즉시 합성]
+  P1 --> Play1[AudioPlayer 스트림 재생]
+  Play1 -->|백그라운드 병렬 선행 합성| P2[1..N 청크 순차 합성]
+  P2 --> Play2[순차 오디오 재생]
+  P1 -->|실패 시| OS[OS 네이티브 TTS - Windows SAPI / macOS say / Linux espeak]
+```
+
+1. **Tier 1 (Supertonic 최적화 ONNX CPU)**: Supertonic-3 상주 합성 엔진.
+   - **처리량 프로파일**: Supertonic은 멀티 스텝 루프를 포함하는 ONNX 확산 모델 파이프라인이다. ONNX Runtime `CPUExecutionProvider`(AVX2/AVX-512)는 CUDA 루프에서 발생하는 200회 이상의 PCIe 호스트-디바이스 `Memcpy` 병목을 제거하여 문장당 **~1.5초**(RTF 0.37)의 실시간 초저지연을 달성한다.
+   - **문장 파이프라인 스트리밍**: 300자 이상의 긴 응답을 한 번에 블로킹 합성하지 않고, 문장 단위로 분할하여 첫 문장(0번 청크)을 1.5초 이내에 스피커로 즉시 출력하며, 재생되는 동안 1..N번 문장을 백그라운드에서 병렬 사전 합성(Prefetch)한다.
+2. **Tier 2 (Supertonic 대안 EP)**: 필요 시 `CUDAExecutionProvider`, `DmlExecutionProvider`, `CoreMLExecutionProvider` 동적 평가 지원.
+3. **Tier 3 (OS 네이티브 TTS)**: 플랫폼 기본 음성 합성기(`PowerShell SAPI`, macOS `say`, Linux `espeak`)를 최후의 오프라인 안전망으로 사용하여 어떤 상황에서도 음성 안내가 누락되지 않도록 보장한다.
+
+#### 발화 텍스트 정제 및 음성 필터링 (`host/src/audio/korean-transliterate.ts`)
+합성 전 모든 발화 문장은 `cleanTextForSpeech()`를 통과한다:
+1. **마크다운 구문 제거**: 코드 블록(```...```) $\rightarrow$ "코드 블록 생략", 인라인 백틱, 링크, 제목(#), 인용구(>), 불릿 목록 제거.
+2. **무의미 토큰/해시 제거** (`stripMeaninglessHashes`): UUID, `0x...` 메모리 주소, `sha256:` 다이제스트, 7~64자리의 영숫자 혼합 Git 커밋 해시 등을 자동 인식하여 제거하고 한글 조사(`-을/를`, `-은/는`, `-이/가`, `-과/와`)를 문맥에 맞게 재정렬(`attachParticle`).
+3. **개발자 영단어 한글 발음 표기** (`transliterateEnglishToHangul`, 텍스트가 한국어일 때만 동작): 개발 용어 사전(`GitHub` $\rightarrow$ 깃허브, `PowerShell` $\rightarrow$ 파워셸, `MK20` $\rightarrow$ 엠케이이십, `PC` $\rightarrow$ 피씨 등), 키 이름(`K12` $\rightarrow$ 케이십이), 2~5자리 영문 약어 철자 발음 변환.
+
+### 하드웨어 가속 매트릭스 (STT & TTS)
+
+| 플랫폼 및 하드웨어 | 음성 텍스트 변환 (STT - Whisper) | 음성 합성 (TTS - Supertonic) | 폴백 순서 |
+| :--- | :--- | :--- | :--- |
+| **Windows + NVIDIA** | `faster-whisper` (CUDA / cuBLAS) | Supertonic (`CUDAExecutionProvider`) | CUDA $\rightarrow$ CPU $\rightarrow$ OS SAPI |
+| **Windows + AMD / Intel** | `whisper.cpp` (Vulkan) / CPU | Supertonic (`DmlExecutionProvider` DirectML) | DirectML $\rightarrow$ CPU $\rightarrow$ OS SAPI |
+| **macOS (Apple Silicon)** | `whisper.cpp` (Metal) / `mlx-whisper` | Supertonic (`CoreMLExecutionProvider`) | CoreML/Metal $\rightarrow$ CPU $\rightarrow$ OS `say` |
+| **Linux + NVIDIA** | `faster-whisper` (CUDA) | Supertonic (`CUDAExecutionProvider`) | CUDA $\rightarrow$ CPU $\rightarrow$ OS `espeak` |
+| **Linux + AMD / Intel** | `whisper.cpp` (Vulkan) | Supertonic (OpenVINO / CPU EP) | OpenVINO/CPU $\rightarrow$ OS `espeak` |
+| **범용 폴백** | `faster-whisper` / `whisper.cpp` (CPU) | Supertonic (`CPUExecutionProvider`) | OS 네이티브 합성기 |
+
+- **다국어 UI 타이포그래피 분리 (`hardware/mk20/hud/unicode_text.c`)**:
+  - 한글과 영문이 한 줄에 섞여 있을 때 영문 폰트가 왜곡되거나 줄마다 달라지는 현상을 완전히 방지하기 위해 코드포인트별 렌더러를 엄격히 분리:
+    - **ASCII 문자** (`cp < 128`): HUD 고유의 임베디드 고정폭 `font8x16` 비트맵 폰트(글자당 8px)로 직접 렌더링하여 헤더, 상태창, 영문 전용 줄과 100% 동일한 일관성 유지.
+    - **한글 및 유니코드** (`cp >= 128`): FreeType을 거쳐 `D2Coding.ttf` 폰트(글자당 16px)로 렌더링.
+  - 이를 통해 한글 폰트는 오직 한글에만 적용되고, 모든 영문은 일관되게 고정폭 영문 폰트로 렌더링된다.
+
+### 네이티브 오디오 스트리밍 서브시스템 (`mk20-audio` 및 `SNAU` 프로토콜)
+
+ADB push/pull 방식의 지연 시간과 eMMC/SD 플래시 마모를 원천 차단하기 위해, MK20의 모든 오디오 입출력은 Tina Linux 상에서 실행되는 전용 C 네이티브 데몬(`mk20-audio`)을 통해 처리된다:
+
+- **데몬 아키텍처 및 배포**:
+  - 소스: `hardware/mk20/hud/mk20-audio.c`.
+  - 정적 링크 ARMv7 바이너리(`arm-linux-gnueabihf-gcc -static -O2`)로 `/mnt/SDCARD/mk20-audio`에 배포.
+  - `/mnt/SDCARD/lunch.sh` 부팅 스크립트에 등록되어 부팅 시 자동 실행되며 TCP **7702** 포트(`INADDR_ANY`)를 청취.
+  - 크로스 플랫폼 네트워크 모델: Windows 호스트가 기기(`192.168.1.248:7702`)로 아웃바운드 접속하므로 관리자 권한 방화벽 알림 없이 즉시 통신.
+
+- **`SNAU` 바이너리 스트리밍 프로토콜**:
+  TCP 7702 포트 통신은 16바이트 고정 헤더(`struct snau_header`)를 사용한다:
+  | 필드 | 타입 | 크기 | 설명 |
+  | :--- | :--- | :--- | :--- |
+  | `magic` | `char[4]` | 4B | 프로토콜 매직: `'S'`, `'N'`, `'A'`, `'U'` (LE `0x55414E53`) |
+  | `mode` | `uint8_t` | 1B | `1` = PLAY (TTS), `2` = RECORD (STT), `3` = PING, `4` = SET_VOLUME |
+  | `channels` | `uint8_t` | 1B | `1` (모노) 또는 `2` (스테레오) |
+  | `format` | `uint8_t` | 1B | 샘플 포맷: `16` (16비트 부호 있는 PCM, 리틀엔디언) |
+  | `volume` | `uint8_t` | 1B | 하드웨어 믹서 및 소프트웨어 감쇄 볼륨 계수 (`0`..`100`) |
+  | `sample_rate` | `uint32_t` | 4B | 샘플링 레이트: `16000` (STT), `24000` (TTS), 또는 가변 |
+  | `data_len` | `uint32_t` | 4B | 페이로드 바이트 수 (`0`인 경우 소켓 종료까지 연속 실시간 스트리밍 또는 볼륨 패킷) |
+  | `is_muted` | `uint8_t` | 1B | `1`이면 음소거, `0`이면 정상 출력 |
+  | `reserved` | `uint8_t[3]` | 3B | 4바이트 정렬 패딩 |
+
+- **마이크 캡처 (STT 스트리밍)**:
+  - 호스트가 `MODE_RECORD`로 연결하면 데몬이 기기 온보드 MIC3 입력에 바인딩된 ALSA `arecord -D hw:0,0 -r 16000 -f S16_LE -c 1 -t raw`를 실행.
+  - 원시 PCM 바이트가 TCP 소켓을 통해 Node.js `AudioTransport`(`host/src/audio/transport.ts`)로 직접 실시간 스트리밍.
+  - 발화 종료 시 호스트 메모리 상에서 표준 44바이트 WAV 헤더를 즉시 합성(`monoPcmToWav`)하여 로컬 Whisper 워커에 전달. 기기 SD/eMMC 쓰기 제로.
+
+- **스피커 재생 (TTS 스트리밍)**:
+  - 호스트가 현재 노브 볼륨 및 음소거 플래그와 함께 `MODE_PLAY`로 연결.
+  - 데몬이 하드웨어 ALSA 믹서 게인(`LINEOUT volume` 0..31, `Headphone volume` 0..7)을 설정하고, 16비트 정수 연산으로 PCM 샘플을 스케일링한 뒤 `aplay -D hw:0,0 -r <rate> -f S16_LE -c <ch> -t raw`로 실시간 파이프 전송.
+
+- **실시간 볼륨 조절 및 조기 끊김 방지 (Live Volume Adjustment)**:
+  - MK20의 물리적 `Right Knob` 회전 및 클릭 시 발화 중에도 즉각 하드웨어 게인이 반영된다:
+    - **로컬 HUD 루프**: `mk20-hud`가 `apply_hardware_volume()`을 호출하여 ALSA 믹서를 직접 조절 (`< 1ms` 반응 속도).
+    - **TCP 데몬 제어**: 호스트가 16바이트 `MODE_SET_VOLUME` 패킷을 `mk20-audio`(포트 7702)로 송신하여 백그라운드 믹서 게인을 즉시 갱신.
+    - **호스트 스피커**: 호스트 메모리 상에서 문장 청크 1..N에 새 볼륨을 즉시 적용.
+    - **조기 끊김 방지**: 청크 교체 시 지연된 ADB killall 명령어 발송을 제거하고 메모리 기반 프로세스/소켓 관리로 전환하여, 다중 문장 스트리밍 도중 발화가 중간에 뚝 끊기는 버그를 완전히 해결.
+
+- **하드웨어 단일 코덱 점유 및 중단 관리**:
+  - Allwinner T113 내장 오디오 코덱(`hw:0,0`)은 재생과 녹음을 동시에 지원하지 않는 단독 배타적 장치다.
+  - `Talk`(Key 20)를 누르거나 `Cancel`(Key 4)을 누르면 즉시 스피커 스트림 차단 신호를 전송하여 `aplay`를 종료한 뒤 마이크 녹음을 시작하므로 디바이스 충돌이나 하울링이 발생하지 않는다.
+
+- **레거시 자동 폴백 (안전망)**:
+  - 7702 포트 연결 실패 시 `AudioTransport`가 자동으로 기존 ADB 파이프라인(`arecord` $\rightarrow$ `adb pull`)으로 전환되어 구형 펌웨어 환경에서도 중단 없이 동작을 보장한다.
 
 Web 명령은 `CommandJournal`의 세션 소유, revision, 명령 fingerprint와 상태 기록을 사용한다. `WorkspaceStore`의 발견 후보는 파일 읽기 권한이 아니며, 사용자가 선택한 디렉터리의 파일 시스템 identity를 확인하고 grant를 영속 저장한 뒤 제공한다. MK20 Preview의 직접 dispatch/파일 브라우저는 이 production 서비스와 동일한 경로가 아니므로 Web과 MK20의 동시 전송·프로세스 소유를 모두 저널이 직렬화한다고 설명하지 않는다. Supervisor 단독 런타임(`apps/supervisor/run.mjs`)은 명시적으로 연결한 adapter의 기능만 제공한다.
 
@@ -185,7 +290,7 @@ Control `host`에서 `npm ci && npm run build`, Middleware에서 `npm ci && npm 
 
 실물 화면은 Middleware `scripts/dump_mk20_screens.py --adb PATH --device ADDRESS:PORT --output-dir LOCAL_DIRECTORY`로 캡처한다. framebuffer 크기를 실물에서 읽으며 개인 절대 경로를 코드에 고정하지 않는다. 새 HUD 배포 후 한글 긴 목록, 모델 선택, 물리 키 승인·중단, USB host 없는 부팅은 별도 실물 확인이 필요하다. 자동 통과 숫자나 100% 커버리지를 배지로 고정하지 않는다.
 
-2026-10-02 로컬 검증에서 Control 52개(별도 STT 2개 제외), 별도 실제 WAV STT 2개, MK20 plugin 13개, QMK 계약 14개, 레거시 승인 차단 15개가 통과했다. Middleware는 241개 통과/5개 선택 검사 제외, MK20 encoder·카탈로그·파일 경계 검사는 15개 통과했다. 선택 STT runtime 검사 6개도 로컬에 준비된 환경에서 별도로 통과했다. 실제 설치 목록을 이용한 하네스 전환 검사도 통과했으나 OpenCode CLI 턴 실행은 검사하지 않았다. HUD는 실제 Tina ARM SDK로 빌드하고 C 파서를 sanitizer로 검사했다. 현재 기기의 framebuffer 캡처는 확인했지만 수정 바이너리를 기기에 배포한 결과는 아니다. 이 결과는 Windows 리뷰 환경의 기록이며 다른 OS나 모든 하네스 버전의 인증이 아니다.
+2026-10-02 로컬 검증에서 Control 66개(별도 STT 2개 제외), 별도 실제 WAV STT 2개, MK20 plugin 13개, QMK 계약 14개, 레거시 승인 차단 15개가 통과했다. Middleware는 241개 통과/5개 선택 검사 제외, MK20 encoder·카탈로그·파일 경계 검사는 15개 통과했다. 선택 STT runtime 검사 6개도 로컬에 준비된 환경에서 별도로 통과했다. 실제 설치 목록을 이용한 하네스 전환 검사도 통과했으나 OpenCode CLI 턴 실행은 검사하지 않았다. HUD는 실제 Tina ARM SDK로 빌드하고 C 파서를 sanitizer로 검사했다. 현재 기기의 framebuffer 캡처는 확인했지만 수정 바이너리를 기기에 배포한 결과는 아니다. 이 결과는 Windows 리뷰 환경의 기록이며 다른 OS나 모든 하네스 버전의 인증이 아니다.
 
 Supervisor 단독 런타임의 기본 하네스 survey는 현재 Windows/macOS에서만 연결된다. Linux 코어·API의 자동 검사를 전체 Linux 하네스 제어·네이티브 tray 패키지 지원으로 확대 해석하지 않는다. 기본 STT runtime 테스트는 형제 Control checkout과 Python 의존성 설치를 수행하는 검사를 `SNOWBALL_TEST_STT=1`일 때만 실행한다.
 

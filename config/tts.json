@@ -1,0 +1,12 @@
+{
+  "primary_engine": "kokoro-82m",
+  "backend": "auto",
+  "voice": "af_bella",
+  "voice_ko": "ko_female_1",
+  "voice_en": "en_female_1",
+  "speed": 1.0,
+  "volume": 0.8,
+  "quantization": "int8",
+  "download_dir": null,
+  "auto_tts_default": false
+}
