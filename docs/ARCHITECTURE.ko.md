@@ -80,8 +80,9 @@ Windows 부트스트랩은 지원 Node(공식 LTS ZIP·SHA-256 검사), Git, 필
 
 | 검토한 변경 | 영향받는 구성 | 호환성 및 검증 경계 |
 | --- | --- | --- |
-| K17 대기 안내, available/connected/응답 없음 표시 | MK20 C HUD만 | JSON `v2_sync`, `SNMK1`, controller/run/sequence 및 lease 검사는 그대로다. 런타임 0.2.1은 HUD 갱신이며 QMK·audio·M5Stack 펌웨어·하네스 RPC를 바꾸지 않는다. 실제 화면 검증은 통과했지만 395 PC의 응답 없음은 미해결이다. |
+| K17 대기 안내, available/connected/응답 없음 표시 | MK20 C HUD만 | JSON `v2_sync`, `SNMK1`, controller/run/sequence 및 lease 검사는 그대로다. 런타임 0.2.1은 HUD 갱신이며 QMK·audio·M5Stack 펌웨어·하네스 RPC를 바꾸지 않는다. 실제 화면을 확인했다. 395 로그의 중복 등록 오류는 아래 재연결 경로로 수정했으며 해당 PC의 수정 후 실물 확인은 남아 있다. |
 | LAN 수신 주소/선택 수신 로그 | Middleware `mk20` 프로필만 | 실제 IP/포트·요청 수신을 lease 값 없이 기록한다. PC 알림만으로 인바운드 수신을 보장하지 않으며 새 방화벽 규칙을 설치하지 않는다. Web/M5Stack에는 이 listener를 시작하지 않는다. |
+| MK20 재선택·시작 실패 후 재시도 | Middleware `mk20` 구성의 DeviceRegistry 바인딩 | 같은 source와 MAC identity는 register 대신 현재 revision으로 명시적 reconnect한다. device/controller ID와 선택 상태를 보존하며 새 lease를 발급한다. 해제·시작 실패는 해당 revision만 offline으로 표시해 이전 정리가 새 연결을 끊지 못한다. 공통 registry API, USB/HID, Web/M5Stack, 하네스·worker 프로토콜은 변경하지 않는다. |
 | 설치 트레이, 로그인 자동 시작, Update, 설정 보존 | Web/MK20/M5Stack 공통 suite와 하네스 worker 3종 | 동일한 소유 런타임·루프백 API를 사용하며 worker 프로토콜·manifest 승인·SDK major는 바꾸지 않는다. Windows 실제 트레이/로그인, 격리 worker 초기화, 소스 Update/상태 보존·포트 충돌을 검증했다. macOS 로그인과 설치된 M5Stack 트레이에서 실물 gateway까지는 현장 검증이 남았다. M5Stack의 USB/등록 절차는 유지하며 펌웨어를 업로드하지 않을 때는 `-NoFlash`를 쓴다. |
 | 제어 일시정지·재개 | 공통 API와 MK20 직접 Talk/Send 처리 | Web/M5Stack의 새 명령·생성·attach는 API에서 차단하며 MK20 직접 음성/전송도 차단한다. 관찰·탐색과 이미 실행 중인 네이티브 작업은 계속된다. 공통 API/설정·트레이 일시정지 보존 검증은 통과했으나 물리 승인/중단 인증은 아니다. |
 | 비동기 음성 준비·닫힌 worker 재시작 방지 | MK20 전체 런타임과 Control 레거시 `LocalWhisperProvider` 사용자 | 실제 준비/오류를 표시하며 close 이후 worker를 다시 만들지 않는다. 취소 인수는 선택 사항으로 기존 호출을 유지한다. Web/M5Stack은 Control·STT 없이 실제 API 시작·종료를 검증했다. |
@@ -111,7 +112,7 @@ MK20은 화면·키·양방향 음성 오디오 스트리밍(TCP 7702 `SNAU` 바
 
 **설치 문제 후속 검증 (2026-10-07):** Middleware 262개 통과·선택적 생략 5개, Control 호스트 70개 통과·생략 2개, 기기 플러그인 15개 통과, UX parity 10개 통과·생략 1개, 실제 네이티브 목록 기반 전환 검증 통과. 새 테스트는 실제 Electron과 전체 런타임을 실행해 설치 실행기 종료 후 API 유지, 단일 인스턴스, 재시작 후 일시정지·언어 보존, 점유 포트 거부와 기존 프로세스 보존, 소유 프로세스 종료를 검증했다. Windows 로그인 자동 시작 등록·해제(공백 경로 포함)와 창 없는 트레이 검증도 통과했다. 공개 PowerShell 부트스트랩으로 공식 Node 24.21.0과 공개 하네스 저장소 3종을 사용한 Web 신규 설치·명시적 Update가 통과했고, 설치기가 반환한 뒤에도 실제 트레이·API가 실행됐다. Windows 패키지는 앱 파일 129개의 다이제스트 126개와 네이티브 트레이·루프백·일시정지 검증을 통과했다. 제조사 툴체인 HUD 빌드·실제 렌더러 계약 및 MK20 프레임버퍼로 미연결 K17 안내와 숨김 트레이 런타임의 저장된 머신·Codex 세션 표시를 확인했다. UI 시작 뒤 실제 음성 준비·CUDA 워커 응답을 관찰했다. 하네스 프롬프트 전송·QMK 플래싱은 수행하지 않았다. 기기 기존 HUD·페어링 목록을 비공개 백업하고 HUD만 교체했다. 새 PC의 실제 버튼 페어링과 macOS 로그인 자동 시작은 현장 검증이 남아 있다.
 
-**새 PC 선택 후속 확인 (2026-10-08):** 사용자가 SNOWBALL-395를 선택한 뒤 MK20 읽기 전용 패킷 캡처에서 PC 알림 수신과 선택 요청 송신은 확인했지만 화면 프레임은 돌아오지 않았다. 런타임 0.2.1은 발견만으로 표시하던 `online`을 `available`로 바꾸며 실제 프레임버퍼에 선택 PC 이름과 `No PC response`를 표시한다. 페어링 목록은 바이트 단위로 보존했다. Middleware 전체 262개 통과·생략 5개, Control 호스트 70개 통과·생략 2개, UX parity 10개 통과·생략 1개, 실제 목록 전환, 제조사 빌드·렌더러 검증이 통과했다. 인바운드 차단과 런타임 시작 실패를 구분하려면 PC 로그가 필요하며 두 PC의 성공적인 전환은 아직 미확인이다.
+**새 PC 선택 후속 확인 (2026-10-08):** 실물 패킷과 framebuffer는 SNOWBALL-395 발견·SELECT 송신 및 `No PC response`를 확인했다. 제공된 PC 로그에서 `Verified device already registered; reconnect explicitly`의 반복을 확인해 수신 후 runtime 등록 실패로 원인을 좁혔다. MK20 구성은 기존 identity를 명시적으로 재연결하고 종료·실패 시 해당 registry revision을 offline으로 표시한다. 별도 펌웨어/SD 수정이나 페어링 삭제는 필요 없다. 재선택·실패 후 재시도·IP 변경·상태 보존·이전 종료와 새 연결의 경쟁을 검증했다. Middleware 265개 통과·선택적 생략 5개, Control 호스트 70개 통과·생략 2개, UX parity 10개 통과·생략 1개, 실제 네이티브 목록 전환 검증이 통과했다. 격리 UDP peer로 실제 MK20 프로필 미들웨어를 두 번 구성해 두 선택 모두 화면 프레임을 보내고 재연결 시 registry revision이 증가함을 확인했다. 하네스 프롬프트는 전송하지 않았다. 호스트 구성 검증이며 실물 연결 인증은 아니다. 395 PC에서 수정 후 연결·여러 PC 전환은 현장 확인이 남아 있다.
 
 ## 2. Preview 보안 경계
 
