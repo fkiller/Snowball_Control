@@ -26,6 +26,7 @@ for(const name of execFileSync('git',['ls-files','hardware/mk20/qmk'],{cwd:root,
   copy(path.join(root,name),'source/qmk/'+name.slice('hardware/mk20/qmk/'.length));
 }
 for (const name of fs.readdirSync(path.join(root, 'hardware/mk20/hud')).filter(n => /\.(c|h)$/.test(n) || n === 'Makefile')) copy(path.join(root, 'hardware/mk20/hud', name), 'source/hud/' + name);
+for(const name of fs.readdirSync(path.join(root,'hardware/mk20/hud/tests')).filter(n=>n.endsWith('.c')))copy(path.join(root,'hardware/mk20/hud/tests',name),'source/hud/tests/'+name);
 const files = [];
 function scan(directory, prefix = '') {
   for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {

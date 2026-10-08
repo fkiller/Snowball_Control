@@ -17,6 +17,7 @@ export class LocalWhisperProvider implements NativeVoiceProvider {
   private currentCaptureId?: string;
   private captureGeneration=0;
   private activeRecording = false;
+  private closed = false;
 
   constructor(
     private model = process.env.SNOWBALL_WHISPER_MODEL || "large-v3-turbo",
@@ -231,6 +232,7 @@ export class LocalWhisperProvider implements NativeVoiceProvider {
   }
 
   private ensureWorkerStarted(): Promise<void> {
+    if (this.closed) return Promise.reject(new Error('Speech provider is closed'));
     if (this.workerReady) return this.workerReady;
 
     const { exec, args } = this.resolvePython();
@@ -408,6 +410,11 @@ export class LocalWhisperProvider implements NativeVoiceProvider {
     }
   }
 
+  /** Rejects failures; callers must not treat a diagnostic status string as readiness. */
+  public async ready(): Promise<void> {
+    await this.ensureWorkerStarted();
+  }
+
   /**
    * Releases any stuck capture state.
    */
@@ -419,6 +426,7 @@ export class LocalWhisperProvider implements NativeVoiceProvider {
   }
 
   public close(): void {
+    this.closed = true;
     if (this.child) {
       try {
         this.child.stdin.end();
