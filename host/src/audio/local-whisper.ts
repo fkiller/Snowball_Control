@@ -83,7 +83,7 @@ export class LocalWhisperProvider implements NativeVoiceProvider {
   /**
    * Ensures python STT runtime dependencies (faster-whisper, nvidia CUDA DLLs) are verified and installed.
    */
-  public static async ensureDependencies(onProgress?: (msg: string) => void): Promise<{ ok: boolean; status: any }> {
+  public static async ensureDependencies(onProgress?: (msg: string) => void, signal?: AbortSignal): Promise<{ ok: boolean; status: any }> {
     const { exec } = LocalWhisperProvider.resolvePythonRuntime();
     const candidateScripts = [
       path.resolve(__dirname, "../../../scripts/ensure_stt_runtime.py"),
@@ -98,7 +98,8 @@ export class LocalWhisperProvider implements NativeVoiceProvider {
 
     // 1. Check current status
     const checkRes = await new Promise<{ ok: boolean; data?: any }>((resolve) => {
-      const child = spawn(exec, [script, "--check"], { stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
+      const child = spawn(exec, [script, "--check"], { stdio: ["ignore", "pipe", "pipe"], windowsHide: true, signal });
+      child.stderr.resume();
       let out = "";
       child.stdout.on("data", (d) => (out += d.toString()));
       child.on("exit", (code) => {
@@ -124,7 +125,8 @@ export class LocalWhisperProvider implements NativeVoiceProvider {
 
       // 2. Perform installation
       return new Promise((resolve) => {
-        const child = spawn(exec, [script, "--install", "--python", exec], { stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
+        const child = spawn(exec, [script, "--install", "--python", exec], { stdio: ["ignore", "pipe", "pipe"], windowsHide: true, signal });
+        child.stdout.resume();
         let errOut = "";
         child.stderr.on("data", (d) => {
           const t = d.toString();
@@ -146,13 +148,14 @@ export class LocalWhisperProvider implements NativeVoiceProvider {
   /**
    * Checks if a whisper model is already downloaded locally in the cache directory.
    */
-  public static async isModelDownloaded(model: string, modelDir?: string): Promise<boolean> {
+  public static async isModelDownloaded(model: string, modelDir?: string, signal?: AbortSignal): Promise<boolean> {
     const { exec, workerPy } = LocalWhisperProvider.resolvePythonRuntime();
     const args = [workerPy, "--check-only", "--model", model];
     if (modelDir) args.push("--model-dir", modelDir);
 
     return new Promise<boolean>((resolve) => {
-      const child = spawn(exec, args, { stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
+      const child = spawn(exec, args, { stdio: ["ignore", "pipe", "pipe"], windowsHide: true, signal });
+      child.stdout.resume();child.stderr.resume();
       child.on("exit", (code) => {
         resolve(code === 0);
       });
@@ -168,7 +171,8 @@ export class LocalWhisperProvider implements NativeVoiceProvider {
   public static async ensureModelDownloaded(
     model: string,
     modelDir?: string,
-    onProgress?: (msg: string) => void
+    onProgress?: (msg: string) => void,
+    signal?: AbortSignal
   ): Promise<{ ok: boolean; path?: string; status: string; error?: string }> {
     const { exec, workerPy } = LocalWhisperProvider.resolvePythonRuntime();
     const args = [workerPy, "--download-only", "--model", model];
@@ -179,7 +183,7 @@ export class LocalWhisperProvider implements NativeVoiceProvider {
     }
 
     return new Promise((resolve) => {
-      const child = spawn(exec, args, { stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
+      const child = spawn(exec, args, { stdio: ["ignore", "pipe", "pipe"], windowsHide: true, signal });
       let stdout = "";
       let stderr = "";
 

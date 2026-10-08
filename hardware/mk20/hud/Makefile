@@ -12,6 +12,14 @@ OBJS := $(SRCS:.c=.o)
 
 all: mk20-hud mk20-audio
 
+# Exercise the real software renderer with the HUD's graphics primitives.
+HOST_CC ?= cc
+test-render: $(FREETYPE_HEADERS)/ft2build.h
+	mkdir -p .deps/test-render
+	$(HOST_CC) -O2 -I$(FREETYPE_HEADERS) -Dmain=snowball_daemon_main -c mk20-hud.c -o .deps/test-render/hud.o
+	$(HOST_CC) -O2 -I$(FREETYPE_HEADERS) tests/v2-render-test.c .deps/test-render/hud.o mk20-network.c v2_render.c v2_state.c unicode_text.c -o .deps/test-render/test -lm -ldl
+	.deps/test-render/test
+
 mk20-audio: mk20-audio.c
 	$(CC) $(CFLAGS) -o $@ $<
 

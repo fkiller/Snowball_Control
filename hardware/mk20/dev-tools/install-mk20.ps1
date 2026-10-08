@@ -21,7 +21,7 @@ if (-not $Adb) {
     $archive = $package.SelectSingleNode(".//*[local-name()='archive'][*[local-name()='host-os']='windows']/*[local-name()='complete']")
     $url = $archive.SelectSingleNode("*[local-name()='url']").InnerText
     $checksum = $archive.SelectSingleNode("*[local-name()='checksum']").InnerText
-    if ($url -notmatch '^platform-tools.*windows\.zip$' -or $checksum -notmatch '^[a-f0-9]{40}$') { throw 'Invalid official Android Platform Tools metadata.' }
+    if ($url -notmatch '^platform-tools.*(?:win|windows)\.zip$' -or $checksum -notmatch '^[a-f0-9]{40}$') { throw 'Invalid official Android Platform Tools metadata.' }
     $zip = Join-Path $tools 'platform-tools.zip'
     Invoke-WebRequest ('https://dl.google.com/android/repository/' + $url) -OutFile $zip -UseBasicParsing
     if ((Get-FileHash -LiteralPath $zip -Algorithm SHA1).Hash.ToLowerInvariant() -ne $checksum) { throw 'ADB download checksum mismatch.' }

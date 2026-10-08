@@ -23,7 +23,7 @@ static void draw_bitmap_16(uint16_t *fb, int stride_pixels, int x, int y, int w,
 void v2_render_key_frame(uint16_t *fb, int key_idx, int pressed) {
     if (!fb || key_idx < 1 || key_idx > 20) return;
 
-    if (g_host_offline) {
+    if (g_host_offline && key_idx != 17) {
         if (key_idx == 10) {
             memcpy(fb, g_snowball_icon_128, sizeof(g_snowball_icon_128));
             return;
@@ -32,7 +32,9 @@ void v2_render_key_frame(uint16_t *fb, int key_idx, int pressed) {
         return;
     }
 
-    V2_Key *k = &g_v2_state.keys[key_idx];
+    /* Discovery belongs to the device and remains reachable without a host. */
+    V2_Key discovery = { .id = 17, .top = "Machines", .main = "Pair PC", .sub = "Press to pair", .flags = KEY_FLAG_FOCUSED };
+    V2_Key *k = g_host_offline ? &discovery : &g_v2_state.keys[key_idx];
 
     // 1. If key is disabled or completely empty, draw completely dark blank (backlight off)
     if ((k->flags & KEY_FLAG_DISABLED) ||
@@ -260,8 +262,8 @@ void v2_render_top_frame(uint16_t *fb) {
         // Body message on the left (y: 52..130)
         draw_string_16(fb, TOP_W, 12, 54, "Snowball Standby Mode", g_v2_theme.top_accent, 1);
         draw_string_16(fb, TOP_W, 12, 74, "Start Snowball middleware on PC", g_v2_theme.top_text, 1);
-        draw_string_16(fb, TOP_W, 12, 94, "Device buttons need host.", g_v2_theme.top_dim, 1);
-        draw_string_16(fb, TOP_W, 12, 116, "Ready for connection.", g_v2_theme.key_editing_border, 1);
+        draw_string_16(fb, TOP_W, 12, 94, "Press Machines (K17) to pair.", g_v2_theme.top_text, 1);
+        draw_string_16(fb, TOP_W, 12, 116, "Choose an online PC on your LAN.", g_v2_theme.key_editing_border, 1);
         return;
     }
 
