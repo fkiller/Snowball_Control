@@ -41,6 +41,8 @@
 
 Windows 공통 진입점은 `Snowball_Middleware/install.ps1 -Profile web|mk20|m5stack`이다. `scripts/setup.mjs`가 누락된 공식 저장소를 복제하고 미들웨어·하네스 3종을 빌드한 뒤, 실제 격리 워커의 초기화를 검사한다. `.snowball/suite.json`에 소스 커밋·승인된 진입점 다이제스트를 기록한다. 기존 추적 파일 수정은 거부하고 체크아웃을 강제로 초기화하지 않는다. 네이티브 공급자 앱·계정 로그인은 공급자별 사용자 단계이며, 앱이 없으면 사용 불가로 유지한다. 모델·Effort·세션은 네이티브 CLI/캐시에서 관찰한다.
 
+`-Profile`은 이번 설치에서 준비할 어댑터를 선택한다. **같은 설치 루트**에 다시 실행하면 기존 어댑터를 유지하며 추가하고, 이후 Web 업데이트에도 유지한다. `deviceProfiles`와 `devices`의 기기별 설정으로 MK20/M5Stack의 Python·NIC·등록 경로를 분리하며 기존 단일 프로필 설정도 이관한다. 하나의 소유 트레이·suite·API가 MK20 검색과 M5Stack 게이트웨이를 함께 실행한다. 시작은 실제 게이트웨이 listener가 준비된 뒤 완료로 보고하며 실물 연결 성공을 뜻하지 않는다. 기존 MK20 호스트에 M5Stack을 추가하려면 USB로 연결하고 `install.ps1 -Profile m5stack -InstallRoot 기존_루트 -Update`를 실행한다. 0.3.0 업그레이드 전 전체 플래시를 백업하며, 이후 0.3.0 펌웨어를 확인한 설치에서는 `-NoFlash`를 사용한다.
+
 | 프로필 | 설치 저장소 | 기기 준비 |
 | --- | --- | --- |
 | `web` | Middleware + Harness 3종 | 없음. Control·기기 전송·STT를 불러오지 않는다. |
@@ -80,8 +82,9 @@ Windows 부트스트랩은 지원 Node(공식 LTS ZIP·SHA-256 검사), Git, 필
 
 | 검토한 변경 | 영향받는 구성 | 호환성 및 검증 경계 |
 | --- | --- | --- |
-| K17 대기 안내, available/connected/응답 없음 표시 | MK20 C HUD만 | JSON `v2_sync`, `SNMK1`, controller/run/sequence 및 lease 검사는 그대로다. 런타임 0.2.1은 HUD 갱신이며 QMK·audio·M5Stack 펌웨어·하네스 RPC를 바꾸지 않는다. 실제 화면을 확인했다. 395 로그의 중복 등록 오류는 아래 재연결 경로로 수정했으며 해당 PC의 수정 후 실물 확인은 남아 있다. |
-| LAN 수신 주소/선택 수신 로그 | Middleware `mk20` 프로필만 | 실제 IP/포트·요청 수신을 lease 값 없이 기록한다. PC 알림만으로 인바운드 수신을 보장하지 않으며 새 방화벽 규칙을 설치하지 않는다. Web/M5Stack에는 이 listener를 시작하지 않는다. |
+| K17 대기 안내, available/connected/응답 없음 표시 | MK20 C HUD만 | JSON `v2_sync`, `SNMK1`, controller/run/sequence 및 lease 검사는 그대로다. 런타임 0.2.1은 HUD 갱신이며 QMK·audio·M5Stack 펌웨어·하네스 RPC를 바꾸지 않는다. 실제 화면을 확인했다. 395 로그의 중복 등록 오류는 아래 재연결 경로로 수정했으며 사용자가 395에서 수정 후 실물 연결 성공을 확인했다. |
+| LAN 수신 주소/선택 수신 로그 | 설치된 MK20 어댑터만 | 실제 IP/포트·요청 수신을 lease 값 없이 기록한다. PC 알림만으로 인바운드 수신을 보장하지 않으며 새 방화벽 규칙을 설치하지 않는다. 단독 Web/M5Stack 설치에는 이 listener가 없으며 MK20 추가 시 기존 어댑터와 함께 활성화한다. |
+| 기기 추가 설치와 M5Stack 여러 PC | suite 수명 주기, M5Stack 게이트웨이·펌웨어, 공개 API host identity | 기존 MK20 어댑터와 기기별 설정, 하나의 루프백 API 및 하네스 worker 3종을 유지한다. M5Stack은 별도 서명 발견과 PC별 USB 등록을 사용하며 MK20 wire/lease·QMK·오디오·worker Protocol 1은 변경하지 않는다. 새 펌웨어와 실제 두 PC 전환은 현장 확인이 필요하다. |
 | MK20 재선택·시작 실패 후 재시도 | Middleware `mk20` 구성의 DeviceRegistry 바인딩 | 같은 source와 MAC identity는 register 대신 현재 revision으로 명시적 reconnect한다. device/controller ID와 선택 상태를 보존하며 새 lease를 발급한다. 해제·시작 실패는 해당 revision만 offline으로 표시해 이전 정리가 새 연결을 끊지 못한다. 공통 registry API, USB/HID, Web/M5Stack, 하네스·worker 프로토콜은 변경하지 않는다. |
 | 설치 트레이, 로그인 자동 시작, Update, 설정 보존 | Web/MK20/M5Stack 공통 suite와 하네스 worker 3종 | 동일한 소유 런타임·루프백 API를 사용하며 worker 프로토콜·manifest 승인·SDK major는 바꾸지 않는다. Windows 실제 트레이/로그인, 격리 worker 초기화, 소스 Update/상태 보존·포트 충돌을 검증했다. macOS 로그인과 설치된 M5Stack 트레이에서 실물 gateway까지는 현장 검증이 남았다. M5Stack의 USB/등록 절차는 유지하며 펌웨어를 업로드하지 않을 때는 `-NoFlash`를 쓴다. |
 | 제어 일시정지·재개 | 공통 API와 MK20 직접 Talk/Send 처리 | Web/M5Stack의 새 명령·생성·attach는 API에서 차단하며 MK20 직접 음성/전송도 차단한다. 관찰·탐색과 이미 실행 중인 네이티브 작업은 계속된다. 공통 API/설정·트레이 일시정지 보존 검증은 통과했으나 물리 승인/중단 인증은 아니다. |
@@ -112,7 +115,7 @@ MK20은 화면·키·양방향 음성 오디오 스트리밍(TCP 7702 `SNAU` 바
 
 **설치 문제 후속 검증 (2026-10-07):** Middleware 262개 통과·선택적 생략 5개, Control 호스트 70개 통과·생략 2개, 기기 플러그인 15개 통과, UX parity 10개 통과·생략 1개, 실제 네이티브 목록 기반 전환 검증 통과. 새 테스트는 실제 Electron과 전체 런타임을 실행해 설치 실행기 종료 후 API 유지, 단일 인스턴스, 재시작 후 일시정지·언어 보존, 점유 포트 거부와 기존 프로세스 보존, 소유 프로세스 종료를 검증했다. Windows 로그인 자동 시작 등록·해제(공백 경로 포함)와 창 없는 트레이 검증도 통과했다. 공개 PowerShell 부트스트랩으로 공식 Node 24.21.0과 공개 하네스 저장소 3종을 사용한 Web 신규 설치·명시적 Update가 통과했고, 설치기가 반환한 뒤에도 실제 트레이·API가 실행됐다. Windows 패키지는 앱 파일 129개의 다이제스트 126개와 네이티브 트레이·루프백·일시정지 검증을 통과했다. 제조사 툴체인 HUD 빌드·실제 렌더러 계약 및 MK20 프레임버퍼로 미연결 K17 안내와 숨김 트레이 런타임의 저장된 머신·Codex 세션 표시를 확인했다. UI 시작 뒤 실제 음성 준비·CUDA 워커 응답을 관찰했다. 하네스 프롬프트 전송·QMK 플래싱은 수행하지 않았다. 기기 기존 HUD·페어링 목록을 비공개 백업하고 HUD만 교체했다. 새 PC의 실제 버튼 페어링과 macOS 로그인 자동 시작은 현장 검증이 남아 있다.
 
-**새 PC 선택 후속 확인 (2026-10-08):** 실물 패킷과 framebuffer는 SNOWBALL-395 발견·SELECT 송신 및 `No PC response`를 확인했다. 제공된 PC 로그에서 `Verified device already registered; reconnect explicitly`의 반복을 확인해 수신 후 runtime 등록 실패로 원인을 좁혔다. MK20 구성은 기존 identity를 명시적으로 재연결하고 종료·실패 시 해당 registry revision을 offline으로 표시한다. 별도 펌웨어/SD 수정이나 페어링 삭제는 필요 없다. 재선택·실패 후 재시도·IP 변경·상태 보존·이전 종료와 새 연결의 경쟁을 검증했다. Middleware 265개 통과·선택적 생략 5개, Control 호스트 70개 통과·생략 2개, UX parity 10개 통과·생략 1개, 실제 네이티브 목록 전환 검증이 통과했다. 격리 UDP peer로 실제 MK20 프로필 미들웨어를 두 번 구성해 두 선택 모두 화면 프레임을 보내고 재연결 시 registry revision이 증가함을 확인했다. 하네스 프롬프트는 전송하지 않았다. 호스트 구성 검증이며 실물 연결 인증은 아니다. 395 PC에서 수정 후 연결·여러 PC 전환은 현장 확인이 남아 있다.
+**새 PC 선택 후속 확인 (2026-10-08):** 실물 패킷과 framebuffer는 SNOWBALL-395 발견·SELECT 송신 및 `No PC response`를 확인했다. 제공된 PC 로그에서 `Verified device already registered; reconnect explicitly`의 반복을 확인해 수신 후 runtime 등록 실패로 원인을 좁혔다. MK20 구성은 기존 identity를 명시적으로 재연결하고 종료·실패 시 해당 registry revision을 offline으로 표시한다. 별도 펌웨어/SD 수정이나 페어링 삭제는 필요 없다. 재선택·실패 후 재시도·IP 변경·상태 보존·이전 종료와 새 연결의 경쟁을 검증했다. Middleware 265개 통과·선택적 생략 5개, Control 호스트 70개 통과·생략 2개, UX parity 10개 통과·생략 1개, 실제 네이티브 목록 전환 검증이 통과했다. 격리 UDP peer로 실제 MK20 프로필 미들웨어를 두 번 구성해 두 선택 모두 화면 프레임을 보내고 재연결 시 registry revision이 증가함을 확인했다. 하네스 프롬프트는 전송하지 않았다. 호스트 구성 검증이며 실물 연결 인증은 아니다. 사용자가 수정 후 395 연결 성공을 확인했다. 여러 PC 사이를 반복 전환하는 현장 확인은 남아 있다.
 
 ## 2. Preview 보안 경계
 
@@ -269,6 +272,16 @@ HUD가 선택 PC IP·lease·6초 만료를 mode-0600 RAM 파일에 기록하고 
 - 데몬 부재·구버전은 음성 오류로 표시한다. 일반 런타임은 ADB·helper 업로드·음성 pull·Wi-Fi 변경을 수행하지 않는다. 별도 `hardware/mk20/dev-tools/install-mk20.ps1` 유지보수는 검토한 `-RuntimeZip`과 `-RuntimeSha256`을 받아 기기 파일을 백업한 뒤 HUD·음성·부팅 번들을 설치한다. 복원을 위한 전체 SD 이미지 백업을 권장한다.
 
 Web 명령은 `CommandJournal`의 세션 소유, revision, 명령 fingerprint와 상태 기록을 사용한다. `WorkspaceStore`의 발견 후보는 파일 읽기 권한이 아니며, 사용자가 선택한 디렉터리의 파일 시스템 identity를 확인하고 grant를 영속 저장한 뒤 제공한다. MK20 Preview의 직접 dispatch/파일 브라우저는 이 production 서비스와 동일한 경로가 아니므로 Web과 MK20의 동시 전송·프로세스 소유를 모두 저널이 직렬화한다고 설명하지 않는다. Supervisor 단독 런타임(`apps/supervisor/run.mjs`)은 명시적으로 연결한 adapter의 기능만 제공한다.
+
+### 5.1 M5Stack + FACES 런타임 (0.3.0)
+
+**여러 기기 후속 검증 (2026-10-08):** 사용자가 재연결 수정 후 MK20의 395 연결 성공을 확인했다. M5Stack 검색 실패는 MK20 전용 설치가 M5Stack 게이트웨이를 실행하지 않았고, 펌웨어 0.2.2가 다른 PC의 등록 하나만 보관했기 때문이다. 연결된 실물에서 0.2.2/16MB를 읽기 전용으로 확인했으며 플래싱하지 않았다. 펌웨어 0.3.0 빌드가 통과했다(정적 RAM 56,128바이트, 앱 flash 1,509,321바이트). 기기 Node 검사 19개와 네이티브 IME·탐색·연결·페어링 검사가 통과했다. Middleware 268개 통과·선택적 생략 5개, Control 호스트 70개 통과·생략 2개, UX parity 10개 통과·생략 1개, 실제 네이티브 목록 전환 검증이 통과했다. 실제 두 어댑터 suite가 같은 영속 host identity로 두 발견 프로토콜에 응답하고 기존·새 발견 MAC을 검증했다. MK20 scope 화면 프레임 전송 중 별도 controller scope의 서명된 M5Stack poll도 응답했다. 네이티브 프롬프트는 보내지 않았다. 새 펌웨어 framebuffer, 실물 업로드 후 NVS 보존과 두 실물 PC의 반복 전환은 현장 확인으로 남으며 소프트웨어 fixture를 실물 인증으로 취급하지 않는다.
+
+M5Stack 펌웨어 0.3.0은 PC별 등록 최대 16개와 선택한 PC를 NVS에 보관한다. 각 PC는 명시적인 USB 등록으로 기존 게이트웨이의 무작위 키와 미들웨어 저널의 영속 `hostId`를 전달한다. 새 PC를 추가해도 다른 PC의 키를 보존하며, 같은 identity의 키를 교체하려면 해당 PC를 먼저 등록 해제한다. 기존 단일 키 등록은 Wi-Fi 설정을 지우지 않고 이관하며, 같은 키의 USB 등록이나 유효한 서명 응답을 확인한 뒤 영속 identity를 연결한다. 새 PC뿐 아니라 기존 PC의 M5Stack 게이트웨이도 업데이트해야 한다.
+
+머신 breadcrumb와 설정 → 미들웨어 검색은 기기의 등록 PC 목록을 연다. A/B/C로 이동·선택하며 검색은 발견 상태만 갱신하고 다른 PC를 자동 선택하지 않는다. 새 PC마다 USB 최초 등록이 한 번 필요하고 이후 Wi-Fi 제어는 USB 없이 동작한다. 목록에는 재검색, USB 등록 안내와 확인을 거치는 선택 PC 등록 해제가 있다. 선택은 재시작 후 복원하며 각 PC의 컨트롤러 문맥은 그 PC에 남는다. 전송 중에는 머신 변경을 차단하고 기존 초안은 원래 세션에 묶어 보관한다. 전환하면서 프롬프트를 다시 보내거나 이전 PC의 네이티브 작업을 취소하지 않는다.
+
+M5Stack 전용 게이트웨이는 UDP 47770, 서명된 HTTP 47771, 루프백 전용 플러그인 broker TCP 47772와 기기 47774로의 선택적 아웃바운드 TCP를 사용한다. 발견 버전 2는 nonce·epoch·주소·표시 이름뿐 아니라 실제 host identity도 서명한다. 기기는 해당 identity에 등록한 키만 허용하며, reverse 연결은 선택 PC의 키로 인증하고 USB 명령도 선택한 USB 등록 PC로만 전달한다. 게이트웨이 0.3.0은 기존 펌웨어 0.2.2의 발견 서명에도 응답하지만 여러 PC 선택에는 펌웨어 0.3.0이 필요하다. 인증된 평문 프로토콜이므로 신뢰하는 LAN용이며 Supervisor API를 LAN에 노출하지 않는다. snapshot의 `hostId`는 실제 명령 저널에서 가져온 공개 identity이고 페어링 키나 권한 부여 값이 아니다.
 
 ## 6. 설치·검증
 
