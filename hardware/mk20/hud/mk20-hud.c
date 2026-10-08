@@ -291,6 +291,9 @@ static struct sockaddr_in g_host_addr;
 static int g_has_host_addr = 0;
 static long long g_last_host_sync_ms = 0;
 int g_host_offline = 1;
+int g_host_connection_state = 0;
+char g_host_connection_name[64];
+static long long g_host_selection_ms;
 static int g_pc_keys_on = 0;
 static int g_map_reply_layer = -1, g_map_reply_row, g_map_reply_col;
 static uint16_t g_map_reply_code;
@@ -1691,7 +1694,9 @@ static void machine_view(void) {
     if(!g_network.count)strcpy(g_v2_state.top_body,"Searching local Wi-Fi for middleware...\nStart the MK20 profile on your PC.");
     for(int i=first;i<g_network.count&&i<first+4;i++){
         Mk20Host *h=&g_network.hosts[i]; int online=h->seen&&get_time_ms()-h->seen<8000;
-        used+=snprintf(g_v2_state.top_body+used,sizeof g_v2_state.top_body-used,"%c %s [%s%s]\n",i==g_network.focus?'>':' ',h->name,h->paired?"paired":"new",online?" / online":" / offline");
+        const char *status=online?" / available":" / offline";
+        if(online&&i==g_network.selected&&g_has_host_addr&&get_time_ms()-g_last_host_sync_ms<8000)status=" / connected";
+        used+=snprintf(g_v2_state.top_body+used,sizeof g_v2_state.top_body-used,"%c %s [%s%s]\n",i==g_network.focus?'>':' ',h->name,h->paired?"paired":"new",status);
     }
     const int ids[]={17,16,4,8}; const char *labels[]={"Machines","Pair / Select","Back","Forget"};
     for(int j=0;j<4;j++){V2_Key *k=&g_v2_state.keys[ids[j]]; k->id=ids[j];strcpy(k->main,labels[j]);}
@@ -1700,6 +1705,10 @@ static void machine_view(void) {
 static void machine_reset_scope(void) {
     g_has_host_addr=0;g_v2_controller_id[0]=0;g_v2_run_id[0]=0;g_v2_sequence=0;
     v2_init_defaults();g_host_offline=1;g_last_host_sync_ms=0;
+    g_host_connection_state=g_network.selected>=0?1:0;
+    g_host_selection_ms=get_time_ms();
+    g_host_connection_name[0]=0;
+    if(g_network.selected>=0)strcpy(g_host_connection_name,g_network.hosts[g_network.selected].name);
     g_dirty_keys=0x1FFFFE;g_dirty_top=1;
 }
 static void machine_menu(int open) {
@@ -2124,6 +2133,7 @@ static void handle_udp_packet(const char *buf, int len, const struct sockaddr_in
         }
         g_last_host_sync_ms = get_time_ms();
         g_host_offline = 0;
+        g_host_connection_state = 0;
         g_dirty_keys = 0x1FFFFE;
         g_dirty_top = 1;
         if (g_v2_state.volume != prev_vol || g_v2_state.is_muted != prev_mute) {
@@ -2547,8 +2557,13 @@ int main(int argc, char *argv[]) {
         }
 
         if (g_mode_v2) {
+            if(g_host_connection_state==1&&now-g_host_selection_ms>8000){
+                g_host_connection_state=2;g_dirty_top=1;
+            }
             if (!g_network.menu && now - g_last_host_sync_ms > 8000 && !g_host_offline) {
                 g_host_offline = 1;
+                g_host_connection_state=g_network.selected>=0?2:0;
+                if(g_network.selected>=0)strcpy(g_host_connection_name,g_network.hosts[g_network.selected].name);
                 // Renderer shows the disconnect screen; keep the last actual
                 // controller state intact for recovery and diagnostics.
                 g_dirty_keys = 0x1FFFFE; g_dirty_top = 1;

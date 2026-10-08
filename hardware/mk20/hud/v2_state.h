@@ -113,6 +113,9 @@ extern V2_Theme g_v2_theme;
 extern int g_mode_v2;
 extern uint32_t g_v2_tick_count;
 extern int g_host_offline;
+// 0: standby/connected, 1: selection sent, 2: selected PC has not supplied a frame.
+extern int g_host_connection_state;
+extern char g_host_connection_name[64];
 extern char g_v2_controller_id[21];
 extern char g_v2_run_id[33];
 extern uint32_t g_v2_sequence;

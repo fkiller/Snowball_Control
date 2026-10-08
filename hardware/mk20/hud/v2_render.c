@@ -253,17 +253,17 @@ void v2_render_top_frame(uint16_t *fb) {
         // Header Bar (y: 0..24) on the left side
         draw_rect_16(fb, TOP_W, 0, 0, 276, 24, g_v2_theme.top_card);
         draw_line_16(fb, TOP_W, 0, 24, 276, 24, g_v2_theme.top_border);
-        draw_string_16(fb, TOP_W, 12, 4, "Host Disconnected", COLOR_ROSE, 1);
+        draw_string_16(fb, TOP_W, 12, 4, g_host_connection_state==1?"Connecting to PC":g_host_connection_state==2?"No PC response":"Host Disconnected", COLOR_ROSE, 1);
 
         // Subtitle Bar (y: 27..42)
-        draw_string_16(fb, TOP_W, 12, 27, "Waiting for host middleware...", g_v2_theme.top_dim, 1);
+        draw_string_16(fb, TOP_W, 12, 27, g_host_connection_state?g_host_connection_name:"Waiting for host middleware...", g_v2_theme.top_dim, 1);
         draw_line_16(fb, TOP_W, 0, 44, 276, 44, g_v2_theme.top_border);
 
         // Body message on the left (y: 52..130)
-        draw_string_16(fb, TOP_W, 12, 54, "Snowball Standby Mode", g_v2_theme.top_accent, 1);
-        draw_string_16(fb, TOP_W, 12, 74, "Start Snowball middleware on PC", g_v2_theme.top_text, 1);
-        draw_string_16(fb, TOP_W, 12, 94, "Press Machines (K17) to pair.", g_v2_theme.top_text, 1);
-        draw_string_16(fb, TOP_W, 12, 116, "Choose an online PC on your LAN.", g_v2_theme.key_editing_border, 1);
+        draw_string_16(fb, TOP_W, 12, 54, g_host_connection_state==1?"Selection sent; waiting for PC":g_host_connection_state==2?"Discovery is not a connection":"Snowball Standby Mode", g_v2_theme.top_accent, 1);
+        draw_string_16(fb, TOP_W, 12, 74, g_host_connection_state?"Check PC tray / logs / firewall":"Start Snowball middleware on PC", g_v2_theme.top_text, 1);
+        draw_string_16(fb, TOP_W, 12, 94, g_host_connection_state?"Machines (K17): retry or switch":"Press Machines (K17) to pair.", g_v2_theme.top_text, 1);
+        draw_string_16(fb, TOP_W, 12, 116, g_host_connection_state?"Controls wait for a PC frame":"Choose an available PC on LAN.", g_v2_theme.key_editing_border, 1);
         return;
     }
 
