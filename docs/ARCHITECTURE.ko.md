@@ -74,6 +74,21 @@ Windows 부트스트랩은 지원 Node(공식 LTS ZIP·SHA-256 검사), Git, 필
 | 이전 호스트 | `Snowball_Control/host/`, Middleware `reference/legacy-host/` | 참조 구현. Control의 기본 `npm start`는 Codex 전용이며 전체 미들웨어 시작 명령이 아니다. |
 | 이전 PowerShell 오케스트레이션 | `hardware/mk20/orchestration/` | 레거시 진단 자료. 실제 물리 승인·안전한 페어링 구현으로 사용하지 않는다. |
 
+### 변경 영향과 문서 동기화
+
+동작·설치·운영·프로토콜 변경은 완료 보고나 배포 전에 같은 변경 세트에서 이 중앙 문서, 한국어 번역과 관련 README/개발자 안내에 반영한다. 동반 저장소는 설계를 복제하지 않고 중앙 문서를 연결한다. 적용 프로필, 네이티브 어댑터/worker 계약, 상태 보존과 종료 경로를 확인하고 자동 테스트·실물 검증·미해결 문제를 구분한다.
+
+| 검토한 변경 | 영향받는 구성 | 호환성 및 검증 경계 |
+| --- | --- | --- |
+| K17 대기 안내, available/connected/응답 없음 표시 | MK20 C HUD만 | JSON `v2_sync`, `SNMK1`, controller/run/sequence 및 lease 검사는 그대로다. 런타임 0.2.1은 HUD 갱신이며 QMK·audio·M5Stack 펌웨어·하네스 RPC를 바꾸지 않는다. 실제 화면 검증은 통과했지만 395 PC의 응답 없음은 미해결이다. |
+| LAN 수신 주소/선택 수신 로그 | Middleware `mk20` 프로필만 | 실제 IP/포트·요청 수신을 lease 값 없이 기록한다. PC 알림만으로 인바운드 수신을 보장하지 않으며 새 방화벽 규칙을 설치하지 않는다. Web/M5Stack에는 이 listener를 시작하지 않는다. |
+| 설치 트레이, 로그인 자동 시작, Update, 설정 보존 | Web/MK20/M5Stack 공통 suite와 하네스 worker 3종 | 동일한 소유 런타임·루프백 API를 사용하며 worker 프로토콜·manifest 승인·SDK major는 바꾸지 않는다. Windows 실제 트레이/로그인, 격리 worker 초기화, 소스 Update/상태 보존·포트 충돌을 검증했다. macOS 로그인과 설치된 M5Stack 트레이에서 실물 gateway까지는 현장 검증이 남았다. M5Stack의 USB/등록 절차는 유지하며 펌웨어를 업로드하지 않을 때는 `-NoFlash`를 쓴다. |
+| 제어 일시정지·재개 | 공통 API와 MK20 직접 Talk/Send 처리 | Web/M5Stack의 새 명령·생성·attach는 API에서 차단하며 MK20 직접 음성/전송도 차단한다. 관찰·탐색과 이미 실행 중인 네이티브 작업은 계속된다. 공통 API/설정·트레이 일시정지 보존 검증은 통과했으나 물리 승인/중단 인증은 아니다. |
+| 비동기 음성 준비·닫힌 worker 재시작 방지 | MK20 전체 런타임과 Control 레거시 `LocalWhisperProvider` 사용자 | 실제 준비/오류를 표시하며 close 이후 worker를 다시 만들지 않는다. 취소 인수는 선택 사항으로 기존 호출을 유지한다. Web/M5Stack은 Control·STT 없이 실제 API 시작·종료를 검증했다. |
+| 디바이스/하네스 확장 계약 | Protocol 1 SDK/PluginHost, 하네스 3종, HID/LAN/virtual 및 M5Stack worker | 정적 의존성 검사, 독립 프로세스 예제, PluginHost·승인된 독립 하네스 초기화·기기 테스트가 계약 호환성 근거다. OS 샌드박스나 물리 하네스 작업 성공을 뜻하지 않는다. MK20의 호스트 직접 로딩 Preview 전송은 범용 SDK worker와 별개다. |
+
+**교차 구성 후속 검증 (2026-10-08):** 추가 프로필/PluginHost/실제 설치 트레이 검사 16/16, M5Stack 프로토콜·탐색·격리 worker 19/19, MK20 플러그인 15/15, 독립 가상 worker와 정적 패키지 경계 검사가 통과했다. 동일 런타임 소스의 직전 전체 회귀는 Middleware 262개 통과·생략 5개, Control 호스트 70개 통과·생략 2개다. 이번 후속은 문서만 변경한다. 기존 가이드의 SDK/어댑터 계약·MK20 JSON/렌더링 경로를 바로잡고 미지원 공급자 예제와 과장된 샌드박스/플랫폼 인증 설명을 제거했다.
+
 제조사 Qt `KeyboardDevice`는 현재 제품 HUD가 아니다. 기존 자료의 Qt 화면/공장 애플리케이션 설명은 제조사 런타임에 대한 참고이며, 현재 네이티브 HUD의 사양으로 해석하지 않는다.
 
 ```mermaid

@@ -37,11 +37,13 @@ Run **one** command in Windows PowerShell:
 | M5Stack + FACES | M5Stack firmware/gateway + Middleware + all three harness plugins | `& ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/fkiller/Snowball_Middleware/main/install.ps1'))) -Profile m5stack` |
 | Web UI only | Middleware + all three harness plugins | `& ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/fkiller/Snowball_Middleware/main/install.ps1'))) -Profile web` |
 
-The installer prepares Node/Git (Python for hardware profiles), builds the selected repositories, verifies each isolated plugin's handshake, creates a **Start-Snowball.ps1** launcher and desktop shortcut, then opens **http://127.0.0.1:8765/** after the real API responds. Default location: `%LOCALAPPDATA%\Snowball`. The launcher runs the installed suite again without downloading dependencies.
+The installer prepares Node/Git (Python for hardware profiles), builds the selected repositories, verifies each isolated plugin's handshake, creates a **Start-Snowball.ps1** launcher and desktop shortcut, then starts the hidden native tray and returns after the real API responds. Open **http://127.0.0.1:8765/** from the tray; its menu also provides status, Settings, Pause/Resume, Restart, Quit and OS login startup. Default location: `%LOCALAPPDATA%\Snowball`. The launcher runs the installed suite again without downloading dependencies.
 
-Connect M5Stack by USB for first installation; flash size is detected, existing flash is backed up privately, and the actual firmware/FACES handshake is checked before enrollment. Connect the independent MK20 to Wi-Fi and install this profile on each PC. On MK20 press K17 (Machines), turn the left knob, and click to pair/select an online PC. Paired machines and the last choice survive device restarts; each PC supplies its own native harnesses, projects and sessions. Adding a PC requires no USB, ADB or SD changes. Initial firmware/Wi-Fi preparation and later firmware maintenance are separate device tasks; an SD image backup is recommended for recovery. Hardware access/USB reconnects and native harness sign-in require the owner; installed plugins do not fabricate a working provider when its native app is absent.
+Connect M5Stack by USB for first installation; flash size is detected, existing flash is backed up privately, and the actual firmware/FACES handshake is checked before enrollment. Connect the independent MK20 to Wi-Fi and install this profile on each PC. On MK20 press K17 (Machines), turn the left knob, and click to pair/select an available PC. `available` confirms discovery; `connected` requires a valid screen response. Selection shows the PC name with `Connecting to PC`, followed by `No PC response` if no valid frame arrives within eight seconds; K17 remains available for retry or switching. Paired machines and the last choice survive device restarts; each PC supplies its own native harnesses, projects and sessions. Adding a PC requires no USB, ADB or SD changes. Initial firmware/Wi-Fi preparation and later firmware maintenance are separate device tasks; an SD image backup is recommended for recovery. Hardware access/USB reconnects and native harness sign-in require the owner; installed plugins do not fabricate a working provider when its native app is absent.
 
-Options: `-InstallRoot PATH`, `-Serial COMx`, `-Bind PRIVATE_PC_IP`, `-Port 8765`, `-NoStart`, `-NoFlash` (M5Stack firmware verification). On ambiguous adapters or USB ports supply the matching option; installation stops on errors. The one-command bootstrap currently targets **Windows**; macOS developers with Node/Git can run `npm run setup -- --profile web` , `--profile mk20`, or `--profile m5stack` from a sibling checkout layout. Linux suite workers are not yet supported.
+For an existing install, keep the same `-InstallRoot` and add `-Update` to fast-forward the official sources and rebuild. State, pairing and speech caches are preserved.
+
+Options: `-Update`, `-InstallRoot PATH`, `-Serial COMx`, `-Bind PRIVATE_PC_IP`, `-Port 8765`, `-NoStart`, `-NoFlash` (M5Stack firmware verification). On ambiguous adapters or USB ports supply the matching option; installation stops on errors. The one-command bootstrap currently targets **Windows**; macOS developers with Node/Git can run `npm run setup -- --profile web` , `--profile mk20`, or `--profile m5stack` from a sibling checkout layout. Linux suite workers are not yet supported.
 
 [Common architecture and repository ownership](https://github.com/fkiller/Snowball_Control/blob/main/docs/ARCHITECTURE.md)
 
@@ -91,14 +93,13 @@ The local-loopback control plane (`http://127.0.0.1:8765/`) visualizing detected
 </p>
 
 ### 4. MK20 Offline Standby Screen & Status
-When host middleware is disconnected or not yet launched, the MK20 terminal automatically enters **Snowball Standby Mode**:
-- **Top Display (`/dev/fb21`)**: Shows connection status alerts on the left with the 128×128 Snowball puppy icon on the right.
-- **Key 10 (`/dev/fb10`)**: Illuminates with the 128×128 Snowball puppy icon while all other key displays are blanked (backlight off) to signal idle standby.
-- **Auto Reconnect**: As soon as host middleware starts and UDP sync packets arrive, the display immediately switches to the live active session view.
+When no valid frame is received from the selected middleware, the terminal keeps **Machines (K17)** available for pairing, retry or switching. Selection displays the actual PC name with `Connecting to PC`; eight seconds without a valid frame displays `No PC response`. The recent-advertisement label `available` is separate from `connected`. Ordinary controls wait for the selected PC's accepted frame and scope. A saved selection reconnects when its paired PC becomes available and returns valid frames.
 
-| Standby Top Display (`/dev/fb21`) | Standby Key 10 (`/dev/fb10`) | Connected Active Display (`/dev/fb21`) |
-| :---: | :---: | :---: |
-| <img src="assets/screenshots/standby_top_display.png" width="300" alt="Standby Top Display"> | <img src="assets/screenshots/standby_key10.png" width="128" alt="Standby Key 10"> | <img src="assets/screenshots/online_top_display.png" width="300" alt="Connected Top Display"> |
+| Disconnected Machines cue (`/dev/fb17`) | Selected PC without a display response (`/dev/fb21`) |
+| :---: | :---: |
+| <img src="assets/screenshots/mk20_pairing_key17.png" width="128" alt="Actual disconnected Machines key"> | <img src="assets/screenshots/mk20_no_pc_response.png" width="428" alt="Actual selected PC response timeout"> |
+
+These are actual runtime 0.2.1 framebuffers captured on 2026-10-08. The timeout capture documents an unresolved connection, not successful PC pairing/control. The [central specification](docs/ARCHITECTURE.md#change-impact-and-documentation) records cross-component verification and remaining field checks.
 
 ---
 
@@ -151,8 +152,8 @@ Snowball_Control/
 │   │   ├── mk20_ui_elements_test.gif
 │   │   ├── web_supervisor_dashboard_en.png
 │   │   ├── web_supervisor_dashboard_ko.png
-│   │   ├── standby_top_display.png
-│   │   ├── standby_key10.png
+│   │   ├── mk20_no_pc_response.png
+│   │   ├── mk20_pairing_key17.png
 │   │   └── online_top_display.png
 │   └── videos/                 # Full high-res MP4 video recordings
 │       ├── mk20_navigation_demo.mp4

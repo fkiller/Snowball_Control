@@ -37,11 +37,13 @@ Windows PowerShell에서 원하는 구성의 명령 **하나만** 실행하세�
 | M5Stack + FACES | M5Stack 펌웨어/게이트웨이 + Middleware + 하네스 플러그인 3종 | `& ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/fkiller/Snowball_Middleware/main/install.ps1'))) -Profile m5stack` |
 | Web UI만 | Middleware + 하네스 플러그인 3종 | `& ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/fkiller/Snowball_Middleware/main/install.ps1'))) -Profile web` |
 
-설치기는 Node/Git(기기 프로필은 Python 포함) 준비, 저장소 빌드, 격리된 플러그인 프로세스의 실제 초기화 검증, **Start-Snowball.ps1** 실행 파일·바탕화면 바로가기 생성까지 수행합니다. 실제 API 응답을 확인한 뒤 **http://127.0.0.1:8765/**를 엽니다. 기본 설치 위치는 `%LOCALAPPDATA%\Snowball`이며, 이후 실행 파일은 다운로드 없이 설치된 구성을 다시 시작합니다.
+설치기는 Node/Git(기기 프로필은 Python 포함) 준비, 저장소 빌드, 격리된 플러그인 프로세스의 실제 초기화 검증, **Start-Snowball.ps1** 실행 파일·바탕화면 바로가기 생성까지 수행합니다. 숨김 네이티브 트레이를 시작하고 실제 API 응답을 확인하면 설치 터미널로 돌아옵니다. 트레이에서 **http://127.0.0.1:8765/**, 상태, 설정, 일시정지/재개, 재시작, 종료, OS 로그인 자동 시작을 제공합니다. 기본 설치 위치는 `%LOCALAPPDATA%\Snowball`이며, 이후 실행 파일은 다운로드 없이 설치된 구성을 다시 시작합니다.
 
-M5Stack은 첫 설치 시 USB로 연결하세요. 플래시 용량 탐지, 기존 전체 플래시 비공개 백업, 펌웨어 업로드, 실제 FACES 응답 확인 후 등록합니다. 독립 MK20은 Wi-Fi에 연결하고, 연결할 각 PC에 이 프로필을 설치하세요. MK20의 K17(Machines)에서 왼쪽 노브를 돌리고 클릭하면 온라인 PC를 페어링·선택합니다. 기기는 페어링 목록과 마지막 선택을 재부팅 뒤에도 유지하며, 선택한 PC의 하네스·프로젝트·세션을 표시합니다. PC 추가에는 USB·ADB·SD 변경이 필요 없습니다. 최초 펌웨어·Wi-Fi 준비와 이후 펌웨어 유지보수는 별도 기기 작업이며, 문제 발생 시 복원할 수 있도록 SD 이미지 백업을 권장합니다. USB 재연결·부트로더 진입·네이티브 하네스 로그인은 사용자가 수행해야 하며, 네이티브 앱이 없으면 해당 공급자는 사용 불가로 표시합니다.
+M5Stack은 첫 설치 시 USB로 연결하세요. 플래시 용량 탐지, 기존 전체 플래시 비공개 백업, 펌웨어 업로드, 실제 FACES 응답 확인 후 등록합니다. 독립 MK20은 Wi-Fi에 연결하고, 연결할 각 PC에 이 프로필을 설치하세요. MK20의 K17(Machines)에서 왼쪽 노브를 돌리고 클릭하면 발견된 PC를 페어링·선택합니다. `available`은 발견, `connected`는 실제 화면 응답 확인을 뜻합니다. 선택 후 PC 이름과 `Connecting to PC`를 표시하며 8초 동안 유효한 화면이 없으면 `No PC response`를 표시합니다. K17에서 재시도·전환할 수 있습니다. 기기는 페어링 목록과 마지막 선택을 재부팅 뒤에도 유지하며, 선택한 PC의 하네스·프로젝트·세션을 표시합니다. PC 추가에는 USB·ADB·SD 변경이 필요 없습니다. 최초 펌웨어·Wi-Fi 준비와 이후 펌웨어 유지보수는 별도 기기 작업이며, 문제 발생 시 복원할 수 있도록 SD 이미지 백업을 권장합니다. USB 재연결·부트로더 진입·네이티브 하네스 로그인은 사용자가 수행해야 하며, 네이티브 앱이 없으면 해당 공급자는 사용 불가로 표시합니다.
 
-옵션: `-InstallRoot 경로`, `-Serial COM번호`, `-Bind PC의_사설_IP`, `-Port 8765`, `-NoStart`, `-NoFlash`(M5Stack 기존 펌웨어 확인). 여러 USB 포트나 LAN 어댑터가 있으면 해당 옵션으로 지정하세요. 오류가 나면 완료로 처리하지 않습니다. 원샷 부트스트랩은 현재 **Windows** 대상입니다. Node/Git가 설치된 macOS 개발 환경에서는 같은 부모 폴더의 체크아웃 구성으로 `npm run setup -- --profile web` , `--profile mk20` 또는 `--profile m5stack`을 사용할 수 있습니다. Linux 전체 플러그인 런타임은 아직 지원하지 않습니다.
+기존 설치는 같은 `-InstallRoot`에 `-Update`를 추가해 공식 소스를 fast-forward하고 다시 빌드하세요. 상태·페어링·음성 캐시는 보존합니다.
+
+옵션: `-Update`, `-InstallRoot 경로`, `-Serial COM번호`, `-Bind PC의_사설_IP`, `-Port 8765`, `-NoStart`, `-NoFlash`(M5Stack 기존 펌웨어 확인). 여러 USB 포트나 LAN 어댑터가 있으면 해당 옵션으로 지정하세요. 오류가 나면 완료로 처리하지 않습니다. 원샷 부트스트랩은 현재 **Windows** 대상입니다. Node/Git가 설치된 macOS 개발 환경에서는 같은 부모 폴더의 체크아웃 구성으로 `npm run setup -- --profile web` , `--profile mk20` 또는 `--profile m5stack`을 사용할 수 있습니다. Linux 전체 플러그인 런타임은 아직 지원하지 않습니다.
 
 [공통 아키텍처와 저장소 역할](https://github.com/fkiller/Snowball_Control/blob/main/docs/ARCHITECTURE.md)
 
@@ -91,14 +93,13 @@ MK20에서 구동되는 브레드크럼 계층 네비게이션(`기기 > 하네�
 </p>
 
 ### 4. MK20 오프라인 대기 화면 및 연결 상태
-미들웨어가 실행되지 않았거나 PC와의 네트워크 통신(UDP sync)이 끊어지면, 기기는 자동으로 **Snowball 대기 모드(Standby Mode)**로 전환됩니다:
-- **상단 디스플레이 (`/dev/fb21`)**: 좌측에 상태 안내("Host Disconnected", "Snowball Standby Mode")와 우측에 128×128 16비트 Snowball 강아지 아이콘을 렌더링합니다.
-- **10번 키 (`/dev/fb10`)**: 128×128 Snowball 아이콘이 점등되고, 나머지 키는 백라이트가 소등되어 대기 상태임을 직관적으로 표시합니다.
-- **자동 복귀**: PC 미들웨어가 시작되면 실시간 작업 세션 화면으로 즉시 전환됩니다.
+선택한 미들웨어의 유효한 화면이 없으면 **Machines(K17)**를 계속 표시하여 페어링·재시도·전환할 수 있습니다. 선택하면 실제 PC 이름과 `Connecting to PC`를 표시하며, 8초 동안 유효한 화면이 없으면 `No PC response`를 표시합니다. 최근 알림을 받은 `available`과 실제 화면을 받은 `connected`를 구분합니다. 일반 조작은 선택 PC의 유효한 화면과 scope를 확인한 뒤 가능합니다. 저장된 선택은 페어링된 PC를 다시 발견하고 유효한 화면이 돌아오면 복귀합니다.
 
-| 대기 모드 상단 화면 (`/dev/fb21`) | 대기 모드 10번 키 (`/dev/fb10`) | 미들웨어 연결 완료 (`/dev/fb21`) |
-| :---: | :---: | :---: |
-| <img src="assets/screenshots/standby_top_display.png" width="300" alt="대기 화면 상단 디스플레이"> | <img src="assets/screenshots/standby_key10.png" width="128" alt="대기 화면 10번 키"> | <img src="assets/screenshots/online_top_display.png" width="300" alt="연결 완료 상단 디스플레이"> |
+| 미연결 Machines 안내 (`/dev/fb17`) | 선택 PC의 화면 응답 없음 (`/dev/fb21`) |
+| :---: | :---: |
+| <img src="assets/screenshots/mk20_pairing_key17.png" width="128" alt="실제 미연결 Machines 키"> | <img src="assets/screenshots/mk20_no_pc_response.png" width="428" alt="실제 선택 PC의 화면 응답 시간 초과"> |
+
+2026-10-08에 런타임 0.2.1에서 캡처한 실제 프레임버퍼입니다. 응답 없음 화면은 미해결 연결을 기록하며 PC 페어링/제어 성공을 뜻하지 않습니다. 교차 구성 검증과 남은 실물 확인은 [중앙 문서](docs/ARCHITECTURE.ko.md#변경-영향과-문서-동기화)에 기록합니다.
 
 ---
 
@@ -149,8 +150,8 @@ Snowball_Control/
 │   │   ├── mk20_ui_elements_test.gif
 │   │   ├── web_supervisor_dashboard_ko.png
 │   │   ├── web_supervisor_dashboard_en.png
-│   │   ├── standby_top_display.png
-│   │   ├── standby_key10.png
+│   │   ├── mk20_no_pc_response.png
+│   │   ├── mk20_pairing_key17.png
 │   │   └── online_top_display.png
 │   └── videos/                 # 원본 고화질 MP4 녹화 영상
 │       ├── mk20_navigation_demo.mp4

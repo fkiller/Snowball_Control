@@ -77,6 +77,21 @@ Windows bootstrap prepares supported Node (official LTS ZIP plus official SHA-25
 | **Legacy Host** | `Snowball_Control/host/`, Middleware `reference/legacy-host/` | Reference implementation. Control's `npm start` is a legacy Codex-only runtime, not the full middleware launcher |
 | **Legacy PowerShell Tools** | `hardware/mk20/orchestration/` | Diagnostic archive. Not used for production physical approvals or secure pairing |
 
+### Change Impact and Documentation
+
+Changes to behavior, installation, operation or protocol include documentation in the same change set before completion or publication: this specification, its Korean translation and affected README/developer instructions. Companion repositories link here for design instead of copying it. Check affected profiles, native adapter/worker contracts, retained state and lifecycle; document automated evidence separately from physical verification and unresolved faults.
+
+| Reviewed change | Affected components | Compatibility / verification boundary |
+| --- | --- | --- |
+| K17 standby cue and available/connected/timeout display | MK20 C HUD only | JSON `v2_sync`, `SNMK1`, controller/run/sequence and lease checks remain unchanged. Runtime 0.2.1 is a HUD update; it does not change QMK, audio, M5Stack firmware or harness RPC. Actual framebuffer verified; 395's missing PC response remains unresolved. |
+| LAN listener/selection diagnostics | Middleware `mk20` profile only | Logs actual endpoints and receipt without lease values. Advertisement is not proof of inbound delivery; no new firewall rule or discovery service is installed. Web/M5Stack do not start this listener. |
+| Installed tray, login startup, update and settings persistence | Shared Web/MK20/M5Stack suite and all three harness worker hosts | Same owned runtime and loopback API; no worker protocol, manifest approval or SDK major change. Windows native tray/login, isolated worker startup, source-update/state preservation and conflicts tested. macOS login and an installed M5Stack tray-to-physical-gateway run remain field checks. M5Stack setup retains its USB/enrollment procedure; use `-NoFlash` when firmware is not to be uploaded. |
+| Control pause / resume | Common API plus MK20's direct Talk/Send handlers | New commands/create/attach are fenced by the API for Web and M5Stack; MK20 direct voice/send is fenced too. Observation/navigation and already running native operations continue. Shared API/settings and persisted tray pause tests pass; this is not physical approval/cancellation certification. |
+| Nonblocking speech preparation and closed-worker guard | MK20 full runtime and Control's legacy `LocalWhisperProvider` consumers | Speech uses actual readiness/error and cannot restart after close. Public signatures retain optional cancellation parameters. Web/M5Stack need no Control checkout or STT process; their real native APIs start/stop with an absent Control path. |
+| Device/harness plugin contracts | Protocol 1 SDK/PluginHost, three harnesses, HID/LAN/virtual and M5Stack worker | Static dependency check, standalone process example, PluginHost tests, approved standalone harness initialization and device tests are evidence of contract compatibility, not an OS sandbox or successful physical harness turn. MK20's host-loaded Preview transport is distinct from a generic SDK worker. |
+
+**Cross-component follow-up (2026-10-08):** Additional profile/PluginHost/native installed-tray checks passed 16/16; M5Stack protocol/navigation/isolated-worker suite passed 19/19; MK20 plugin passed 15/15; standalone virtual-worker example passed and static package boundaries passed. The previously completed full regression on the same runtime sources remains 262 Middleware passes/5 skips and 70 Control host passes/2 skips. This follow-up changes documentation only. Existing guides were corrected to the actual SDK/adapter contract and MK20 JSON/rendering path; unsupported provider examples and overstated sandbox/platform certification were removed.
+
 > ⚠️ **Notice on Vendor Qt App**: The factory Qt application (`/data/KeyboardDevice`) is not the current product HUD. Descriptions of factory Qt screens in legacy manuals serve solely as vendor reference and must not be interpreted as the specification for the native C HUD.
 
 ```mermaid
