@@ -262,7 +262,7 @@ Control `host`에서 `npm ci && npm run build`, Middleware에서 `npm ci && npm 
 
 Supervisor 단독 런타임의 기본 하네스 survey는 현재 Windows/macOS에서만 연결된다. Linux 코어·API의 자동 검사를 전체 Linux 하네스 제어·네이티브 tray 패키지 지원으로 확대 해석하지 않는다. 기본 STT runtime 테스트는 형제 Control checkout과 Python 의존성 설치를 수행하는 검사를 `SNOWBALL_TEST_STT=1`일 때만 실행한다.
 
-검토한 LAN 런타임은 `mk20-preview-lan-runtime.zip`이며 SHA-256은 `838f4e161f9e32875dd249fc876410e07006aef18680c917c9249d485dfa04eb`다. manifest는 네이티브 소스 커밋 `e3b1ffd`, SNMK1과 SNAU-lease-v1을 기록한다. HUD/audio/부팅 바이너리, 폰트·라이선스, HUD 소스와 추적 중인 제조사 QMK 소스·고지를 포함한다. `-NoDeploy -RuntimeZip ... -RuntimeSha256 ...` 유지보수 검사로 실제 실행 중인 두 프로세스 이미지와 번들의 일치를 확인했다. Control/Middleware 변경은 로컬 main에 병합했으며 새 코드·번들을 원격에 push/공개하지 않았다. 기존 공개 `mk20-preview-0.1.0` 기기 번들은 새 설치 도구가 거부하므로 새 릴리즈 전까지 검토한 로컬 번들을 지정한다. 일반 PC 추가 설치는 기기에 이 번들을 배포하지 않는다.
+검토한 LAN 런타임은 `mk20-preview-lan-runtime.zip`이며 SHA-256은 `838f4e161f9e32875dd249fc876410e07006aef18680c917c9249d485dfa04eb`다. manifest는 네이티브 소스 커밋 `e3b1ffd`, SNMK1과 SNAU-lease-v1을 기록한다. HUD/audio/부팅 바이너리, 폰트·라이선스, HUD 소스와 추적 중인 제조사 QMK 소스·고지를 포함한다. `-NoDeploy -RuntimeZip ... -RuntimeSha256 ...` 유지보수 검사로 실제 실행 중인 두 프로세스 이미지와 번들의 일치를 확인했다. LAN 구현은 Control/Middleware main에 포함한다(`e3b1ffd` / `2b07c19`). 검토한 기기 번들은 공개 릴리즈 자산이 아닌 로컬 유지보수 산출물이다. 기존 공개 `mk20-preview-0.1.0` 기기 번들은 새 설치 도구가 거부하므로 새 릴리즈 전까지 검토한 로컬 번들을 지정한다. 일반 PC 추가 설치는 기기에 이 번들을 배포하지 않는다.
 
 ## 7. 공개 전 남은 검증과 질문
 
