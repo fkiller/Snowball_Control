@@ -39,15 +39,21 @@
 
 **Snowball**은 전체 로컬 제어 시스템이며, **Snowball Middleware**가 공통 설치·PC 실행·Web UI를 담당한다. **Snowball Control**은 MK20 기기 구성 요소와 이 공통 아키텍처 문서를 관리한다. 두 번째 미들웨어가 아니다. **Snowball Device · M5Stack**은 ESP32 펌웨어·게이트웨이를 관리하고, **Snowball Harness · Codex / Antigravity / OpenCode**는 모든 설치에 포함하는 독립 빌드 플러그인이다.
 
-Windows 공통 진입점은 `Snowball_Middleware/install.ps1 -Profile web|mk20|m5stack`이다. `scripts/setup.mjs`가 누락된 공식 저장소를 복제하고 미들웨어·하네스 3종을 빌드한 뒤, 실제 격리 워커의 초기화를 검사한다. `.snowball/suite.json`에 소스 커밋·승인된 진입점 다이제스트를 기록한다. 기존 추적 파일 수정은 거부하고 체크아웃을 강제로 초기화하지 않는다. 네이티브 공급자 앱·계정 로그인은 공급자별 사용자 단계이며, 앱이 없으면 사용 불가로 유지한다. 모델·Effort·세션은 네이티브 CLI/캐시에서 관찰한다.
+Windows 공통 진입점은 `Snowball_Middleware/install.ps1`이며 **기본 설치에 모든 지원 기기를 포함한다**(`all`). Middleware·Control 호스트 라이브러리·M5Stack 게이트웨이·독립 하네스 플러그인 3종을 빌드한다. PC 설치에 USB 연결·프로필 선택·펌웨어 작업은 필요 없다. 실제 격리 워커 초기화를 확인하고 `.snowball/suite.json`에 소스 커밋과 승인된 진입점 다이제스트를 기록한다. 추적 파일 수정은 거부하고 체크아웃을 초기화하지 않는다. 공급자 앱·로그인은 별도 준비이며 없으면 사용 불가다. 모델·Effort·프로젝트·세션은 계속 네이티브 원천에서 동적으로 관찰한다.
 
-`-Profile`은 이번 설치에서 준비할 어댑터를 선택한다. **같은 설치 루트**에 다시 실행하면 기존 어댑터를 유지하며 추가하고, 이후 Web 업데이트에도 유지한다. `deviceProfiles`와 `devices`의 기기별 설정으로 MK20/M5Stack의 Python·NIC·등록 경로를 분리하며 기존 단일 프로필 설정도 이관한다. 하나의 소유 트레이·suite·API가 MK20 검색과 M5Stack 게이트웨이를 함께 실행한다. 시작은 실제 게이트웨이 listener가 준비된 뒤 완료로 보고하며 실물 연결 성공을 뜻하지 않는다. 기존 MK20 호스트에 M5Stack을 추가하려면 USB로 연결하고 `install.ps1 -Profile m5stack -InstallRoot 기존_루트 -Update`를 실행한다. 0.3.0 업그레이드 전 전체 플래시를 백업하며, 이후 0.3.0 펌웨어를 확인한 설치에서는 `-NoFlash`를 사용한다.
+**같은 설치 루트**에 일반 업데이트하면 기존 Web/MK20/M5Stack 단독 설치에도 두 어댑터를 준비한다. `deviceProfiles`와 `devices`로 Python·NIC·등록 경로를 구분하며 M5Stack `.local`의 페어링·기기·탐색 파일, 컨트롤러 상태, 음성 캐시, 사용자 지정 API 포트와 로그인 자동 시작 설정을 유지한다. 하나의 소유 트레이·suite·API가 두 기기를 제공한다. `-Profile web|mk20|m5stack`은 개발·진단용 명시적 부분 구성이고 기존 어댑터를 유지한다. 이 옵션은 USB 준비를 암묵적으로 실행하지 않는다. 검색·기기 등록·선택은 별도의 신뢰·소유 동작이다.
 
-| 프로필 | 설치 저장소 | 기기 준비 |
-| --- | --- | --- |
-| `web` | Middleware + Harness 3종 | 없음. Control·기기 전송·STT를 불러오지 않는다. |
-| `m5stack` | Middleware + Harness 3종 + Device M5Stack | Python venv, 실제 UART/ESP32 확인, 4MB/16MB 용량별 빌드, 전체 플래시 백업, USB 업로드, 실제 펌웨어/FACES 확인, 게이트웨이 등록 |
-| `mk20` | Middleware + Harness 3종 + Control 호스트 라이브러리 | 로컬 음성 의존성과 LAN 머신 알림. 기기에서 페어링하며 펌웨어·Wi-Fi 준비는 별도 유지보수다. |
+| 작업 | 설치 구성 / 기기 영향 |
+| --- | --- |
+| 일반 설치 / `-Update` | MK20·M5Stack 호스트 어댑터, Web UI, 하네스 3종. USB 조사·등록·펌웨어 쓰기 없음 |
+| MK20 최초 연결 | 독립 Wi-Fi 기기에서 K17로 PC 검색·페어링. 펌웨어·Wi-Fi·SD 준비는 별도 유지보수 |
+| M5Stack 최초 PC 등록, 기존 펌웨어 0.3.0 | `Register-M5Stack.ps1 [-Serial COM번호]`로 설치된 도구만 사용해 실물 확인 뒤 USB 등록. 재설치·다운로드·플래싱 없음 |
+| M5Stack 최초 펌웨어 / 업그레이드 | `Register-M5Stack.ps1 -Flash [-Serial COM번호]` 명시 시 ESP32·용량 확인, 전체 플래시 비공개 백업, 업로드와 실제 펌웨어/FACES 확인 뒤 등록 |
+| 개발용 부분 구성 | `-Profile web`, `mk20`, `m5stack`. 하네스 3종은 유지 |
+
+설치된 `Register-M5Stack.ps1` / `.sh`는 `scripts/prepare-installed-m5stack.mjs --config 기존_SUITE [--serial 포트] [--flash]`를 사용한다. 해당 설치에서 실행 중인 트레이만 멈추고 설치된 도구로 실물 준비를 수행한다. 검증 후 USB 포트만 갱신하며 실패해도 이전에 실행 중이던 트레이를 재시작한다. 의존성 재설치·다운로드는 없다. 기본은 펌웨어를 쓰지 않으며 `-Flash` / `--flash`만 명시적 업로드다. 트레이가 멈춰 있었다면 USB 연결 상태에서 실행해 등록을 마친다. 설치기 `-PrepareM5Stack [-NoFlash]`는 설치와 준비를 함께 요청하는 고급 옵션이며 설치기의 `-NoFlash`와 `-Serial`은 이 스위치가 필요하다.
+
+다른 PC에 기기 검색 구성 요소를 추가 설치할 필요가 없다. M5Stack 미등록 PC에는 기존 인증 페어링 설계에 따른 최초 실물 USB 등록이 여전히 필요하며 LAN 검색으로 자동 등록하지 않는다. 사설 NIC가 없거나 자동 선택이 모호하면 검색은 대기·재시도하고 루프백 Web UI는 유지한다. 모호한 구성에는 `-Bind`를 지정한다. 실제 listener 바인딩 실패와 잘못된 명시적 설정은 오류이며 NIC 대기를 기기 연결 성공으로 표시하지 않는다. 게이트웨이 준비는 실제 listener 응답에 근거한다. 이미 실행 중인 어댑터의 NIC가 바뀌면 트레이를 재시작해 재선택한다.
 
 `Start-Snowball.ps1`은 `scripts/start-installed.mjs`를, Windows 바로가기는 네이티브 Electron 트레이를 직접 실행한다. 설치기는 고정된 Electron 바이너리를 준비하고 자식 프로세스를 숨김 실행한다. 자신이 시작한 런타임의 IPC 준비 응답과 루프백 스냅샷을 확인하면 터미널로 돌아온다. 트레이가 모든 프로필에서 동일한 전체 `start-suite.mjs` / `start-all.mjs` 런타임을 관리하므로 MK20도 포함된다. 상태, Web UI, 설정, 일시정지/재개, 재시작, 종료, OS 로그인 자동 시작을 제공한다. 일시정지는 MK20의 새 음성 녹음·Send도 차단하며 기존 네이티브 작업은 계속된다. 브라우저나 설치 터미널을 닫아도 실행을 유지하고, 종료·부모 IPC 연결 해제는 소유한 프로세스만 정리하며 명령을 재전송하지 않는다. 로그는 `.snowball/desktop.log`에 크기를 제한해 보관한다.
 
@@ -55,9 +61,9 @@ Windows 공통 진입점은 `Snowball_Middleware/install.ps1 -Profile web|mk20|m
 
 MK20 발견과 루프백 API는 음성 다운로드와 독립적으로 준비된다. 선택 후 실제 연결·네이티브 목록 읽기 상태를 주기적으로 표시하고, 호스트 단위 STT 준비를 백그라운드에서 한 번 수행한다. 모델 다운로드·워밍업 실패에도 탐색을 유지하고 Talk에서 준비 상태나 실제 오류를 표시한다. 실제 워커의 응답 전에는 음성 준비 완료를 주장하지 않는다. 연결 전에도 기기 자체 K17 **Machines / Pair PC / Press to pair**와 페어링 안내를 항상 표시한다.
 
-재실행은 소스를 자동 업데이트하지 않는다. 명시적 `-Update`로 공식 main을 가져와 Middleware·Control·하네스 3종을 fast-forward하며, 추적 파일 수정이나 분기 충돌은 거부한다. 해당 설치의 등록된 트레이만 종료한 뒤 다시 빌드하고 모델·컨트롤러 상태·페어링은 보존한다. 기존 LAN 설치는 같은 경로를 유지한다: `install.ps1 -Profile mk20 -InstallRoot "$env:LOCALAPPDATA\Snowball-LAN" -Update`. PC 설치는 MK20 펌웨어를 배포하지 않으며, 이전 HUD의 K17 표시는 별도의 검증된 기기 런타임 업데이트가 필요하다.
+재실행은 소스를 자동 업데이트하지 않는다. 명시적 `-Update`로 공식 main을 가져와 Middleware·Control·M5Stack·하네스 3종을 fast-forward하며, 추적 파일 수정이나 분기 충돌은 거부한다. 해당 설치의 등록된 트레이만 종료한 뒤 다시 빌드하고 모델·컨트롤러 상태·페어링은 보존한다. 기존 LAN 설치는 같은 경로를 유지한다: `install.ps1 -InstallRoot "$env:LOCALAPPDATA\Snowball-LAN" -Update`. PC 설치는 MK20 펌웨어를 배포하지 않으며, 이전 HUD의 K17 표시는 별도의 검증된 기기 런타임 업데이트가 필요하다.
 
-Windows 부트스트랩은 지원 Node(공식 LTS ZIP·SHA-256 검사), Git, 필요한 Python을 준비한다. macOS 소스 설치는 Node/Git/Python 사전 준비가 필요하고, Linux 전체 플러그인 워커는 아직 지원하지 않는다. M5Stack USB·DFU 준비와 공급자 로그인은 사용자 단계다. `-NoFlash`는 M5Stack 기존 펌웨어 확인에 적용한다. MK20 유지보수 전 SD 이미지 백업을 권장하며 PC 추가는 SD를 변경하지 않는다. 모든 README는 동일 배너·아이콘과 `Snowball <구성 요소> · <공급자> — Preview` 명칭을 사용한다.
+Windows 부트스트랩은 지원 Node(공식 LTS ZIP·SHA-256 검사), Git, 필요한 Python을 준비한다. macOS 소스 설치는 Node/Git/Python 사전 준비가 필요하고, Linux 전체 플러그인 워커는 아직 지원하지 않는다. M5Stack USB·DFU 준비와 공급자 로그인은 사용자 단계다. `-NoFlash`는 명시적 `-PrepareM5Stack`의 기존 펌웨어 확인에만 적용한다. MK20 유지보수 전 SD 이미지 백업을 권장하며 PC 추가는 SD를 변경하지 않는다. 모든 README는 동일 배너·아이콘과 `Snowball <구성 요소> · <공급자> — Preview` 명칭을 사용한다.
 
 | 구성 | 위치 | 현재 역할 |
 | --- | --- | --- |
@@ -82,13 +88,14 @@ Windows 부트스트랩은 지원 Node(공식 LTS ZIP·SHA-256 검사), Git, 필
 
 | 검토한 변경 | 영향받는 구성 | 호환성 및 검증 경계 |
 | --- | --- | --- |
+| 모든 기기 기본 설치와 명시적 기기 준비 (2026-10-09) | 설치기, suite 수명주기, Web/MK20/M5Stack, 하네스 3종 | USB 없이 두 어댑터를 준비하고 기존 설정·경로를 이관한다. Middleware 276개 중 270 통과·선택 6 생략, Control host 72개 중 70 통과·2 생략, M5Stack 19 통과, parity 10 통과·1 생략, 실제 카탈로그 전환 통과. 별도 실제 전체 기기 트레이 수명주기와 두 검색/MK20 실제 composition/M5Stack 서명 poll 검증 통과. 읽기 전용 실물 MK20 캡처에서 기존 395 선택·내용을 확인했다. 펌웨어·페어링 프로토콜·SDK/worker·하네스 dispatch·승인 의미는 변경하지 않는다. 새 PC 전체 부트스트랩·신규 USB 준비·실물 M5Stack 두 PC 전환은 미실행이며 펌웨어·네이티브 프롬프트는 전송하지 않았다. |
 | K17 대기 안내, available/connected/응답 없음 표시 | MK20 C HUD만 | JSON `v2_sync`, `SNMK1`, controller/run/sequence 및 lease 검사는 그대로다. 런타임 0.2.1은 HUD 갱신이며 QMK·audio·M5Stack 펌웨어·하네스 RPC를 바꾸지 않는다. 실제 화면을 확인했다. 395 로그의 중복 등록 오류는 아래 재연결 경로로 수정했으며 사용자가 395에서 수정 후 실물 연결 성공을 확인했다. |
-| LAN 수신 주소/선택 수신 로그 | 설치된 MK20 어댑터만 | 실제 IP/포트·요청 수신을 lease 값 없이 기록한다. PC 알림만으로 인바운드 수신을 보장하지 않으며 새 방화벽 규칙을 설치하지 않는다. 단독 Web/M5Stack 설치에는 이 listener가 없으며 MK20 추가 시 기존 어댑터와 함께 활성화한다. |
+| LAN 수신 주소/선택 수신 로그 | 설치된 MK20 어댑터만 | 실제 IP/포트·요청 수신을 lease 값 없이 기록한다. PC 알림만으로 인바운드 수신을 보장하지 않으며 새 방화벽 규칙을 설치하지 않는다. 기본 설치에 이 listener와 M5Stack 게이트웨이를 포함한다. 명시적 Web/M5Stack 개발용 부분 구성은 생략할 수 있다. |
 | 기기 추가 설치와 M5Stack 여러 PC | suite 수명 주기, M5Stack 게이트웨이·펌웨어, 공개 API host identity | 기존 MK20 어댑터와 기기별 설정, 하나의 루프백 API 및 하네스 worker 3종을 유지한다. M5Stack은 별도 서명 발견과 PC별 USB 등록을 사용하며 MK20 wire/lease·QMK·오디오·worker Protocol 1은 변경하지 않는다. 새 펌웨어와 실제 두 PC 전환은 현장 확인이 필요하다. |
 | MK20 재선택·시작 실패 후 재시도 | Middleware `mk20` 구성의 DeviceRegistry 바인딩 | 같은 source와 MAC identity는 register 대신 현재 revision으로 명시적 reconnect한다. device/controller ID와 선택 상태를 보존하며 새 lease를 발급한다. 해제·시작 실패는 해당 revision만 offline으로 표시해 이전 정리가 새 연결을 끊지 못한다. 공통 registry API, USB/HID, Web/M5Stack, 하네스·worker 프로토콜은 변경하지 않는다. |
-| 설치 트레이, 로그인 자동 시작, Update, 설정 보존 | Web/MK20/M5Stack 공통 suite와 하네스 worker 3종 | 동일한 소유 런타임·루프백 API를 사용하며 worker 프로토콜·manifest 승인·SDK major는 바꾸지 않는다. Windows 실제 트레이/로그인, 격리 worker 초기화, 소스 Update/상태 보존·포트 충돌을 검증했다. macOS 로그인과 설치된 M5Stack 트레이에서 실물 gateway까지는 현장 검증이 남았다. M5Stack의 USB/등록 절차는 유지하며 펌웨어를 업로드하지 않을 때는 `-NoFlash`를 쓴다. |
+| 설치 트레이, 로그인 자동 시작, Update, 설정 보존 | Web/MK20/M5Stack 공통 suite와 하네스 worker 3종 | 동일한 소유 런타임·루프백 API를 사용하며 worker 프로토콜·manifest 승인·SDK major는 바꾸지 않는다. Windows 실제 트레이/로그인, 격리 worker 초기화, 소스 Update/상태 보존·포트 충돌을 검증했다. macOS 로그인과 설치된 M5Stack 트레이에서 실물 gateway까지는 현장 검증이 남았다. M5Stack USB/등록은 별도 명시적 준비 작업이며 기본 검증은 펌웨어를 업로드하지 않는다. |
 | 제어 일시정지·재개 | 공통 API와 MK20 직접 Talk/Send 처리 | Web/M5Stack의 새 명령·생성·attach는 API에서 차단하며 MK20 직접 음성/전송도 차단한다. 관찰·탐색과 이미 실행 중인 네이티브 작업은 계속된다. 공통 API/설정·트레이 일시정지 보존 검증은 통과했으나 물리 승인/중단 인증은 아니다. |
-| 비동기 음성 준비·닫힌 worker 재시작 방지 | MK20 전체 런타임과 Control 레거시 `LocalWhisperProvider` 사용자 | 실제 준비/오류를 표시하며 close 이후 worker를 다시 만들지 않는다. 취소 인수는 선택 사항으로 기존 호출을 유지한다. Web/M5Stack은 Control·STT 없이 실제 API 시작·종료를 검증했다. |
+| 비동기 음성 준비·닫힌 worker 재시작 방지 | MK20 전체 런타임과 Control 레거시 `LocalWhisperProvider` 사용자 | 실제 준비/오류를 표시하며 close 이후 worker를 다시 만들지 않는다. 취소 인수는 선택 사항으로 기존 호출을 유지한다. 명시적 Web/M5Stack 개발용 부분 구성은 Control·STT 없이 실제 API 시작·종료를 검증했다. 기본 설치는 두 어댑터를 포함한다. |
 | 디바이스/하네스 확장 계약 | Protocol 1 SDK/PluginHost, 하네스 3종, HID/LAN/virtual 및 M5Stack worker | 정적 의존성 검사, 독립 프로세스 예제, PluginHost·승인된 독립 하네스 초기화·기기 테스트가 계약 호환성 근거다. OS 샌드박스나 물리 하네스 작업 성공을 뜻하지 않는다. MK20의 호스트 직접 로딩 Preview 전송은 범용 SDK worker와 별개다. |
 
 **교차 구성 후속 검증 (2026-10-08):** 추가 프로필/PluginHost/실제 설치 트레이 검사 16/16, 공개 main 기준 M5Stack 프로토콜·탐색·격리 worker 19/19, 실제 PlatformIO 설치 설정 검사 2개(4MB/16MB 설정·미지원 용량 거부, 플래싱 없음), MK20 플러그인 15/15, 독립 가상 worker와 정적 패키지 경계 검사가 통과했다. 동일 런타임 소스의 직전 전체 회귀는 Middleware 262개 통과·생략 5개, Control 호스트 70개 통과·생략 2개다. 이번 후속은 문서만 변경한다. 기존 가이드의 SDK/어댑터 계약·MK20 JSON/렌더링 경로를 바로잡고 미지원 공급자 예제와 과장된 샌드박스/플랫폼 인증 설명을 제거했다.

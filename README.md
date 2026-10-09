@@ -27,23 +27,21 @@
 <a id="one-shot-install"></a>
 ## Install Snowball
 
-**Snowball Middleware is the common installer and PC runtime.** Snowball Control owns the MK20 firmware, HUD and device tools; Snowball Device · M5Stack owns the ESP32 firmware and gateway. Web UI and M5Stack do not require a Control checkout. The three Snowball Harness repositories provide the Codex, Antigravity and OpenCode plugins, included in every profile.
+**Install Snowball once per PC.** The default installation includes the Web UI, MK20 discovery/transport and speech runtime, M5Stack discovery/gateway, and all three Codex/Antigravity/OpenCode harness plugins. No device profile selection or connected USB device is needed.
 
-Run **one** command in Windows PowerShell:
+Run in Windows PowerShell:
 
-| Your setup | Installed together | Command |
-| --- | --- | --- |
-| MK20 | Middleware + MK20 host libraries + all three harness plugins | `& ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/fkiller/Snowball_Middleware/main/install.ps1'))) -Profile mk20` |
-| M5Stack + FACES | M5Stack firmware/gateway + Middleware + all three harness plugins | `& ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/fkiller/Snowball_Middleware/main/install.ps1'))) -Profile m5stack` |
-| Web UI only | Middleware + all three harness plugins | `& ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/fkiller/Snowball_Middleware/main/install.ps1'))) -Profile web` |
+```powershell
+& ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/fkiller/Snowball_Middleware/main/install.ps1')))
+```
 
-The installer prepares Node/Git (Python for hardware profiles), builds the selected repositories, verifies each isolated plugin's handshake, creates a **Start-Snowball.ps1** launcher and desktop shortcut, then starts the hidden native tray and returns after the real API responds. Open **http://127.0.0.1:8765/** from the tray; its menu also provides status, Settings, Pause/Resume, Restart, Quit and OS login startup. Default location: `%LOCALAPPDATA%\Snowball`. The launcher runs the installed suite again without downloading dependencies.
+The installer prepares Node/Git/Python, builds the companion components, checks the actual isolated harness workers, and starts a hidden per-user background application with a tray icon. The terminal returns after the owned runtime responds. The tray provides Web UI, status, Settings, Pause/Resume, Restart, Quit and login startup. Web UI stays on **http://127.0.0.1:8765/**. Default location: `%LOCALAPPDATA%\Snowball`; **Start-Snowball.ps1** restarts it without downloading dependencies. Missing native harness applications remain unavailable until installed and signed in through their vendors.
 
-Connect M5Stack by USB for first installation; flash size is detected, existing flash is backed up privately, and the actual firmware/FACES handshake is checked before enrollment. Connect the independent MK20 to Wi-Fi and install this profile on each PC. On MK20 press K17 (Machines), turn the left knob, and click to pair/select an available PC. `available` confirms discovery; `connected` requires a valid screen response. Selection shows the PC name with `Connecting to PC`, followed by `No PC response` if no valid frame arrives within eight seconds; K17 remains available for retry or switching. Paired machines and the last choice survive device restarts; each PC supplies its own native harnesses, projects and sessions. Adding a PC requires no USB, ADB or SD changes. Initial firmware/Wi-Fi preparation and later firmware maintenance are separate device tasks; an SD image backup is recommended for recovery. Hardware access/USB reconnects and native harness sign-in require the owner; installed plugins do not fabricate a working provider when its native app is absent.
+For updates, use the same `-InstallRoot` with `-Update` and omit `-Profile`. Old single-device installs gain both adapters while preserving device settings, pairing keys, controller state, speech caches, custom API port and login startup preference. An absent or ambiguous private LAN leaves automatic discovery waiting while the Web UI remains available; use `-Bind PRIVATE_PC_IP` when needed.
 
-For an existing install, keep the same `-InstallRoot` and add `-Update` to fast-forward the official sources and rebuild. State, pairing and speech caches are preserved.
+MK20 joins Wi-Fi independently: press K17 (Machines), choose a PC and pair/select it. Adding a PC requires no USB/ADB/SD changes. M5Stack's gateway is already installed; its existing security boundary still requires one USB enrollment per unknown PC and firmware 0.3.0 for multiple PCs. Run **Register-M5Stack.ps1** in the install root (optional `-Serial COMx`) to verify existing firmware and prepare USB enrollment using installed tools, without reinstalling, downloading or flashing. Add `-Flash` only for initial firmware installation/upgrade with a full private flash backup. macOS uses **Register-M5Stack.sh** with optional `--serial` / `--flash`. An already running tray is restarted; if stopped, start it with USB connected to complete enrollment. Advanced installer equivalents are `-PrepareM5Stack -NoFlash` and `-PrepareM5Stack`. Normal installation and `-Update` never interrogate or flash USB devices. Installer `-Serial` and `-NoFlash` require `-PrepareM5Stack`. Then disconnect USB and select the registered PC from M5Stack's Machine list. Discovery alone does not enroll an unknown PC.
 
-Options: `-Update`, `-InstallRoot PATH`, `-Serial COMx`, `-Bind PRIVATE_PC_IP`, `-Port 8765`, `-NoStart`, `-NoFlash` (M5Stack firmware verification). On ambiguous adapters or USB ports supply the matching option; installation stops on errors. The one-command bootstrap currently targets **Windows**; macOS developers with Node/Git can run `npm run setup -- --profile web` , `--profile mk20`, or `--profile m5stack` from a sibling checkout layout. Linux suite workers are not yet supported.
+Options: `-Update`, `-InstallRoot PATH`, `-Bind PRIVATE_PC_IP`, `-Port 8765`, `-NoStart`, `-NoShortcut`. `-Profile web|mk20|m5stack` remains an explicit development/diagnostic subset option, not the normal installation flow; it retains adapters already installed in that root. macOS source users with Node/Git/Python can run `npm run setup --` from a sibling checkout layout; explicit USB preparation uses `--prepare-m5stack [--no-flash]`. Linux suite workers are not yet supported. See the central specification for protocol, authentication and field-verification limits.
 
 [Common architecture and repository ownership](https://github.com/fkiller/Snowball_Control/blob/main/docs/ARCHITECTURE.md)
 
@@ -61,7 +59,7 @@ Our philosophy is to keep control in the user's hands and on their computer: mak
 
 **Snowball Control** provides the physical terminal runtime, custom QMK firmware, native Tina Linux HUD engine, device tools, and STT reference host for the **MK20 Desktop Terminal**.
 
-Install all profiles through the common Middleware entry point above. This repository is the MK20 device component; its internal `host/npm start` is a legacy Codex-only reference runtime.
+Install the complete middleware through the common entry point above. This repository is the MK20 device component; its internal `host/npm start` is a legacy Codex-only reference runtime.
 
 ---
 
@@ -109,7 +107,7 @@ These are actual runtime 0.2.1 framebuffers captured on 2026-10-08. The timeout 
 - **Full SD Image Backup**: Full disk-level microSD backup is strongly recommended prior to modification. Apply the Snowball image and restore the backup if any issue arises. Refer to [Deployment, Backup & Recovery](docs/ARCHITECTURE.md).
 - **Wi-Fi Configuration**: Configure site Wi-Fi in `dev-access.conf` on the microSD root (git-ignored). See [Device Tools Guide](hardware/mk20/dev-tools/README.md).
 - **Native HUD Daemon**: The HUD is a native C daemon running on Tina Linux ARMv7 (Allwinner T113), utilizing the 428×142 top display (`/dev/fb21`) and 128×128 key displays (`/dev/fb1`..`/dev/fb20`).
-- **Local STT**: Supports CUDA or CPU inference. The MK20 profile installs Python dependencies and the runtime resolves/downloads the local model from hardware capabilities.
+- **Local STT**: Supports CUDA or CPU inference. The default installation includes the MK20 Python dependencies and the runtime resolves/downloads the local model from hardware capabilities.
 
 ---
 
