@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param([string]$Device, [string]$Adb, [Parameter(Mandatory)][string]$Output, [switch]$NoDeploy, [string]$RuntimeZip, [string]$RuntimeSha256)
 $ErrorActionPreference = 'Stop'
+if (-not $NoDeploy) { throw 'Use the tray Device setup for MK20 QMK/SD updates with verified recovery backups. This legacy ADB helper only supports explicit -NoDeploy diagnostics.' }
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 $control = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
 $state = Split-Path ([IO.Path]::GetFullPath($Output))
@@ -54,33 +55,7 @@ if (-not $Device) {
     elseif ($found.Count -gt 1) { throw 'More than one MK20 is reachable. Rerun with -Mk20Address IP:5555.' }
 }
 if ($Device -and $Device -notmatch ':') { $Device += ':5555' }
-if (-not $Device -or -not (Test-Mk20 $Device)) {
-    Write-Host 'Initial MK20 access: insert its boot-resource SD card in the PC. A full disk image backup is required before modifying it.'
-    $sd = Read-Host 'Path to the backed-up MK20 SD root (for example F:\)'
-    $sd = (Resolve-Path -LiteralPath $sd).Path
-    if (-not (Test-Path -LiteralPath (Join-Path $sd 'dev-access.conf'))) {
-        $config = Join-Path $sd 'dev-access.conf'
-        $ssid = Read-Host '2.4GHz Wi-Fi SSID'
-        $secret = Read-Host 'Wi-Fi password' -AsSecureString
-        $ptr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secret)
-        try { $password = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr) }
-        finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr) }
-        $mac = (Get-NetAdapter | Where-Object { $_.Status -eq 'Up' -and $_.PhysicalMediaType -eq 'Native 802.11' } | Select-Object -First 1).MacAddress
-        if (-not $mac) { $mac = Read-Host 'PC Wi-Fi adapter MAC (AA:BB:CC:DD:EE:FF)' }
-        $mac = $mac.Replace('-',':')
-        if ($mac -notmatch '^([a-f0-9]{2}:){5}[a-f0-9]{2}$') { throw 'Invalid PC Wi-Fi MAC.' }
-        function Shell-Quote([string]$Value) { return "'" + $Value.Replace("'", "'\" + "'" + "'") + "'" }
-        # Write credentials to the selected local card only; never to logs or Git.
-        $content = 'WIFI_SSID=' + (Shell-Quote $ssid) + "`nWIFI_PSK=" + (Shell-Quote $password) + "`nDEV_PC_MAC='" + $mac + "'`n"
-        [IO.File]::WriteAllText($config,$content,[Text.UTF8Encoding]::new($false))
-        $password = $null; $content = $null
-    }
-    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'lunch.sh') -Destination (Join-Path $sd 'lunch.sh') -Force
-    Write-Host 'Return the card to MK20 and power it on. The factory boot hook configures Wi-Fi and private ADB.'
-    $Device = Read-Host 'MK20 DHCP IPv4 address (router lease or current_ip.txt on the card)'
-    if ($Device -notmatch ':') { $Device += ':5555' }
-    if (-not (Test-Mk20 $Device)) { throw 'MK20 is not reachable after bootstrap. Check Wi-Fi and the allowed PC MAC, then rerun.' }
-}
+if (-not $Device -or -not (Test-Mk20 $Device)) { throw 'No MK20 debug endpoint is reachable. Use native Device setup for preparation; ADB diagnostics never modify media.' }
 $network = Invoke-Adb @('-s',$Device,'shell','ip -4 addr show wlan0')
 if ($network -notmatch 'inet ((?:\d{1,3}\.){3}\d{1,3})/') { throw 'MK20 has no Wi-Fi IPv4 address.' }
 $mk20Address = $Matches[1]
@@ -108,37 +83,6 @@ if (@($manifest.deploy | Where-Object { $_ -notin $allowedDeploy }).Count) { thr
 foreach ($file in $manifest.files) {
     if ($file.path -notmatch '^[a-zA-Z0-9_./-]+$' -or $file.path -match '(^|[/\\])\.\.([/\\]|$)' -or [IO.Path]::IsPathRooted($file.path)) { throw 'Invalid bundle path.' }
     if ((Get-FileHash -LiteralPath (Join-Path $bundle $file.path) -Algorithm SHA256).Hash.ToLowerInvariant() -ne $file.sha256) { throw 'Invalid bundle file digest.' }
-}
-if (-not $NoDeploy) {
-    # Retain the whole current persistent card/eMMC resource filesystem and firmware/config files.
-    $backup = Join-Path $state ('backups\mk20-' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
-    New-Item -ItemType Directory -Path $backup -Force | Out-Null
-    [void](Invoke-Adb @('-s',$Device,'pull','/mnt/SDCARD', $backup))
-    Write-Host "Device files backed up privately at $backup. A full SD image backup is recommended for recovery."
-    # Factory QMK must be replaced in physical DFU mode. Existing Snowball HUD
-    # installations already passed this step. Do not claim a keyboard was flashed by merely downloading a file.
-    $installed = Invoke-Adb @('-s',$Device,'shell','test -x /mnt/SDCARD/mk20-hud && echo snowball || echo factory')
-    if ($installed -ne 'snowball') {
-        Write-Host 'Flash the included MK20 QMK binary: hold top-left while reconnecting USB, then Flash in QMK Toolbox.'
-        $toolbox = Join-Path $tools 'qmk_toolbox.exe'
-        if (-not (Test-Path -LiteralPath $toolbox)) { Invoke-WebRequest 'https://github.com/qmk/qmk_toolbox/releases/download/0.3.4/qmk_toolbox.exe' -OutFile $toolbox -UseBasicParsing }
-        Start-Process -FilePath $toolbox -WindowStyle Hidden
-        Start-Process -FilePath explorer.exe -ArgumentList @((Join-Path $control 'hardware\mk20\qmk\bin')) -WindowStyle Hidden
-        [void](Read-Host 'After flashing and reconnecting MK20, press Enter to continue')
-        if (-not (Test-Mk20 $Device)) { throw 'MK20 did not reconnect after QMK flashing.' }
-    }
-    foreach ($file in $manifest.deploy) {
-        $local = Join-Path $bundle $file
-        $remote = '/mnt/SDCARD/' + $file.Replace('\','/')
-        [void](Invoke-Adb @('-s',$Device,'shell',"mkdir -p /mnt/SDCARD/fonts"))
-        [void](Invoke-Adb @('-s',$Device,'push',$local,($remote + '.new')))
-        $md5 = (Get-FileHash -LiteralPath $local -Algorithm MD5).Hash.ToLowerInvariant()
-        $remoteSum = Invoke-Adb @('-s',$Device,'shell',("md5sum '" + $remote + ".new'"))
-        if (($remoteSum -split '\s')[0] -ne $md5) { throw 'Device file verification failed; old file retained.' }
-        [void](Invoke-Adb @('-s',$Device,'shell',("mv '" + $remote + ".new' '" + $remote + "'")))
-    }
-    [void](Invoke-Adb @('-s',$Device,'shell','chmod +x /mnt/SDCARD/mk20-hud /mnt/SDCARD/mk20-audio /mnt/SDCARD/lunch.sh; /mnt/SDCARD/lunch.sh --restart-runtime'))
-    Start-Sleep -Seconds 2
 }
 foreach ($native in @('mk20-hud','mk20-audio')) {
     $runtimePid = Invoke-Adb @('-s',$Device,'shell',('pidof ' + $native))

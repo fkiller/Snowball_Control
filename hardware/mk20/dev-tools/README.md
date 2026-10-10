@@ -4,6 +4,9 @@
 
 # MK20 Development Access
 
+Use middleware tray **Device setup… → MK20** for normal QMK/SD runtime preparation. ADB tools here are for development/diagnostics and are not dependencies of normal connection, pairing or updates. `install-mk20.ps1` refuses deployment and supports explicit `-NoDeploy` diagnostics only. Normal preparation includes verified recovery backups, preserved settings, actual reboot/boot checks and physical guidance in the same window.
+
+
 ## Working Topology and Current Address
 
 The addresses below describe the network topology for MK20 development. The live MK20 connects to the development PC's local Wi-Fi LAN (e.g. `192.168.1.248`). TCP ADB is reachable over the local Wi-Fi network. Check your current DHCP lease and USB enumeration before connecting.
@@ -80,4 +83,4 @@ Back up the entire SD card before applying the Snowball image. If an update fail
 - `package/PCMonitorApp/setusbconfig` owns the product serial gadget mode.
 - `package/PCMonitorApp/qt_app1` executes `/mnt/SDCARD/lunch.sh` as root.
 
-A full raw image backup of the microSD card is recommended before making any changes. Rather than analyzing legacy factory SD contents, we verify deployment and rollback of our own Snowball images. Refer to [docs/ARCHITECTURE.md](../../../docs/ARCHITECTURE.md) for current designs, QMK requirements, and Preview security boundaries.
+The common setup window requires a verified full raw microSD image before changing runtime files. Rather than analyzing legacy factory SD contents, we verify deployment and rollback of our own Snowball images. Refer to [docs/ARCHITECTURE.md](../../../docs/ARCHITECTURE.md) for current designs, QMK requirements, and Preview security boundaries.

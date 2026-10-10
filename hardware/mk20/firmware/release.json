@@ -1,0 +1,31 @@
+{
+  "board": "mk20",
+  "version": "0.2.2",
+  "components": {
+    "qmk": {
+      "name": "QMK keyboard",
+      "version": "2026.9.18",
+      "sha256": "28415537c79b7b08a0d735e337423633838d857dcae9e4968d4fbd103a2fff19"
+    },
+    "runtime": {
+      "name": "T113 runtime / SD",
+      "version": "0.2.2",
+      "url": "https://github.com/fkiller/Snowball_Control/releases/download/mk20-preview-0.2.2/mk20-runtime.zip",
+      "sha256": "6e0c034fffd995ffe5eebb2ad1f8fb6681bc0f54ce4ec38b159662f1ccba02d9"
+    }
+  },
+  "changes": {
+    "ko": [
+      "MK20을 공통 기기 설정 창에 통합: QMK와 T113 런타임을 각각 실제 확인합니다.",
+      "QMK DFU 읽기 백업·설정 보존·쓰기 후 읽기 검증과 재기동 확인을 추가합니다.",
+      "SD 전체 이미지 백업 후 런타임을 갱신하고 실제 LAN 부팅·실행 파일 해시를 확인합니다.",
+      "기존 Wi-Fi·PC 등록을 보존하고 빈 네트워크의 OS 이관·직접 입력·기기 조작 안내를 제공합니다."
+    ],
+    "en": [
+      "Integrates MK20 into common Device setup with separate actual QMK and T113 runtime checks.",
+      "Adds QMK DFU readback backup, settings-preserving write, verification and reboot observation.",
+      "Backs up the complete SD image before runtime-file deployment, then checks actual LAN boot and running hashes.",
+      "Preserves Wi-Fi and paired PCs; provides reviewed import, manual network entry and physical device guidance."
+    ]
+  }
+}
