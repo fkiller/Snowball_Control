@@ -33,6 +33,7 @@
 #include <sys/mman.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
+#include "mk20-prepare.h"
 #include <sys/time.h>
 #include <netinet/in.h>
 #include <linux/fb.h>
@@ -2120,6 +2121,7 @@ static void parse_qmk_byte(uint8_t byte) {
 
 static void handle_udp_packet(const char *buf, int len, const struct sockaddr_in *sender) {
     if(g_mode_v2){
+        if(mk20_prepare_probe(&g_network,g_sockfd,buf,sender))return;
         if(mk20_network_packet(&g_network,buf,sender,get_time_ms())){if(g_network.menu)machine_view();return;}
         if(g_network.menu||!mk20_network_accept(&g_network,buf,sender))return;
     }

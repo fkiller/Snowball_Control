@@ -8,12 +8,6 @@ To resolve the factory firmware bug where key matrix scanning halts when cold bo
 
 The official target binary for the MK20 is `bin/syk_keyboards_mk20_plus_via.bin`. *Do not flash the sibling MK10 binary onto the MK20.* The QMK source code was provided directly by the hardware manufacturer via email, and the release notes confirm the application of `NO_USB_STARTUP_CHECK`. The configuration in `source/qmk/mk20_plus/rules.mk` defines `NO_USB_STARTUP_CHECK = yes` and `NO_SUSPEND_POWER_DOWN = yes`.
 
-A full raw backup of your microSD card, keymaps, and recovery assets is strongly recommended before proceeding. After installing [QMK Toolbox](https://qmk.fm/toolbox):
-
-1. Disconnect the MK20 USB cable from the workstation.
-2. Hold down the top-left mechanical key while plugging in the USB cable.
-3. Once the STM32duino DFU bootloader device is detected, select the MK20 firmware binary (`bin/syk_keyboards_mk20_plus_via.bin`).
-4. Click **Flash** and do not disconnect the cable until completion.
-5. Reconnect and verify key scanning and UART input even on standalone power without a PC USB host.
+Use the middleware tray **Device setup… → MK20** for normal updates. Disconnect USB, hold the top-left key and reconnect to enter DFU. Confirm the physical model and selected attachment, then choose Update. Writing requires an actual readback backup of the complete affected application/settings region and SHA-256 verification. Bytes outside the patched binary, including EEPROM, are preserved; complete readback, automatic reset and keyboard arrival on the same USB topology determine completion. The bootloader is never changed. Unsupported drivers or DFU readback block writing and are explained in the same window. QMK Toolbox and registration scripts are not needed in the normal journey. SD runtime preparation in the same window first backs up the complete card image.
 
 Physical firmware flashing on actual hardware should be performed with appropriate care. QMK-based firmware code is licensed under [upstream GNU General Public License v2 (GPLv2)](https://github.com/qmk/qmk_firmware/blob/master/LICENSE) and retains its original notices, separate from Snowball's Apache-2.0 codebase.

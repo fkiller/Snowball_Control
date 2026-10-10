@@ -7,7 +7,7 @@ FREETYPE_HEADERS ?= .deps/freetype-2.6.1/include
 FREETYPE_ARCHIVE ?= ../Keyboard_T113_SourceCode_20260427_MK20/Tina-t113-pro/dl/freetype-2.6.1.tar.gz
 CFLAGS += -I$(FREETYPE_HEADERS)
 
-SRCS := mk20-hud.c mk20-network.c v2_state.c v2_render.c unicode_text.c
+SRCS := mk20-hud.c mk20-network.c mk20-prepare.c v2_state.c v2_render.c unicode_text.c
 OBJS := $(SRCS:.c=.o)
 
 all: mk20-hud mk20-audio
@@ -17,7 +17,7 @@ HOST_CC ?= cc
 test-render: $(FREETYPE_HEADERS)/ft2build.h
 	mkdir -p .deps/test-render
 	$(HOST_CC) -O2 -I$(FREETYPE_HEADERS) -Dmain=snowball_daemon_main -c mk20-hud.c -o .deps/test-render/hud.o
-	$(HOST_CC) -O2 -I$(FREETYPE_HEADERS) tests/v2-render-test.c .deps/test-render/hud.o mk20-network.c v2_render.c v2_state.c unicode_text.c -o .deps/test-render/test -lm -ldl
+	$(HOST_CC) -O2 -I$(FREETYPE_HEADERS) tests/v2-render-test.c .deps/test-render/hud.o mk20-network.c mk20-prepare.c v2_render.c v2_state.c unicode_text.c -o .deps/test-render/test -lm -ldl
 	.deps/test-render/test
 
 mk20-audio: mk20-audio.c
@@ -37,6 +37,7 @@ mk20-hud: $(OBJS)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 unicode_text.o: $(FREETYPE_HEADERS)/ft2build.h
+mk20-prepare.o: mk20-prepare.h mk20-network.h ../firmware/runtime-version.h
 $(FREETYPE_HEADERS)/ft2build.h:
 	@test -f "$(FREETYPE_ARCHIVE)" || { echo 'Set FREETYPE_HEADERS to installed FreeType headers, or FREETYPE_ARCHIVE to a supplied source archive.'; exit 1; }
 	mkdir -p .deps

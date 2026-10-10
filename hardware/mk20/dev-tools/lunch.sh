@@ -64,13 +64,22 @@ log_msg "lunch.sh started"
 
             if ! pidof wpa_supplicant >/dev/null 2>&1; then
                 umask 077
+                # Escape configuration values rather than interpolating shell
+                # content into WPA syntax. Open networks need key_mgmt=NONE.
+                wpa_ssid=$(printf '%s' "$WIFI_SSID" | sed 's/\\/\\\\/g; s/"/\\"/g')
+                wpa_psk=$(printf '%s' "$WIFI_PSK" | sed 's/\\/\\\\/g; s/"/\\"/g')
+                if [ -n "$WIFI_PSK" ]; then
+                    wpa_security="    psk=\"$wpa_psk\"
+    key_mgmt=WPA-PSK"
+                else
+                    wpa_security="    key_mgmt=NONE"
+                fi
                 cat > "$WPA_CONF" <<EOF
 ctrl_interface=/var/run/wpa_supplicant
 update_config=1
 network={
-    ssid="$WIFI_SSID"
-    psk="$WIFI_PSK"
-    key_mgmt=WPA-PSK
+    ssid="$wpa_ssid"
+$wpa_security
 }
 EOF
                 wpa_supplicant -Dnl80211 -i wlan0 -c "$WPA_CONF" -B >> "$LOG" 2>&1

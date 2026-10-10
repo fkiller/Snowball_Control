@@ -10,7 +10,7 @@ const [destination, fontFile, fontLicense] = process.argv.slice(2);
 if (!destination || !fontFile || !fontLicense) throw Error('Usage: package-runtime.mjs EMPTY_STAGE_DIRECTORY D2Coding.ttf OFL.txt');
 const root = fileURLToPath(new URL('../../..', import.meta.url));
 const stage = path.resolve(destination);
-if(execFileSync('git',['status','--porcelain','--untracked-files=normal','--','hardware/mk20/hud','hardware/mk20/dev-tools/lunch.sh','hardware/mk20/qmk'],{cwd:root,encoding:'utf8'}).trim())throw Error('Commit runtime source before packaging');
+if(execFileSync('git',['status','--porcelain','--untracked-files=normal','--','hardware/mk20/hud','hardware/mk20/dev-tools/lunch.sh','hardware/mk20/qmk','hardware/mk20/firmware/runtime-version.h'],{cwd:root,encoding:'utf8'}).trim())throw Error('Commit runtime source before packaging');
 if (fs.existsSync(stage)) throw Error('Stage directory must be new');
 fs.mkdirSync(stage, { recursive: true });
 const deploy = ['mk20-hud', 'mk20-audio', 'lunch.sh', 'fonts/D2Coding.ttf'];
@@ -20,6 +20,7 @@ copy(path.join(root,'hardware/mk20/dev-tools/lunch.sh'), 'lunch.sh');
 copy(fontFile, 'fonts/D2Coding.ttf'); copy(fontLicense, 'licenses/D2Coding-OFL.txt');
 copy(path.join(root, 'LICENSE'), 'licenses/Snowball-LICENSE.txt');
 copy(path.join(root, 'hardware/mk20/qmk/LICENSE'), 'licenses/QMK-LICENSE.txt');
+copy(path.join(root, 'hardware/mk20/firmware/runtime-version.h'), 'source/firmware/runtime-version.h');
 copy(path.join(root, 'hardware/mk20/qmk/bin/syk_keyboards_mk20_plus_via.bin'), 'qmk/syk_keyboards_mk20_plus_via.bin');
 for(const name of execFileSync('git',['ls-files','hardware/mk20/qmk'],{cwd:root,encoding:'utf8'}).trim().split('\n')){
   if(!name||name.includes('/bin/'))continue;
