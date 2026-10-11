@@ -71,11 +71,12 @@ def inventory(directory=None):
         # SD preparation is still available if a USB driver/library is absent.
         pass
     if sys.platform == 'win32':
-        script = r"@(Get-CimInstance Win32_PnPEntity | Where-Object { $_.PNPDeviceID -match '^USB\\VID_4250&PID_426F\\' -and $_.Status -eq 'OK' } | Select-Object -ExpandProperty PNPDeviceID) | ConvertTo-Json -Compress"
+        script = r"@(Get-PnpDevice -PresentOnly | Where-Object { $_.InstanceId -match '^USB\\VID_(4250&PID_426F|1D6B&PID_0104)(?:&|\\)' } | ForEach-Object { [pscustomobject]@{identity=$_.InstanceId;linux=($_.InstanceId -match 'VID_1D6B&PID_0104')} }) | ConvertTo-Json -Compress"
         raw = tool(['powershell.exe','-NoProfile','-NonInteractive','-Command',script]).decode('utf-8-sig')
         found = json.loads(raw or '[]'); found = found if isinstance(found,list) else [found]
-        for identity in found:
-            result.append(dict(port=token('hid|'+identity), usbIdentity=identity, label='MK20 · USB', component='qmk', native=None))
+        for item in found:
+            identity=item['identity'];linux=item['linux']
+            result.append(dict(port=token('usb|'+identity), usbIdentity=identity, label='MK20 · USB Linux' if linux else 'MK20 · USB QMK', component='runtime' if linux else 'qmk', native=None))
     if directory:
         for file in Path(directory).glob('t-*.pending.json'):
             pending=json.loads(file.read_text())
@@ -100,12 +101,13 @@ def read_wifi_state(root):
     return bool(match and match[1].strip() not in ('', "''", '""', '"YOUR_WIFI_SSID"', "'YOUR_WIFI_SSID'"))
 
 
-def probe(target):
+def probe(target, directory):
     component = target['component']
     state = dict(component=component, currentVersion=None, nextStep='enter-dfu' if component=='qmk' else 'insert-card', writable=target['native'] is not None)
     state['pending']=target.get('pending') is True
     if state['pending']:
         state['nextStep']='return-card'
+        state['pendingVersion']=json.loads((Path(directory)/(target['port']+'.pending.json')).read_text())['version']
     if component == 'runtime' and target['native']:
         root = Path(target['native']['root'])
         state['wifiConfigured'] = read_wifi_state(root)
@@ -239,21 +241,49 @@ def verify_runtime(port, directory, bindings):
             address=ipaddress.ip_address(remote[0])
             if not (address in ipaddress.ip_network('10.0.0.0/8') or address in ipaddress.ip_network('172.16.0.0/12') or address in ipaddress.ip_network('192.168.0.0/16')):
                 continue
-            if len(fields)==8 and fields[:3]==['SNMP1','INFO',nonce] and fields[3]==pending['nonce'] and fields[4]==RELEASE['version'] and fields[6]==pending['files']['mk20-hud'] and fields[7]==pending['files']['mk20-audio'] and re.fullmatch('mk20-[a-f0-9]{12}',fields[5]):
+            if len(fields)==8 and fields[:3]==['SNMP1','INFO',nonce] and fields[3]==pending['nonce'] and fields[4]==pending['version'] and fields[6]==pending['files']['mk20-hud'] and fields[7]==pending['files']['mk20-audio'] and re.fullmatch('mk20-[a-f0-9]{12}',fields[5]):
                 replies.add(tuple(fields))
     finally:
         for peer in peers:peer.close()
     if len(replies)!=1:
         emit('awaiting-device',component='runtime',backup=pending['backup'],nextStep='return-card'); return
     progress('reboot')
-    emit('verified',component='runtime',version=RELEASE['version'],backup=pending['backup'])
+    emit('verified',component='runtime',version=pending['version'],backup=pending['backup'])
     file.unlink()
 
 
+def runtime_status(address, device_id):
+    """Query an actually observed LAN peer; never infer firmware from USB IDs."""
+    ip=ipaddress.ip_address(address)
+    if not (ip in ipaddress.ip_network('10.0.0.0/8') or ip in ipaddress.ip_network('172.16.0.0/12') or ip in ipaddress.ip_network('192.168.0.0/16')) or not re.fullmatch('mk20-[a-f0-9]{12}',device_id or ''):
+        raise RuntimeError('invalid_setup_target')
+    state=dict(component='runtime',currentVersion=None,nextStep='insert-card',writable=False)
+    nonce=secrets.token_hex(16)
+    with socket.socket(socket.AF_INET,socket.SOCK_DGRAM) as peer:
+        peer.settimeout(.8);peer.sendto(('SNMP1\tSTATUS\t'+nonce).encode(),(address,7701))
+        deadline=time.monotonic()+.8
+        while time.monotonic()<deadline:
+            try:data,remote=peer.recvfrom(1024)
+            except socket.timeout:break
+            fields=data.decode('ascii',errors='replace').split('\t')
+            if remote!=(address,7701) or len(fields)!=7 or fields[:3]!=['SNMP1','STATUS',nonce] or fields[4]!=device_id:
+                continue
+            if not re.fullmatch(r'\d+\.\d+\.\d+',fields[3]) or any(not re.fullmatch('[a-f0-9]{64}',v) for v in fields[5:]):
+                continue
+            state['currentVersion']=fields[3]
+            if fields[3]==RELEASE['version']:
+                expected=RELEASE['components']['runtime'].get('images',{})
+                state['imageMatch']=fields[5]==expected.get('mk20-hud') and fields[6]==expected.get('mk20-audio')
+            break
+    return state
+
+
 def main():
-    parser=argparse.ArgumentParser(); parser.add_argument('--command',required=True,choices=['list','probe','install','wifi','verify']); parser.add_argument('--port'); parser.add_argument('--backup-dir',required=True)
+    parser=argparse.ArgumentParser(); parser.add_argument('--command',required=True,choices=['list','probe','install','wifi','verify','status']); parser.add_argument('--port'); parser.add_argument('--backup-dir',required=True)
     args=parser.parse_args(); request=json.loads(sys.stdin.readline(65537) or '{}')
     directory=Path(args.backup_dir).resolve(strict=True)
+    if args.command=='status':
+        emit('target',target=runtime_status(request.get('address'),request.get('deviceId')));return
     if args.command=='wifi':
         network=wifi(False); emit('wifi',network={k:network[k] for k in ('ssid','enterprise') if k in network}); return
     if args.command=='verify':
@@ -267,7 +297,7 @@ def main():
     if not target:
         raise RuntimeError('setup_target_disconnected')
     if args.command=='probe':
-        emit('target',target=probe(target)); return
+        emit('target',target=probe(target,directory)); return
     if request.get('confirmBoard') is not True or request.get('version')!=RELEASE['version'] or request.get('usbIdentity')!=target['usbIdentity']:
         raise RuntimeError('firmware_review_required')
     if not target['native']:

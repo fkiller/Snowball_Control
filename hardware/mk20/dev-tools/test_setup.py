@@ -41,6 +41,11 @@ class PreparationGuards(unittest.TestCase):
         header=(bridge.ROOT/'firmware/runtime-version.h').read_text()
         self.assertIn('"'+bridge.RELEASE['version']+'"',header)
 
+    def test_lan_status_refuses_nonlocal_or_foreign_targets_before_sending(self):
+        for address,device in [('127.0.0.1','mk20-aabbccddeeff'),('8.8.8.8','mk20-aabbccddeeff'),('192.168.1.1','foreign')]:
+            with self.assertRaisesRegex(RuntimeError,'invalid_setup_target'):
+                bridge.runtime_status(address,device)
+
 
 if __name__=='__main__':
     unittest.main()

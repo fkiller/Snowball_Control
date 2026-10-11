@@ -12,6 +12,7 @@
     "qmk",
     "runtime"
   ],
+  "observation": {"component": "runtime"},
   "capabilities": {
     "fullBackup": true,
     "preserveSettings": true,
