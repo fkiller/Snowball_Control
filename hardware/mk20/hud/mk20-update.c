@@ -212,9 +212,12 @@ int main(int argc,char **argv){
 #ifdef SNMU_TEST
     channel=0;
 #else
-    int lock=open("/tmp/mk20-update.lock",O_CREAT|O_WRONLY,0600);if(lock<0||flock(lock,LOCK_EX|LOCK_NB))return 1;
-    channel=open("/dev/ttyGS0",O_RDWR|O_NOCTTY);if(channel<0)return 1;struct termios t;if(tcgetattr(channel,&t))return 1;cfmakeraw(&t);t.c_cflag|=CLOCAL|CREAD;if(tcsetattr(channel,TCSANOW,&t))return 1;
+    int lock=open("/tmp/mk20-update.lock",O_CREAT|O_WRONLY|O_CLOEXEC,0600);if(lock<0||flock(lock,LOCK_EX|LOCK_NB))return 1;
+    channel=open("/dev/ttyGS0",O_RDWR|O_NOCTTY|O_CLOEXEC);if(channel<0)return 1;struct termios t;if(tcgetattr(channel,&t))return 1;cfmakeraw(&t);t.c_cflag|=CLOCAL|CREAD;if(tcsetattr(channel,TCSANOW,&t))return 1;
 #endif
+    /* Recovery can restart HUD/audio through exec: never let those long-lived
+     * children retain the receiver's channel or single-instance lock. */
+    if(fcntl(channel,F_SETFD,FD_CLOEXEC))return 1;
     for(;;){char b[512],a[80],v[32],n[33],ssid[65],password[127],extra;unsigned long size;int i;
         if(!line(b,sizeof b)){if(transaction){if(!recover())return 1;cleanup();transaction=0;}backup_hash[0]=0;resume();
 #ifdef SNMU_TEST
