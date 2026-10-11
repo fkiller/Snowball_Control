@@ -11,9 +11,9 @@
       "name": "T113 runtime / USB",
       "version": "0.2.6",
       "url": "https://github.com/fkiller/Snowball_Control/releases/download/mk20-preview-0.2.6/mk20-runtime.zip",
-      "sha256": "9f49b961dda97bfed8f6c019a43664ffd813f6f733293d419d5f0f7645de02c0",
+      "sha256": "2916a40413f5fe0b89d67924b7d1cc0028c6fdd9dfecd4e0c3045e32d683d99c",
       "images": {
-        "mk20-hud": "f578d7bad304dd64182914354a79730d1afd5106c18e3ec999963216c8e8daf9",
+        "mk20-hud": "94b00de6ff120a3abca1e204c53b8748592c2893d1e30d040ea9ce2a4c2559fd",
         "mk20-audio": "1c13d8be6c019a208d5ccd59c26f68f0a719088710c9a572c4a2e2646617e19e"
       }
     }
