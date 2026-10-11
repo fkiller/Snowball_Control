@@ -198,7 +198,9 @@ DFU 진입은 USB 분리 → 왼쪽 위 키를 누른 채 USB 연결이다. 일�
 
 ### SD 이미지 배포·백업·복원
 
-`dev-access.conf.example`을 SD의 `dev-access.conf`로 복사하여 본인의 Wi-Fi와 개발 PC MAC을 설정한다. 실제 설정은 Git에서 제외한다. `lunch.sh`, HUD, 필요한 글꼴을 같은 SD에 배치한다.
+**고급 전체 이미지 설치·복구 전용 절차다.** 1절의 정상 제품 USB 런타임 업데이트에서는 SD 카드를 기기에 그대로 둔다. 아래 절차를 정상 여정의 필수 단계로 적용하지 않는다.
+
+`dev-access.conf.example`을 SD의 `dev-access.conf`로 복사하여 본인의 Wi-Fi와 개발 PC MAC을 설정한다. 실제 설정은 Git에서 제외한다. 검토한 `lunch.sh`, `mk20-hud`, `mk20-audio`, `mk20-update`, `fonts/D2Coding.ttf`와 비공개 설정을 배치한다.
 
 운영 절차는 **변경 전 SD 전체 백업 → Snowball 이미지 적용 → 문제가 생기면 백업 이미지 복원**이다. 이전 SD에 어떤 애플리케이션이 있었는지 분석하지 않아도 백업·복원할 수 있다.
 
@@ -216,17 +218,19 @@ Wi-Fi 비밀번호가 포함된 SD 설정·개인 백업은 공개하지 않는�
   - U-Boot 160×160 로고: `/mnt/SDCARD/bootlogo.bmp` (저장소 `assets/bootlogo.bmp`)
   - 상단 화면 428×142 부팅 리소스: `/mnt/SDCARD/mk20-plus.bin` (저장소 `assets/mk20-plus.bin`)
 - **오프라인 대기 화면 (Standby & Offline Mode)**:
-  - 호스트 미들웨어(`start-all.mjs`)가 시작되지 않았거나 UDP sync 패킷이 15초 이상 끊기면 자동으로 Snowball 대기 화면으로 진입한다.
+  - 호스트 미들웨어(`start-all.mjs`)가 시작되지 않았거나 UDP sync 패킷이 8초 이상 끊기면 자동으로 Snowball 대기 화면으로 진입한다.
   - **상단 디스플레이 (`/dev/fb21`)**: 좌측에 "Host Disconnected" 경고, "Waiting for host middleware...", "Snowball Standby Mode" 안내 문구를 렌더링하고, 우측(x=286, y=7)에 128×128 RGB565 Snowball 강아지 아이콘을 배치한다.
-  - **키 디스플레이 (`/dev/fb10` 및 1~20)**: 중앙 10번 키에 128×128 Snowball 강아지 아이콘을 띄우고, 나머지 19개 키는 백라이트를 꺼서(COLOR_BLACK) 오프라인 상태임을 직관적으로 전달한다.
+  - **키 디스플레이 (`/dev/fb10` 및 1~20)**: 중앙 10번 키에 128×128 Snowball 강아지 아이콘을 띄우고, K17은 **Machines / Pair PC / Press to pair** 안내를 유지하고 사용하지 않는 나머지 키는 어둡게 표시한다.
   - 호스트 미들웨어가 연결되면 즉시 실제 작업공간 세션 화면으로 복원된다.
+
+아래 과거 캡처는 K17 상시 페어링 안내를 추가하기 전의 참고 자료이며 현재 페어링 화면 인수 증거가 아니다.
 
 | 대기 모드 상단 화면 (`/dev/fb21`) | 대기 모드 10번 키 (`/dev/fb10`) | 미들웨어 연결 완료 (`/dev/fb21`) |
 | :---: | :---: | :---: |
 | <img src="../assets/screenshots/standby_top_display.png" width="300" alt="대기 모드 상단 화면"> | <img src="../assets/screenshots/standby_key10.png" width="128" alt="대기 모드 10번 키"> | <img src="../assets/screenshots/online_top_display.png" width="300" alt="연결 완료 상단 화면"> |
 
 - **펌웨어 업데이트 시 보존 및 복원**:
-  - **일반 재부팅 / 전원 온오프**: `/mnt/SDCARD`는 eMMC의 FAT32 `boot-resource` 파티션(`/dev/mmcblk0p1`)에 상주하므로 전원 순환 및 재부팅 후에도 커스텀 로고와 `mk20-hud` 설정이 100% 영구 보존된다.
+  - **일반 재부팅 / 전원 온오프**: `/mnt/SDCARD`는 비휘발성 FAT32 리소스 파티션(`/dev/mmcblk0p1`)에 상주하므로 전원 순환 및 재부팅 후에도 커스텀 로고와 `mk20-hud` 설정이 일반 재기동 후 보존된다.
   - **전체 펌웨어 플래싱 (LiveSuite / PhoenixCard / OTA)**: 파티션 전체를 새로 포맷하여 기록하는 전체 펌웨어 리플래시 시에는 기본 이미지로 덮어씌워진다. 이를 방지하려면 Tina Linux BSP 소스의 boot-resource 번들에 교체 포함하거나, `lunch.sh` 부팅 훅에 자동 복원 스크립트를 구성한다.
 
 기본 대기 화면은 호스트 sync 이전에 실제 세션이나 모델이 있는 것처럼 표시하지 않는다. 긴 UTF-8 텍스트는 코드포인트 경계에서 자르고, 잘린 목록 값의 나머지도 끝까지 소비한다. 한글 스크롤은 Unicode 렌더러로 clipping한다.
@@ -308,7 +312,7 @@ HUD가 선택 PC IP·lease·6초 만료를 mode-0600 RAM 파일에 기록하고 
 - 녹음은 실제 `arecord -D hw:0,0 -f S16_LE -r 16000 -c 3 -t raw`의 MIC3을 추출한다. 마이크 바이트가 나온 뒤에만 `RDY1`을 보낸다. 호스트는 120초/3.84MB로 제한하고 WAV로 변환한 호스트 임시 파일을 Whisper에 전달한 뒤 지운다. 기기에 음성 임시 파일을 쓰지 않는다.
 - 재생은 PCM16을 `aplay -D default`에 전달한다. `RDY1`은 스트림 수락이며, 모든 바이트를 처리하고 소유한 player가 정상 종료해야 `DONE`이다. busy·stale lease·중단·실패는 완료로 표현하지 않는다. 기기 볼륨은 하드웨어 믹서를 사용하여 중복 감쇄를 피하고 호스트 볼륨은 문장 청크마다 적용한다.
 - Stop은 소유한 워커 종료를 기다린다. 단일 코덱의 재생·녹음은 배타적이다. 늦은 준비 응답이나 취소가 이전 캡처/재생을 새 작업에 붙이지 못한다. 전사 결과는 시작한 host/controller/harness/session/capture ID에 속하며 명시적 Send 전까지 초안으로 남는다.
-- 데몬 부재·구버전은 음성 오류로 표시한다. 일반 런타임은 ADB·helper 업로드·음성 pull·Wi-Fi 변경을 수행하지 않는다. 백업을 검증한 SD 런타임 갱신과 실제 LAN 부팅 확인은 공통 **기기 설정… → MK20**에서 수행한다. 구체적인 준비 계약은 1절을 따른다. 기존 `install-mk20.ps1`는 명시적 `-NoDeploy` 읽기 전용 진단만 지원한다.
+- 데몬 부재·구버전은 음성 오류로 표시한다. 일반 런타임은 ADB·helper 업로드·음성 pull·Wi-Fi 변경을 수행하지 않는다. 백업을 검증한 USB 런타임 갱신과 실제 재기동 확인은 공통 **기기 설정… → MK20**에서 수행한다. 구체적인 준비 계약은 1절을 따른다. 기존 `install-mk20.ps1`는 명시적 `-NoDeploy` 읽기 전용 진단만 지원한다.
 
 Web 명령은 `CommandJournal`의 세션 소유, revision, 명령 fingerprint와 상태 기록을 사용한다. `WorkspaceStore`의 발견 후보는 파일 읽기 권한이 아니며, 사용자가 선택한 디렉터리의 파일 시스템 identity를 확인하고 grant를 영속 저장한 뒤 제공한다. MK20 Preview의 직접 dispatch/파일 브라우저는 이 production 서비스와 동일한 경로가 아니므로 Web과 MK20의 동시 전송·프로세스 소유를 모두 저널이 직렬화한다고 설명하지 않는다. Supervisor 단독 런타임(`apps/supervisor/run.mjs`)은 명시적으로 연결한 adapter의 기능만 제공한다.
 

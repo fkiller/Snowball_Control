@@ -205,9 +205,11 @@ Factory QMK firmware enters an indefinite wait loop on cold boot when USB host e
 
 ### MicroSD Deployment, Backup & Rollback
 
+**Advanced full-image installation/recovery only.** This is outside the normal USB runtime update journey in section 1; normal updates keep the card inside MK20.
+
 1. Copy `dev-access.conf.example` to `dev-access.conf` on the microSD root and configure local 2.4 GHz Wi-Fi credentials and the workstation MAC address.
 2. **Full Disk Backup**: Prior to deployment, create a full raw block-level image of the microSD card. Record the total capacity, date, and SHA-256 checksum outside the repository.
-3. Deploy `lunch.sh`, `dev-access.conf`, custom HUD binary (`mk20-hud`), and fonts (`fonts/D2Coding.ttf`) to `/mnt/SDCARD/`.
+3. Deploy the reviewed runtime set (`lunch.sh`, `mk20-hud`, `mk20-audio`, `mk20-update`, `fonts/D2Coding.ttf`) and private `dev-access.conf` to `/mnt/SDCARD/`.
 4. In case of operational failure, write the backup raw image back to the card to restore the known state.
 
 ### HUD Engine, Boot Splash & Standby Mode
@@ -218,17 +220,19 @@ The MK20 hardware features a **428×142** header display (`/dev/fb21`) and 20 in
   - U-Boot 160×160 BMP: `/mnt/SDCARD/bootlogo.bmp` (Source: `assets/bootlogo.bmp`)
   - Top header 428×142 RGB565 splash: `/mnt/SDCARD/mk20-plus.bin` (Source: `assets/mk20-plus.bin`)
 - **Offline Standby Mode**:
-  - If host middleware (`start-all.mjs`) is unreachable or UDP sync packets cease for > 15 seconds, the HUD automatically engages **Snowball Standby Mode**.
+  - If host middleware (`start-all.mjs`) is unreachable or UDP sync packets cease for > 8 seconds, the HUD automatically engages **Snowball Standby Mode**.
   - **Top Display (`/dev/fb21`)**: Left pane displays connection status alerts ("Host Disconnected", "Waiting for host middleware...", "Snowball Standby Mode"), while the right pane (x=286, y=7) renders the 128×128 RGB565 Snowball puppy icon.
-  - **Key Matrix (`/dev/fb10` & others)**: Center Key 10 illuminates with the 128×128 Snowball puppy icon; all other 19 keys turn black (backlight off) to visually signal standby.
+  - **Key Matrix (`/dev/fb10` & others)**: Center Key 10 illuminates with the 128×128 Snowball puppy icon; K17 remains visible as **Machines / Pair PC / Press to pair**; other unused keys are dark.
   - **Live Restoration**: When middleware sync resumes, all displays immediately switch to the active workspace session.
+
+Historical captures below precede the persistent K17 cue; they are not current pairing-screen acceptance.
 
 | Standby Top Display (`/dev/fb21`) | Standby Key 10 (`/dev/fb10`) | Connected Active Display (`/dev/fb21`) |
 | :---: | :---: | :---: |
 | <img src="../assets/screenshots/standby_top_display.png" width="300" alt="Standby Top Display"> | <img src="../assets/screenshots/standby_key10.png" width="128" alt="Standby Key 10"> | <img src="../assets/screenshots/online_top_display.png" width="300" alt="Connected Top Display"> |
 
 - **Firmware Update Persistence**:
-  - **Power Cycles & Normal Reboots**: `/mnt/SDCARD` is mounted on the non-volatile FAT32 `boot-resource` eMMC partition (`/dev/mmcblk0p1`). Boot logos, `mk20-hud`, and configs **100% persist** across reboots.
+  - **Power Cycles & Normal Reboots**: `/mnt/SDCARD` is mounted on the non-volatile FAT32 resource partition (`/dev/mmcblk0p1`). Boot logos, `mk20-hud`, and configs persist across ordinary reboots.
   - **Full Firmware Reflashing (OTA, LiveSuite, PhoenixCard)**: Writing a raw firmware image (`.img`) completely formats all partitions, resetting `bootlogo.bmp` and `mk20-plus.bin` to factory defaults. To preserve custom assets, either embed them directly into the Tina BSP SDK build tree (`Tina-t113-pro/.../boot-resource`) or maintain an auto-restore verification check in `lunch.sh`.
 
 ---
