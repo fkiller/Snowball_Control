@@ -156,7 +156,7 @@ def runtime_bundle(directory):
         archive.write_bytes(data)
     with zipfile.ZipFile(archive) as z:
         manifest = json.loads(z.read('manifest.json'))
-        if set(manifest.get('deploy',[]))!=ALLOWED or manifest.get('deviceProtocol')!='SNMK1' or manifest.get('audioProtocol')!='SNAU-lease-v1':
+        if set(manifest.get('deploy',[]))!=ALLOWED or manifest.get('deviceProtocol')!='SNMK1' or manifest.get('audioProtocol')!='SNAU-lease-v1' or manifest.get('usbUpdateProtocol')!='SNMU1':
             raise RuntimeError('invalid_runtime_bundle')
         hashes = {f['path']:f['sha256'] for f in manifest['files'] if f['path'] in ALLOWED}
         files = {name:z.read(name) for name in ALLOWED}
