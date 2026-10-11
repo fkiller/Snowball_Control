@@ -21,10 +21,11 @@ import urllib.request
 import zipfile
 from setup_storage import cards, token, tool, backup_media, backup_with_permission, digest_file
 import setup_qmk
+import setup_usb
 
 ROOT = Path(__file__).resolve().parents[1]
 RELEASE = json.loads((ROOT/'firmware/release.json').read_text(encoding='utf-8'))
-ALLOWED = {'mk20-hud', 'mk20-audio', 'lunch.sh', 'fonts/D2Coding.ttf'}
+ALLOWED = set(setup_usb.FILES)
 
 
 def emit(event, **data):
@@ -62,6 +63,10 @@ def wifi(secret=False):
 
 def inventory(directory=None):
     result = []
+    try:
+        result.extend(setup_usb.devices())
+    except ImportError:
+        pass
     for card in cards():
         result.append(dict(port=card['port'], usbIdentity=card['identity'], label='MK20 · SD', component='runtime', native=card))
     try:
@@ -76,6 +81,8 @@ def inventory(directory=None):
         found = json.loads(raw or '[]'); found = found if isinstance(found,list) else [found]
         for item in found:
             identity=item['identity'];linux=item['linux']
+            if linux and any(t['usbIdentity'].split('|')[1].lower() in identity.lower() for t in result if (t.get('native') or {}).get('transport')=='usb'):
+                continue
             result.append(dict(port=token('usb|'+identity), usbIdentity=identity, label='MK20 · USB Linux' if linux else 'MK20 · USB QMK', component='runtime' if linux else 'qmk', native=None))
     if directory:
         for file in Path(directory).glob('t-*.pending.json'):
@@ -103,7 +110,12 @@ def read_wifi_state(root):
 
 def probe(target, directory):
     component = target['component']
-    state = dict(component=component, currentVersion=None, nextStep='enter-dfu' if component=='qmk' else 'insert-card', writable=target['native'] is not None)
+    if (target.get('native') or {}).get('transport')=='usb':
+        try:
+            return setup_usb.probe(target,RELEASE)
+        except RuntimeError:
+            return dict(component='runtime',currentVersion=None,nextStep='usb-bootstrap',writable=False)
+    state = dict(component=component, currentVersion=None, nextStep='enter-dfu' if component=='qmk' else 'usb-connect', writable=target['native'] is not None)
     state['pending']=target.get('pending') is True
     if state['pending']:
         state['nextStep']='return-card'
@@ -257,7 +269,7 @@ def runtime_status(address, device_id):
     ip=ipaddress.ip_address(address)
     if not (ip in ipaddress.ip_network('10.0.0.0/8') or ip in ipaddress.ip_network('172.16.0.0/12') or ip in ipaddress.ip_network('192.168.0.0/16')) or not re.fullmatch('mk20-[a-f0-9]{12}',device_id or ''):
         raise RuntimeError('invalid_setup_target')
-    state=dict(component='runtime',currentVersion=None,nextStep='insert-card',writable=False)
+    state=dict(component='runtime',currentVersion=None,nextStep='usb-connect',writable=False)
     nonce=secrets.token_hex(16)
     with socket.socket(socket.AF_INET,socket.SOCK_DGRAM) as peer:
         peer.settimeout(.8);peer.sendto(('SNMP1\tSTATUS\t'+nonce).encode(),(address,7701))
@@ -304,6 +316,9 @@ def main():
         raise RuntimeError('qmk_enter_dfu_required')
     progress('identify')
     if target['component']=='runtime':
+        if target['native'].get('transport')=='usb':
+            files,hashes=runtime_bundle(directory)
+            setup_usb.install(target,directory,files,hashes,RELEASE,request,progress,emit,wifi);return
         install_runtime(target,directory,request); return
     image=(ROOT/'qmk/bin/syk_keyboards_mk20_plus_via.bin').read_bytes()
     if hashlib.sha256(image).hexdigest()!=RELEASE['components']['qmk']['sha256']:

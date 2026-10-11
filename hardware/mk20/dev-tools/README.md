@@ -4,7 +4,7 @@
 
 # MK20 Development Access
 
-Use middleware tray **Device setup… → MK20** for normal QMK/SD runtime preparation. ADB tools here are for development/diagnostics and are not dependencies of normal connection, pairing or updates. `install-mk20.ps1` refuses deployment and supports explicit `-NoDeploy` diagnostics only. Normal preparation includes verified recovery backups, preserved settings, actual reboot/boot checks and physical guidance in the same window.
+Use middleware tray **Device setup… → MK20** for normal QMK/USB runtime preparation. ADB tools here are for development/diagnostics and are not dependencies of normal connection, pairing or updates. `install-mk20.ps1` refuses deployment and supports explicit `-NoDeploy` diagnostics only. Normal preparation includes verified recovery backups, preserved settings, actual reboot/boot checks and physical guidance in the same window.
 
 
 ## Working Topology and Current Address
@@ -83,4 +83,4 @@ Back up the entire SD card before applying the Snowball image. If an update fail
 - `package/PCMonitorApp/setusbconfig` owns the product serial gadget mode.
 - `package/PCMonitorApp/qt_app1` executes `/mnt/SDCARD/lunch.sh` as root.
 
-The common setup window requires a verified full raw microSD image before changing runtime files. Rather than analyzing legacy factory SD contents, we verify deployment and rollback of our own Snowball images. Refer to [docs/ARCHITECTURE.md](../../../docs/ARCHITECTURE.md) for current designs, QMK requirements, and Preview security boundaries.
+Normal runtime updates leave the SD card in MK20 and verify a complete affected-partition backup over product USB. Legacy firmware without the receiver requires initial migration. Full-card imaging is advanced recovery, not a required normal setup step. Rather than analyzing legacy factory SD contents, we verify deployment and rollback of our own Snowball images. Refer to [docs/ARCHITECTURE.md](../../../docs/ARCHITECTURE.md) for current designs, QMK requirements, and Preview security boundaries.

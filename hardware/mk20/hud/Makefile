@@ -10,7 +10,10 @@ CFLAGS += -I$(FREETYPE_HEADERS)
 SRCS := mk20-hud.c mk20-network.c mk20-prepare.c v2_state.c v2_render.c unicode_text.c
 OBJS := $(SRCS:.c=.o)
 
-all: mk20-hud mk20-audio
+all: mk20-hud mk20-audio mk20-update
+
+mk20-update: mk20-update.c ../firmware/runtime-version.h
+	$(CC) $(CFLAGS) -o $@ $<
 
 # Exercise the real software renderer with the HUD's graphics primitives.
 HOST_CC ?= cc
@@ -44,4 +47,4 @@ $(FREETYPE_HEADERS)/ft2build.h:
 	tar -xzf "$(FREETYPE_ARCHIVE)" -C .deps
 
 clean:
-	rm -f mk20-hud mk20-audio $(OBJS)
+	rm -f mk20-hud mk20-audio mk20-update $(OBJS)

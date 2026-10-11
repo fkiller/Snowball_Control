@@ -61,6 +61,21 @@ if [ "$1" = "--restart-runtime" ]; then
     start_runtime
     exit $?
 fi
+if [ "$1" = "--stop-runtime" ]; then
+    stop_native mk20-hud
+    stop_native mk20-audio
+    ! pidof mk20-hud >/dev/null && ! pidof mk20-audio >/dev/null
+    exit $?
+fi
+
+# Recover an interrupted fixed-file commit before starting any native runtime.
+# Execute a RAM copy: replacing the updater must not replace its running inode.
+if [ -x /mnt/SDCARD/mk20-update ]; then
+    cp /mnt/SDCARD/mk20-update /tmp/mk20-update
+    chmod 700 /tmp/mk20-update
+    /tmp/mk20-update --recover || exit 1
+    cp /mnt/SDCARD/mk20-update /tmp/mk20-update
+fi
 
 # Bring up development Wi-Fi and restrict TCP-only ADB before starting it.
 # This is a trusted-private-LAN Preview, without cryptographic ADB authentication.
@@ -167,6 +182,11 @@ EOF
         log_msg "Native runtime failed to start; inspect /tmp/mk20-audio.log"
     fi
 
+    # Serve updates after boot setup finishes, so a backup cannot race a second
+    # boot-time runtime start or a Wi-Fi configuration write.
+    if [ -x /tmp/mk20-update ] && [ -c /dev/ttyGS0 ]; then
+        /tmp/mk20-update >> /tmp/mk20-update.log 2>&1 < /dev/null &
+    fi
     sync
 ) &
 

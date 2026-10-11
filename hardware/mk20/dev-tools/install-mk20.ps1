@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param([string]$Device, [string]$Adb, [Parameter(Mandatory)][string]$Output, [switch]$NoDeploy, [string]$RuntimeZip, [string]$RuntimeSha256)
 $ErrorActionPreference = 'Stop'
-if (-not $NoDeploy) { throw 'Use the tray Device setup for MK20 QMK/SD updates with verified recovery backups. This legacy ADB helper only supports explicit -NoDeploy diagnostics.' }
+if (-not $NoDeploy) { throw 'Use the tray Device setup for MK20 QMK/USB updates with verified recovery backups. This legacy ADB helper only supports explicit -NoDeploy diagnostics.' }
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 $control = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
 $state = Split-Path ([IO.Path]::GetFullPath($Output))
@@ -76,7 +76,7 @@ if ((Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant() -
 $bundle = Join-Path $tools 'mk20-runtime'
 Expand-Archive -LiteralPath $zip -DestinationPath $bundle -Force
 $manifest = Get-Content -LiteralPath (Join-Path $bundle 'manifest.json') -Raw | ConvertFrom-Json
-$allowedDeploy = @('mk20-hud','mk20-audio','lunch.sh','fonts/D2Coding.ttf')
+$allowedDeploy = @('mk20-hud','mk20-audio','lunch.sh','fonts/D2Coding.ttf','mk20-update')
 $missingDeploy = @($allowedDeploy | Where-Object { $_ -notin $manifest.deploy })
 if ($manifest.deviceProtocol -ne 'SNMK1' -or $manifest.audioProtocol -ne 'SNAU-lease-v1' -or $missingDeploy.Count -ne 0) { throw 'This bundle does not implement device-owned discovery and native leased audio. Supply the reviewed LAN runtime bundle with -RuntimeZip and -RuntimeSha256.' }
 if (@($manifest.deploy | Where-Object { $_ -notin $allowedDeploy }).Count) { throw 'Unexpected runtime deployment target.' }

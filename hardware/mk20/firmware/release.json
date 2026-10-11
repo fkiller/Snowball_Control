@@ -1,6 +1,6 @@
 {
   "board": "mk20",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "components": {
     "qmk": {
       "name": "QMK keyboard",
@@ -8,9 +8,9 @@
       "sha256": "28415537c79b7b08a0d735e337423633838d857dcae9e4968d4fbd103a2fff19"
     },
     "runtime": {
-      "name": "T113 runtime / SD",
-      "version": "0.2.4",
-      "url": "https://github.com/fkiller/Snowball_Control/releases/download/mk20-preview-0.2.4/mk20-runtime.zip",
+      "name": "T113 runtime / USB",
+      "version": "0.2.5",
+      "url": "https://github.com/fkiller/Snowball_Control/releases/download/mk20-preview-0.2.5/mk20-runtime.zip",
       "sha256": "d559311239e242535b87e2079af62f714c4b1edfdf32a1a727d40238a4ed7e08",
       "images": {
         "mk20-hud": "a24b29612fca87df96f0d6531c654fffcd486e3fdacbfd8fafb5a717aac0625b",
@@ -20,20 +20,16 @@
   },
   "changes": {
     "ko": [
-      "TCP 디버그 초기화와 독립적으로 제품용 USB CDC를 부팅 시 준비합니다. 다른 활성 USB 구성은 보존합니다.",
-      "USB의 QMK·Linux 연결과 실제 LAN 검색을 공통 창에 표시하고, 지원 런타임의 현재 버전을 읽기 전용으로 확인합니다.",
-      "MK20을 공통 기기 설정 창에 통합: QMK와 T113 런타임을 각각 실제 확인합니다.",
-      "QMK DFU 읽기 백업·설정 보존·쓰기 후 읽기 검증과 재기동 확인을 추가합니다.",
-      "SD 전체 이미지 백업 후 런타임을 갱신하고 실제 LAN 부팅·실행 파일 해시를 확인합니다.",
-      "기존 Wi-Fi·PC 등록을 보존하고 빈 네트워크의 OS 이관·직접 입력·기기 조작 안내를 제공합니다."
+      "SD 카드를 분리하지 않는 제품 USB 런타임 업데이트 수신기를 추가합니다. 구 펌웨어의 최초 이관 필요 여부는 별도로 표시합니다.",
+      "변경하는 런타임 파티션 전체를 읽기 전용으로 백업·해시 검증한 뒤 고정 파일만 전송합니다. 중단된 파일 교체는 부팅 시 이전 세트로 복구합니다.",
+      "기존 Wi-Fi와 PC 등록을 보존하고 자동 재기동 후 실제 실행 이미지 해시를 USB로 확인합니다.",
+      "실제 MK20의 20개 화면 키와 두 노브를 반영한 단계별 조작 안내를 제공합니다."
     ],
     "en": [
-      "Prepares product USB CDC at boot independently of TCP debugging; preserves other active USB configurations.",
-      "Shows QMK/Linux USB attachments and real LAN discovery in common setup; queries actual supported runtime versions read-only.",
-      "Integrates MK20 into common Device setup with separate actual QMK and T113 runtime checks.",
-      "Adds QMK DFU readback backup, settings-preserving write, verification and reboot observation.",
-      "Backs up the complete SD image before runtime-file deployment, then checks actual LAN boot and running hashes.",
-      "Preserves Wi-Fi and paired PCs; provides reviewed import, manual network entry and physical device guidance."
+      "Adds a product USB runtime receiver: leave the SD card in the device. Legacy firmware requiring initial migration is identified separately.",
+      "Reads and hash-verifies the entire affected runtime partition before fixed-file transfer. Interrupted replacement rolls back at boot.",
+      "Preserves saved Wi-Fi and paired PCs; verifies actual running image hashes over USB after automatic reboot.",
+      "Provides a step-by-step walkthrough with the actual MK20 twenty display keys and two knobs."
     ]
   }
 }
