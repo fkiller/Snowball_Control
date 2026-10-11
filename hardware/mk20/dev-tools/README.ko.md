@@ -60,7 +60,7 @@ uid=0(root) gid=0(root)
 
 ## Preview 보안
 
-이 Tina 이미지에는 ADB 인증 서비스가 포함되어 있지 않습니다. 따라서 기기 방화벽 규칙은 개발 PC의 Wi-Fi MAC 주소에서 들어오는 5555 포트 연결만 허용하고 그 외의 연결은 차단(DROP)합니다. `lunch.sh`는 부팅 시 Wi-Fi를 연결하고, DHCP 임대를 획득한 후, TCP 전용 ADB를 실행하며, USB 가젯 구성을 변경하지 않고 방화벽 규칙을 적용합니다.
+이 Tina 이미지에는 ADB 인증 서비스가 포함되어 있지 않습니다. 따라서 기기 방화벽 규칙은 개발 PC의 Wi-Fi MAC 주소에서 들어오는 5555 포트 연결만 허용하고 그 외의 연결은 차단(DROP)합니다. `lunch.sh`는 비어 있는 컨트롤러에 제품 CDC USB를 독립적으로 준비하고 Wi-Fi·DHCP·MAC 필터가 적용된 TCP 전용 진단 ADB를 시작합니다. 다른 활성 USB 구성은 보존합니다. 호스트 USB 목록에 없다는 이유로 케이블이 연결되지 않았다고 단정하지 않으며, 명시적인 진단에서 실제 gadget·UDC 상태를 확인합니다.
 
 개발 PC의 Wi-Fi 어댑터가 변경되면, `/mnt/SDCARD/lunch.sh`를 기기에 교체하기 전에 `dev-access.conf`의 `DEV_PC_MAC`을 먼저 업데이트하세요.
 

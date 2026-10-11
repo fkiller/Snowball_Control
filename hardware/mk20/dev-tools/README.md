@@ -60,7 +60,7 @@ Set `MK20_ADB` when `adb.exe` is not installed at the default development locati
 
 ## Preview Security
 
-This Tina image does not include the ADB authentication service. Device firewall rules therefore allow port 5555 only from the development PC's Wi-Fi MAC address and drop other connections to that port. `lunch.sh` connects the device Wi-Fi, obtains its DHCP lease, launches TCP-only ADB, and reapplies the rules at boot without changing the USB gadget.
+This Tina image does not include the ADB authentication service. Device firewall rules therefore allow port 5555 only from the development PC's Wi-Fi MAC address and drop other connections to that port. `lunch.sh` prepares product CDC USB on an idle controller independently, connects device Wi-Fi, obtains its DHCP lease and launches MAC-filtered TCP-only debug ADB. Existing active USB gadgets are preserved. A missing host USB entry does not prove that the cable is unplugged; inspect actual gadget/UDC state during explicit diagnostics.
 
 If the development PC's Wi-Fi adapter changes, update `DEV_PC_MAC` in `dev-access.conf` before replacing the device copy at `/mnt/SDCARD/lunch.sh`.
 
