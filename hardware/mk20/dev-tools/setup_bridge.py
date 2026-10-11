@@ -61,6 +61,30 @@ def wifi(secret=False):
     return module.current_wifi(secret)
 
 
+def usb_presence_targets(found, existing):
+    """One candidate per physical USB parent, never per HID collection/function.
+
+    A parent instance retains its actual topology/serial identity; two keyboards
+    with the same VID/PID must remain separate. Presence confers no write access.
+    """
+    result = []
+    seen = set()
+    for item in found:
+        identity = item.get('identity', '')
+        match = re.fullmatch(r'USB\\VID_(4250&PID_426F|1D6B&PID_0104)\\[^\\]+', identity, re.I)
+        if not match or identity.lower() in seen:
+            continue
+        seen.add(identity.lower())
+        linux = match[1].upper() == '1D6B&PID_0104'
+        if linux and any(t['usbIdentity'].split('|')[1].lower() in identity.lower()
+                         for t in existing if (t.get('native') or {}).get('transport') == 'usb'):
+            continue
+        result.append(dict(port=token('usb|'+identity), usbIdentity=identity,
+                           label='MK20 · USB Linux' if linux else 'MK20 · USB QMK',
+                           component='runtime' if linux else 'qmk', native=None))
+    return result
+
+
 def inventory(directory=None):
     result = []
     try:
@@ -76,14 +100,10 @@ def inventory(directory=None):
         # SD preparation is still available if a USB driver/library is absent.
         pass
     if sys.platform == 'win32':
-        script = r"@(Get-PnpDevice -PresentOnly | Where-Object { $_.InstanceId -match '^USB\\VID_(4250&PID_426F|1D6B&PID_0104)(?:&|\\)' } | ForEach-Object { [pscustomobject]@{identity=$_.InstanceId;linux=($_.InstanceId -match 'VID_1D6B&PID_0104')} }) | ConvertTo-Json -Compress"
+        script = r"@(Get-PnpDevice -PresentOnly | Where-Object { $_.InstanceId -match '^USB\\VID_(4250&PID_426F|1D6B&PID_0104)\\' } | ForEach-Object { [pscustomobject]@{identity=$_.InstanceId} }) | ConvertTo-Json -Compress"
         raw = tool(['powershell.exe','-NoProfile','-NonInteractive','-Command',script]).decode('utf-8-sig')
         found = json.loads(raw or '[]'); found = found if isinstance(found,list) else [found]
-        for item in found:
-            identity=item['identity'];linux=item['linux']
-            if linux and any(t['usbIdentity'].split('|')[1].lower() in identity.lower() for t in result if (t.get('native') or {}).get('transport')=='usb'):
-                continue
-            result.append(dict(port=token('usb|'+identity), usbIdentity=identity, label='MK20 · USB Linux' if linux else 'MK20 · USB QMK', component='runtime' if linux else 'qmk', native=None))
+        result.extend(usb_presence_targets(found, result))
     if directory:
         for file in Path(directory).glob('t-*.pending.json'):
             pending=json.loads(file.read_text())

@@ -8,6 +8,21 @@ from setup_qmk import image_with_settings
 
 
 class PreparationGuards(unittest.TestCase):
+    def test_usb_inventory_keeps_physical_parents_and_separates_same_model_devices(self):
+        parents = [r'USB\VID_4250&PID_426F\7&one&0&2', r'USB\VID_4250&PID_426F\7&two&0&2']
+        functions = [r'USB\VID_4250&PID_426F&MI_00\8&one&0&0000',
+                     r'HID\VID_4250&PID_426F&MI_00\9&one&0&0000']
+        found = [{'identity': value} for value in parents+functions+[parents[0].lower()]]
+        targets = bridge.usb_presence_targets(found, [])
+        self.assertEqual([t['usbIdentity'] for t in targets], parents)
+        self.assertEqual(len({t['port'] for t in targets}), 2)
+        self.assertTrue(all(t['native'] is None for t in targets))
+
+    def test_product_cdc_parent_does_not_duplicate_verified_serial_attachment(self):
+        identity = r'USB\VID_1D6B&PID_0104\mk20-aabbccddeeff'
+        existing = [{'usbIdentity': 'cdc|mk20-aabbccddeeff|COM5', 'native': {'transport': 'usb'}}]
+        self.assertEqual(bridge.usb_presence_targets([{'identity': identity}], existing), [])
+
     def test_qmk_plan_preserves_every_byte_outside_reviewed_binary(self):
         original=bytes(range(256))*224
         image=image_with_settings(original,b'\x01'*39244)

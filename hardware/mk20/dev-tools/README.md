@@ -7,6 +7,8 @@
 Use middleware tray **Device setup… → MK20** for normal QMK/USB runtime preparation. ADB tools here are for development/diagnostics and are not dependencies of normal connection, pairing or updates. `install-mk20.ps1` refuses deployment and supports explicit `-NoDeploy` diagnostics only. Normal preparation includes verified recovery backups, preserved settings, actual reboot/boot checks and physical guidance in the same window.
 
 
+Normal keyboard USB is one physical QMK attachment, even when Windows exposes several HID functions. It requires DFU readback for exact image comparison. A LAN entry cannot install a missing runtime receiver; first USB migration on the connected legacy MK20 is not yet complete.
+
 ## Working Topology and Current Address
 
 The addresses below describe the network topology for MK20 development. The live MK20 connects to the development PC's local Wi-Fi LAN (e.g. `192.168.1.248`). TCP ADB is reachable over the local Wi-Fi network. Check your current DHCP lease and USB enumeration before connecting.
