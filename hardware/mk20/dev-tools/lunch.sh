@@ -1,5 +1,36 @@
 #!/bin/sh
 
+# USB device presence is a product function, independent of network/debug ADB.
+# Only claim an idle controller; never tear down another active gadget.
+start_product_usb() (
+    set -e
+    [ -d /sys/class/udc ] || exit 1
+    [ -d /sys/kernel/config/usb_gadget ] || mount -t configfs none /sys/kernel/config
+    for existing in /sys/kernel/config/usb_gadget/*; do
+        [ -r "$existing/UDC" ] || continue
+        [ -z "$(cat "$existing/UDC")" ] || exit 0
+    done
+    set -- /sys/class/udc/*
+    [ "$#" -eq 1 ] && [ -e "$1" ] || exit 1
+    controller=${1##*/}
+    serial=$(tr -d ':\r\n' < /sys/class/net/wlan0/address)
+    case "$serial" in ''|*[!a-f0-9]*) exit 1 ;; esac
+    [ "${#serial}" -eq 12 ] || exit 1
+    gadget=/sys/kernel/config/usb_gadget/snowball
+    mkdir -p "$gadget/strings/0x409" "$gadget/configs/c.1/strings/0x409" "$gadget/functions/acm.usb0"
+    echo 0x1d6b > "$gadget/idVendor"
+    echo 0x0104 > "$gadget/idProduct"
+    echo 'Snowball' > "$gadget/strings/0x409/manufacturer"
+    echo 'Snowball MK20' > "$gadget/strings/0x409/product"
+    echo "mk20-$serial" > "$gadget/strings/0x409/serialnumber"
+    echo 0xc0 > "$gadget/configs/c.1/bmAttributes"
+    echo 250 > "$gadget/configs/c.1/MaxPower"
+    echo 'Product serial' > "$gadget/configs/c.1/strings/0x409/configuration"
+    [ -e "$gadget/configs/c.1/acm.usb0" ] || ln -s "$gadget/functions/acm.usb0" "$gadget/configs/c.1/acm.usb0"
+    echo "$controller" > "$gadget/UDC"
+    [ "$(cat "$gadget/UDC")" = "$controller" ]
+)
+
 # Only stop processes executing our managed runtime, including replaced binaries.
 stop_native() {
     path="/mnt/SDCARD/$1"
@@ -33,8 +64,7 @@ fi
 
 # Bring up development Wi-Fi and restrict TCP-only ADB before starting it.
 # This is a trusted-private-LAN Preview, without cryptographic ADB authentication.
-# This script
-# never changes the USB gadget.
+# Product CDC initialization is separate from the debug transport below.
 CONFIG="/mnt/SDCARD/dev-access.conf"
 LOG="/mnt/SDCARD/dev-access.log"
 IP_FILE="/mnt/SDCARD/current_ip.txt"
@@ -55,6 +85,14 @@ log_msg() {
 }
 
 log_msg "lunch.sh started"
+
+# An older TCP-only debug bootstrap can leave ConfigFS completely unmounted.
+# Without a product gadget, a physically connected cable cannot enumerate.
+if start_product_usb; then
+    log_msg "Product USB prepared or existing active gadget retained"
+else
+    log_msg "Product USB unavailable; LAN control remains independent"
+fi
 
 (
     elapsed=0
