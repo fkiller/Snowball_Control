@@ -1,4 +1,4 @@
-"""Host-owned MK20 preparation: real DFU and removable storage, never ADB.
+"""Host-owned MK20 preparation: real DFU, USB and authorized LAN maintenance.
 
 Requests contain only a live inventory token. Paths, commands, and credentials
 are never accepted from the renderer. stdout contains bounded public receipts.
@@ -22,6 +22,7 @@ import zipfile
 from setup_storage import cards, token, tool, backup_media, backup_with_permission, digest_file
 import setup_qmk
 import setup_usb
+import setup_maintenance
 
 ROOT = Path(__file__).resolve().parents[1]
 RELEASE = json.loads((ROOT/'firmware/release.json').read_text(encoding='utf-8'))
@@ -87,6 +88,7 @@ def usb_presence_targets(found, existing):
 
 def inventory(directory=None):
     result = []
+    result.extend(setup_maintenance.devices())
     try:
         result.extend(setup_usb.devices())
     except ImportError:
@@ -130,6 +132,8 @@ def read_wifi_state(root):
 
 def probe(target, directory):
     component = target['component']
+    if (target.get('native') or {}).get('transport')=='maintenance':
+        return setup_maintenance.probe(target, RELEASE)
     if (target.get('native') or {}).get('transport')=='usb':
         try:
             return setup_usb.probe(target,RELEASE)
@@ -324,7 +328,7 @@ def main():
         verify_runtime(args.port,directory,request.get('lan',[])); return
     targets=inventory(directory)
     if args.command=='list':
-        emit('ports',ports=[{k:t[k] for k in ('port','usbIdentity','label','component','present') if k in t} for t in targets]); return
+        emit('ports',ports=[{k:t[k] for k in ('port','usbIdentity','label','component','present','transport') if k in t} for t in targets]); return
     target=next((t for t in targets if t['port']==args.port),None)
     if not target:
         raise RuntimeError('setup_target_disconnected')
@@ -336,6 +340,9 @@ def main():
         raise RuntimeError('qmk_enter_dfu_required')
     progress('identify')
     if target['component']=='runtime':
+        if target['native'].get('transport')=='maintenance':
+            files,hashes=runtime_bundle(directory)
+            setup_maintenance.install(target,directory,files,hashes,RELEASE,request,progress,emit);return
         if target['native'].get('transport')=='usb':
             files,hashes=runtime_bundle(directory)
             setup_usb.install(target,directory,files,hashes,RELEASE,request,progress,emit,wifi);return

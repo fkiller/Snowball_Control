@@ -11,14 +11,22 @@ from setup_storage import token, digest_file
 FILES = ('mk20-hud', 'mk20-audio', 'lunch.sh', 'fonts/D2Coding.ttf', 'mk20-update')
 
 
+def canonical_device_id(value):
+    value = (value or '').lower()
+    return value if re.fullmatch('mk20-[a-f0-9]{12}', value) else None
+
+
 def devices():
     from serial.tools import list_ports
     result = []
     for port in list_ports.comports():
-        if (port.vid, port.pid) != (0x1d6b, 0x0104) or not re.fullmatch('mk20-[a-f0-9]{12}', port.serial_number or ''):
+        # Windows PnP canonicalizes the USB serial to uppercase. Identity is a
+        # WLAN MAC, so canonicalize its case before validation and correlation.
+        serial_number = canonical_device_id(port.serial_number)
+        if (port.vid, port.pid) != (0x1d6b, 0x0104) or not serial_number:
             continue
-        identity = 'cdc|' + port.serial_number + '|' + str(port.location or port.device)
-        result.append(dict(port=token(identity), usbIdentity=identity, label='MK20 · USB runtime', component='runtime', native=dict(transport='usb', device=port.device, identity=identity, deviceId=port.serial_number)))
+        identity = 'cdc|' + serial_number + '|' + str(port.location or port.device)
+        result.append(dict(port=token(identity), usbIdentity=identity, label='MK20 · USB runtime', component='runtime', native=dict(transport='usb', device=port.device, identity=identity, deviceId=serial_number)))
     return result
 
 

@@ -1,13 +1,40 @@
 """Real file/format guard tests; no simulated USB device or flash success."""
 import json
+import hashlib
+import os
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
+import setup_maintenance
+from setup_usb import canonical_device_id
 import setup_bridge as bridge
 from setup_qmk import image_with_settings
 
 
 class PreparationGuards(unittest.TestCase):
+    def test_windows_pnp_serial_case_keeps_real_mac_identity(self):
+        self.assertEqual(canonical_device_id('MK20-90DE80FACD1D'), 'mk20-90de80facd1d')
+        self.assertEqual(canonical_device_id('mk20-90de80facd1d'), 'mk20-90de80facd1d')
+        for invalid in ('MK20-90DE80FACD1D-OTHER', 'MK20-90DE80FACD1', 'COM4', None):
+            self.assertIsNone(canonical_device_id(invalid))
+
+    def test_maintenance_tool_change_is_rejected_before_execution(self):
+        with tempfile.TemporaryDirectory() as directory:
+            executable = Path(directory)/'never-execute-adb'
+            executable.write_bytes(b'reviewed bytes')
+            approved = hashlib.sha256(executable.read_bytes()).hexdigest()
+            with patch.dict(os.environ, {'SNOWBALL_SETUP_ADB':str(executable), 'SNOWBALL_SETUP_ADB_SHA256':approved}):
+                self.assertEqual(setup_maintenance.executable(), str(executable))
+                executable.write_bytes(b'changed bytes')
+                with self.assertRaisesRegex(RuntimeError, 'maintenance_tool_changed'):
+                    setup_maintenance.devices()
+
+    def test_maintenance_rejects_wifi_changes_before_opening_any_connection(self):
+        for request in ({'network':{'ssid':'not-sent','password':'not-sent'}}, {'migrateWifi':True}):
+            with self.assertRaisesRegex(RuntimeError, 'maintenance_preserves_existing_wifi'):
+                setup_maintenance.install({}, None, {}, {}, {}, request, None, None)
+
     def test_usb_inventory_keeps_physical_parents_and_separates_same_model_devices(self):
         parents = [r'USB\VID_4250&PID_426F\7&one&0&2', r'USB\VID_4250&PID_426F\7&two&0&2']
         functions = [r'USB\VID_4250&PID_426F&MI_00\8&one&0&0000',

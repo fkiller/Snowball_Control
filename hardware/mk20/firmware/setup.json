@@ -32,12 +32,15 @@
     "dev-tools/lunch.sh",
     "qmk/bin/syk_keyboards_mk20_plus_via.bin",
     "dev-tools/setup_usb.py",
+    "dev-tools/setup_maintenance.py",
+    "dev-tools/migrate_runtime.sh",
+    "dev-tools/prepare_adb.py",
     "hud/mk20-update.c"
   ],
   "presentation": {
     "ko": {
-      "connection": "MK20을 USB 데이터 케이블로 연결하세요. SD 카드를 분리하지 않고 런타임 파티션 백업·업데이트·자동 재기동을 진행합니다. 구 펌웨어에 USB 수신 기능이 없으면 최초 이관이 필요하다고 표시합니다.",
-      "confirmation": "실물 기기가 MK20이며 선택한 USB 연결이 이 기기의 것인지 확인했습니다.",
+      "connection": "QMK 키보드는 USB로 확인합니다. 구 런타임은 이미 허용된 LAN 관리 연결 항목에서 전체 파티션 백업 후 업데이트합니다. SD 카드를 분리하지 않으며 기존 Wi-Fi와 PC 등록을 보존합니다.",
+      "confirmation": "실물 기기가 MK20이며 선택한 연결이 이 기기의 것인지 확인했습니다.",
       "steps": [
         "먼저 위 PC 창에서 Wi-Fi를 가져오거나 직접 입력합니다. 기존 Wi-Fi는 보존됩니다.",
         "MK20 좌측 상단 K17 Machines 키를 누르세요. 그림에서 밝은 키를 누르면 다음 조작을 볼 수 있습니다.",
@@ -58,7 +61,7 @@
       },
       "journey": [
         "01 · 기기 확인",
-        "02 · 파티션 백업 + USB 업데이트",
+        "02 · 파티션 백업 + 런타임 업데이트",
         "03 · 자동 재기동 확인",
         "04 · Wi-Fi + PC 선택"
       ],
@@ -109,8 +112,8 @@
       ]
     },
     "en": {
-      "connection": "Connect MK20 with a USB data cable. Leave its SD card inside for runtime partition backup, update and automatic reboot. Legacy firmware without the USB receiver requires initial migration.",
-      "confirmation": "I confirmed this is an MK20 and the selected USB attachment belongs to it.",
+      "connection": "QMK keyboard preparation uses USB. For an older runtime, use an already authorized LAN maintenance entry to back up the full partition and update. Leave the SD card inside; saved Wi-Fi and PC registrations are preserved.",
+      "confirmation": "I confirmed this is an MK20 and the selected connection belongs to it.",
       "steps": [
         "First import or enter Wi-Fi in the PC window above. Saved Wi-Fi is retained.",
         "Press the top-left K17 Machines key. Click the highlighted key here to see the next instruction.",
@@ -131,7 +134,7 @@
       },
       "journey": [
         "01 · Identify",
-        "02 · Partition backup + USB update",
+        "02 · Partition backup + runtime update",
         "03 · Verify automatic reboot",
         "04 · Wi-Fi + choose PC"
       ],
