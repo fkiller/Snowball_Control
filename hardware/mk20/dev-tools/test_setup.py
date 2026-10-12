@@ -14,9 +14,9 @@ from setup_qmk import image_with_settings
 
 class PreparationGuards(unittest.TestCase):
     def test_windows_pnp_serial_case_keeps_real_mac_identity(self):
-        self.assertEqual(canonical_device_id('MK20-90DE80FACD1D'), 'mk20-90de80facd1d')
-        self.assertEqual(canonical_device_id('mk20-90de80facd1d'), 'mk20-90de80facd1d')
-        for invalid in ('MK20-90DE80FACD1D-OTHER', 'MK20-90DE80FACD1', 'COM4', None):
+        self.assertEqual(canonical_device_id('MK20-AABBCCDDEEFF'), 'mk20-aabbccddeeff')
+        self.assertEqual(canonical_device_id('mk20-aabbccddeeff'), 'mk20-aabbccddeeff')
+        for invalid in ('MK20-AABBCCDDEEFF-OTHER', 'MK20-AABBCCDDEEF', 'COM4', None):
             self.assertIsNone(canonical_device_id(invalid))
 
     def test_maintenance_tool_change_is_rejected_before_execution(self):
