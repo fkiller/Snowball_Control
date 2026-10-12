@@ -51,7 +51,11 @@ Windows 소스 설치는 알림과 같은 `local.snowball.middleware` AppUserMod
 
 **Snowball**은 전체 로컬 제어 시스템이며, **Snowball Middleware**가 공통 설치·PC 실행·Web UI를 담당한다. **Snowball Control**은 MK20 기기 구성 요소와 이 공통 아키텍처 문서를 관리한다. 두 번째 미들웨어가 아니다. **Snowball Device · M5Stack**은 ESP32 펌웨어·게이트웨이를 관리하고, **Snowball Harness · Codex / Antigravity / OpenCode**는 모든 설치에 포함하는 독립 빌드 플러그인이다.
 
-Windows 공통 진입점은 `Snowball_Middleware/install.ps1`이며 **기본 설치에 모든 지원 기기를 포함한다**(`all`). Middleware·Control 호스트 라이브러리·M5Stack 게이트웨이·독립 하네스 플러그인 3종을 빌드한다. PC 설치에 USB 연결·프로필 선택·펌웨어 작업은 필요 없다. 실제 격리 워커 초기화를 확인하고 `.snowball/suite.json`에 소스 커밋과 승인된 진입점 다이제스트를 기록한다. 추적 파일 수정은 거부하고 체크아웃을 초기화하지 않는다. 공급자 앱·로그인은 별도 준비이며 없으면 사용 불가다. 모델·Effort·프로젝트·세션은 계속 네이티브 원천에서 동적으로 관찰한다.
+공통 진입점은 Windows `Snowball_Middleware/install.ps1`, macOS·데스크톱 Linux(x64/arm64) `Snowball_Middleware/install.sh`이며 **기본 설치에 모든 지원 기기를 포함한다**(`all`). Middleware·Control 호스트 라이브러리·M5Stack 게이트웨이·독립 하네스 플러그인 3종을 빌드한다. PC 설치에 USB 연결·프로필 선택·펌웨어 작업은 필요 없다. 실제 격리 워커 초기화를 확인하고 `.snowball/suite.json`에 소스 커밋과 승인된 진입점 다이제스트를 기록한다. 추적 파일 수정은 거부하고 체크아웃을 초기화하지 않는다. 공급자 앱·로그인은 별도 준비이며 없으면 사용 불가다. 모델·Effort·프로젝트·세션은 계속 네이티브 원천에서 동적으로 관찰한다.
+
+**Unix 설치 계약:** `install.sh`는 curl·Git·venv/pip을 포함한 Python >=3.12가 필요하며, Linux는 그래픽 데스크톱과 Electron/GTK/NSS/ALSA/GBM 라이브러리가 필요하다. 지원 Node를 재사용하거나 공식 LTS tarball의 SHA-256을 확인한 뒤 사용자 폴더에 풀며 sudo·시스템 PATH 변경을 사용하지 않는다. 기본 루트는 macOS `~/Library/Application Support/Snowball`, Linux `${XDG_DATA_HOME:-~/.local/share}/Snowball`이다. 배열로 공백이 있는 경로·옵션을 보존하고 원격 원천·추적 파일 수정·fast-forward 갱신을 확인한 뒤 빌드한다. `--root 경로 --update`로 suite 상태를 보존하며 `Start-Snowball.sh`로 다운로드 없이 다시 실행한다. Linux도 같은 승인 다이제스트 워커 초기화·POSIX 네이티브 실행 파일 검색·제품 네이티브 실행 파일과 suite별 XDG 자동 시작을 사용하고 업데이트 시 비활성 선택을 보존한다. renderer sandbox·플러그인 승인·dispatch 경계를 완화하지 않는다. 기기 프로토콜·펌웨어·하네스 3종 동작·루프백 Web UI 계약은 유지한다. USB 권한/드라이버와 미지원 OS Wi-Fi 가져오기는 일반 OS/기기 안내를 따른다. README는 GitHub 지원 details 선택과 코드 블록 Copy를 사용하며 Markdown에서 사용자 탭/클립보드 스크립트를 실행하지 않는다. 자동 호스트 검증과 macOS/Linux 대화형 실물 인수 결과를 구분한다.
+
+**멀티플랫폼 검증(2026-10-12):** Ubuntu x64/WSLg에서 공백이 있는 설치 루트로 실제 Unix 부트스트랩을 실행해 공식 Node LTS 다운로드·체크섬 확인, 제품 런타임·독립 하네스 3종 빌드, 실제 승인 워커 초기화를 확인했다(`--profile web --no-start`). 설치 트레이를 두 차례 시작·종료하고 루프백 UI 응답을 확인했으며 네이티브 검사에서 기본 창 없음·일시정지/재개를 확인했다. Linux 참조 압축본과 다시 푼 압축본 모두 145개 해시/앱 파일 148개를 확인하고 네이티브 검사를 통과했다. Linux 전체 회귀는 298개 중 286개 통과·선택 12개 생략이며, 실제 Gio 실행기로 예약 문자가 있는 인자를 정확히 전달하는 검사도 포함한다. 호스트 신원·bootstrap 파일은 명시적 0600으로 생성해 Unix 재시작의 개인 상태 경계를 보존한다. Windows 전체 회귀도 298개 중 286개 통과·선택 12개 생략이다. Control 호스트 70개 통과·2개 생략, MK20 플러그인 15개, MK20 parity 10개 통과·1개 생략과 실제 사용 가능 목록 전환을 확인했으며 없는 OpenCode 목록은 비워 둔다. 독립 Codex 저장소의 워커/표시 검사 2개도 통과했다. macOS/ARM64 실행·재부팅 후 그래픽 로그인 자동 시작·Linux 전체 기기/음성 의존성 설치·USB/실물 기기 인수·실제 공급자 dispatch는 미확인이다. 펌웨어를 변경하지 않았으며 ADB/기기 대상이 없어 새 MK20 framebuffer 캡처는 실행하지 못했다. 공개 한 줄 설치 명령은 Middleware 설치기와 독립 Codex Linux manifest의 main 브랜치를 사용하며, 호스트 설치와 기기 펌웨어 인수 결과는 별도로 구분한다.
 
 **같은 설치 루트**에 일반 업데이트하면 기존 Web/MK20/M5Stack 단독 설치에도 두 어댑터를 준비한다. `deviceProfiles`와 `devices`로 Python·NIC·등록 경로를 구분하며 M5Stack `.local`의 페어링·기기·탐색 파일, 컨트롤러 상태, 음성 캐시, 사용자 지정 API 포트와 로그인 자동 시작 설정을 유지한다. 하나의 소유 트레이·suite·API가 두 기기를 제공한다. `-Profile web|mk20|m5stack`은 개발·진단용 명시적 부분 구성이고 기존 어댑터를 유지한다. 이 옵션은 USB 준비를 암묵적으로 실행하지 않는다. 검색·기기 등록·선택은 별도의 신뢰·소유 동작이다.
 
@@ -87,11 +91,11 @@ USB 후속 확인 이전의 실물 M5Stack TCP 진단에서는 선택 host ID가
 
 **기기 설정 동적 메시지 (2026-10-12):** MK20/M5Stack 공통 설정 renderer는 오류 도착 시 번역한 문장 대신 정제된 요청 오류 코드를 보관한다. 매번 화면을 그릴 때 현재 선택한 언어로 코드를 해석하여 한·영 전환 전에 표시된 안내도 즉시 갱신한다. 미등록 오류에는 해당 언어의 일반 안내를 표시하고 원시 IPC 진단·경로·비밀은 노출하지 않는다. 언어 변경으로 기기 작업을 다시 실행하지 않는다. 검색·기기 진행은 기존 상태 코드를 계속 사용한다. 호스트 UI 변경이며 Web/API·네이티브 dispatch/승인/중단·펌웨어·백업·Wi-Fi/페어링·하네스 3종·SDK/worker 계약은 유지한다.
 
-검증: 회귀 검사는 이전 renderer에서 한국어 안내가 남는 문제를 재현하고 수정 후 통과했다. 한→영→한 전환, 원인별 오류, 미등록 오류의 비밀 노출 방지, 새 요청 시 안내 해제와 검색 상태를 확인했다. 실제 sandbox Electron 창에서도 읽기 전용 IPC 거부 안내가 양방향으로 바뀌었고 실제 USB 검색·재확인과 두 기기 안내가 통과했다. COM7 M5Stack은 설치 0.5.2·현재 소스 후보 0.5.3을 표시했다. 펌웨어 쓰기·OS 비밀번호 읽기·네이티브 프롬프트는 수행하지 않았다. Middleware 283개 통과·선택적 생략 8개, Control 호스트 70개 통과·생략 2개, MK20 UX parity 10개 통과·생략 1개와 실제 제공 목록 전환이 통과했다(OpenCode CLI 사용 불가). 네이티브 설정 창 캡처를 육안 검토했다. MK20 ADB 기기가 없어 이번 실물 framebuffer 재확인은 완료하지 못했으며 macOS도 미검증이다.
-
 **M5Stack 백업 실패 표시 (2026-10-12):** 버전 1 준비 호스트는 작업 실패 당시 단계를 보존한다. 복구 백업 경로는 네이티브 도구의 `backup-verified` 이후에만 공개하며 초기 예정 파일명을 실제 파일 생성 근거로 삼지 않는다. 새 설치 시도는 이전 시도의 경로를 현재 상태에서 지우되 파일 자체는 삭제하지 않는다. M5Stack UI는 최초 백업 읽기 실패와 쓰기 시작 이후 실패를 구분하고 실패 단계도 언어 변경에 맞춰 번역한다. 자동 펌웨어 쓰기·업데이트 재시도는 추가하지 않으며 백업 정책, MK20 버전 2 업데이트 도구, Web/API·하네스·플러그인 worker 계약은 유지한다.
 
 USB 실패 검증: 사용자가 제시한 백업 파일명은 실제로 존재하지 않았다. 기존 460800 baud 전체 읽기를 반복하자 92%에서 esptool 데이터 손상 오류(4096바이트 기대·3487바이트 수신)를 재현했으며 펌웨어 쓰기 전이었다. 구간별 읽기로 실물 16,777,216바이트 백업을 완료하고 sidecar SHA-256을 별도로 검증했다. 기기는 펌웨어 0.5.2·저장된 Wi-Fi·실제 연결 상태를 응답했다. Python 설치기 13개·기기 21개·Control 호스트 70개/생략 2개·parity 10개/생략 1개와 실제 제공 목록 전환이 통과했다. Middleware 최초 전체 회귀는 284개/생략 9개였으며, 동시에 진행 중인 별도 Linux 변경이 포함된 후속 실행은 288개 통과/생략 8개와 Linux CLI 발견 검사 1개 실패였다. 실패 전용 네이티브 프로세스 가드와 한·영 실패 안내 검사는 통과했다. 실제 sandbox 네이티브 창의 검색·재확인과 한·영 캡처도 통과하고 육안 검토했다. 펌웨어 쓰기·네이티브 프롬프트는 수행하지 않았다. 구간 재시도 소진 후 실물 복귀, MK20 framebuffer 재캡처와 macOS는 별도 확인 범위이며 부분 조립 파일과 전체 백업은 비공개로 유지한다. 공개 후 공식 Update로 검토된 커밋을 설치하고 두 준비 어댑터 승인을 검증했으며 백그라운드 트레이와 인증된 M5Stack Wi-Fi 연결이 복귀했다. 깨끗한 설치본의 Middleware 전체 회귀는 총 293개 중 286개 통과·선택 7개 생략·실패 0개였다. 펌웨어는 0.5.2를 유지하며 0.5.3 갱신은 기기 설정에서 검토 후 실행한다.
+
+검증: 회귀 검사는 이전 renderer에서 한국어 안내가 남는 문제를 재현하고 수정 후 통과했다. 한→영→한 전환, 원인별 오류, 미등록 오류의 비밀 노출 방지, 새 요청 시 안내 해제와 검색 상태를 확인했다. 실제 sandbox Electron 창에서도 읽기 전용 IPC 거부 안내가 양방향으로 바뀌었고 실제 USB 검색·재확인과 두 기기 안내가 통과했다. COM7 M5Stack은 설치 0.5.2·현재 소스 후보 0.5.3을 표시했다. 펌웨어 쓰기·OS 비밀번호 읽기·네이티브 프롬프트는 수행하지 않았다. Middleware 283개 통과·선택적 생략 8개, Control 호스트 70개 통과·생략 2개, MK20 UX parity 10개 통과·생략 1개와 실제 제공 목록 전환이 통과했다(OpenCode CLI 사용 불가). 네이티브 설정 창 캡처를 육안 검토했다. MK20 ADB 기기가 없어 이번 실물 framebuffer 재확인은 완료하지 못했으며 macOS도 미검증이다.
 
 **재확인 수정 검증 (2026-10-10):** Middleware 전체 회귀 283개 통과·선택적 생략 5개, Control 호스트 70개 통과·생략 2개, MK20 UX parity 10개 통과·생략 1개와 실제 제공 하네스 목록 전환 검사가 통과했다. 네이티브 프롬프트는 보내지 않았다. 한·영 sandbox 설정 창에서 실제 OS 검색이 연결을 점유하는 동안 다시 확인을 눌러 강제 검색 완료·버튼 재활성화와 원인별 오류 문구를 확인했다. 실제 COM7 펌웨어는 0.2.2로 유지했다. 비공개 Windows 패키지의 파일 해시 137개와 트레이 검사를 확인했다. 읽기 전용 실물 MK20 framebuffer를 육안 검토했고 UDC는 계속 `not attached`, 수신기는 부재했다. 기기 펌웨어·저장 네트워크는 변경하지 않았다. 실물 USB 업데이트·최초 이관·macOS·395 배포는 미검증이다.
 
@@ -133,13 +137,13 @@ USB 실패 검증: 사용자가 제시한 백업 파일명은 실제로 존재�
 
 `Start-Snowball.ps1`은 `scripts/start-installed.mjs`를, Windows 바로가기는 네이티브 Electron 트레이를 직접 실행한다. 설치기는 고정된 Electron 바이너리를 준비하고 자식 프로세스를 숨김 실행한다. 자신이 시작한 런타임의 IPC 준비 응답과 루프백 스냅샷을 확인하면 터미널로 돌아온다. 트레이가 모든 프로필에서 동일한 전체 `start-suite.mjs` / `start-all.mjs` 런타임을 관리하므로 MK20도 포함된다. 상태, Web UI, 설정, 일시정지/재개, 재시작, 종료, OS 로그인 자동 시작을 제공한다. 일시정지는 MK20의 새 음성 녹음·Send도 차단하며 기존 네이티브 작업은 계속된다. 브라우저나 설치 터미널을 닫아도 실행을 유지하고, 종료·부모 IPC 연결 해제는 소유한 프로세스만 정리하며 명령을 재전송하지 않는다. 로그는 `.snowball/desktop.log`에 크기를 제한해 보관한다.
 
-실행 형태는 **사용자별 백그라운드 앱**이다. 로그인한 사용자의 네이티브 하네스·트레이에 접근해야 하므로 Windows SYSTEM 계정 서비스로 실행하지 않는다. Windows는 이름이 구분되는 네이티브 로그인 항목, macOS 소스 설치는 사용자별 LaunchAgent를 사용한다. 서명 없는 소스 Electron 앱의 macOS 앱 로그인 등록은 신뢰할 수 없기 때문이다. 최초 설치는 로그인 자동 시작을 켜고 트레이·설정에서 변경하며, 업데이트는 선택한 값을 유지한다. `-NoStart`는 실행·자동 시작 등록 없이 준비만 한다. macOS 자동 시작은 실물 Mac 검증이 남아 있다. 점유된 루프백 포트는 거부하고 다른 서비스의 프로세스를 채택하거나 종료하지 않는다.
+실행 형태는 **사용자별 백그라운드 앱**이다. 로그인한 사용자의 네이티브 하네스·트레이에 접근해야 하므로 Windows SYSTEM 계정 서비스로 실행하지 않는다. Windows는 이름이 구분되는 네이티브 로그인 항목, macOS 소스 설치는 사용자별 LaunchAgent를 사용한다. Linux 소스 설치는 데스크톱 명세에 맞춰 인자를 인용하고 정확히 일치하는 항목만 이관하는 suite별 XDG autostart 항목을 사용한다. 서명 없는 소스 Electron 앱의 macOS 앱 로그인 등록은 신뢰할 수 없기 때문이다. 최초 설치는 로그인 자동 시작을 켜고 트레이·설정에서 변경하며, 업데이트는 선택한 값을 유지한다. `-NoStart` / `--no-start`는 실행·자동 시작 등록 없이 준비만 한다. macOS 자동 시작은 실물 Mac 검증이 남아 있다. 점유된 루프백 포트는 거부하고 다른 서비스의 프로세스를 채택하거나 종료하지 않는다.
 
 MK20 발견과 루프백 API는 음성 다운로드와 독립적으로 준비된다. 선택 후 실제 연결·네이티브 목록 읽기 상태를 주기적으로 표시하고, 호스트 단위 STT 준비를 백그라운드에서 한 번 수행한다. 모델 다운로드·워밍업 실패에도 탐색을 유지하고 Talk에서 준비 상태나 실제 오류를 표시한다. 실제 워커의 응답 전에는 음성 준비 완료를 주장하지 않는다. 연결 전에도 기기 자체 K17 **Machines / Pair PC / Press to pair**와 페어링 안내를 항상 표시한다.
 
 재실행은 소스를 자동 업데이트하지 않는다. 명시적 `-Update`로 공식 main을 가져와 Middleware·Control·M5Stack·하네스 3종을 fast-forward하며, 추적 파일 수정이나 분기 충돌은 거부한다. 해당 설치의 등록된 트레이만 종료한 뒤 다시 빌드하고 모델·컨트롤러 상태·페어링은 보존한다. 기존 LAN 설치는 같은 경로를 유지한다: `install.ps1 -InstallRoot "$env:LOCALAPPDATA\Snowball-LAN" -Update`. PC 설치는 MK20 펌웨어를 배포하지 않으며, 이전 HUD의 K17 표시는 별도의 검증된 기기 런타임 업데이트가 필요하다.
 
-Windows 부트스트랩은 지원 Node(공식 LTS ZIP·SHA-256 검사), Git, 필요한 Python을 준비한다. macOS 소스 설치는 Node/Git/Python 사전 준비가 필요하고, Linux 전체 플러그인 워커는 아직 지원하지 않는다. M5Stack USB·DFU 준비와 공급자 로그인은 사용자 단계다. `-NoFlash`는 명시적 `-PrepareM5Stack`의 기존 펌웨어 확인에만 적용한다. 공통 MK20 펌웨어 준비는 쓰기 전 검증된 백업을 필수로 요구하며 PC 추가는 SD를 변경하지 않는다. 모든 README는 동일 배너·아이콘과 `Snowball <구성 요소> · <공급자> — Preview` 명칭을 사용한다.
+Windows 부트스트랩은 지원 Node(공식 LTS ZIP·SHA-256 검사), Git, 필요한 Python을 준비한다. macOS·데스크톱 Linux는 위 Unix 설치 계약에 따라 Git/Python을 사전 준비하고 검증된 사용자별 Node LTS를 준비한다. M5Stack USB·DFU 준비와 공급자 로그인은 사용자 단계다. `-NoFlash`는 명시적 `-PrepareM5Stack`의 기존 펌웨어 확인에만 적용한다. 공통 MK20 펌웨어 준비는 쓰기 전 검증된 백업을 필수로 요구하며 PC 추가는 SD를 변경하지 않는다. 모든 README는 동일 배너·아이콘과 `Snowball <구성 요소> · <공급자> — Preview` 명칭을 사용한다.
 
 | 구성 | 위치 | 현재 역할 |
 | --- | --- | --- |
@@ -343,7 +347,7 @@ flowchart TD
 | Windows + 사용 가능한 NVIDIA CUDA | faster-whisper CUDA, 런타임 실패 시 CPU | Supertonic CPU | 설치된 Windows SAPI |
 | Windows AMD/Intel 또는 CUDA 없음 | faster-whisper CPU | Supertonic CPU | 설치된 Windows SAPI |
 | macOS 소스 설치 | faster-whisper CPU, 실물 Mac 검증은 남음 | Supertonic CPU | 설치된 macOS `say` |
-| Linux | CPU/CUDA worker 코드가 있으나 전체 suite 미지원 | Supertonic CPU | 설치된 `espeak` |
+| 데스크톱 Linux | CPU/CUDA worker 지원, 전체 기기·음성 설치와 실물 인수는 미확인 | Supertonic CPU | 설치된 `espeak` |
 
 ### 네이티브 음성 스트리밍 (`mk20-audio`, `SNAU`)
 
@@ -414,7 +418,7 @@ Control `host`에서 `npm ci && npm run build`, Middleware에서 `npm ci && npm 
 
 2026-10-02 로컬 검증에서 Control 66개(별도 STT 2개 제외), 별도 실제 WAV STT 2개, MK20 plugin 13개, QMK 계약 14개, 레거시 승인 차단 15개가 통과했다. Middleware는 241개 통과/5개 선택 검사 제외, MK20 encoder·카탈로그·파일 경계 검사는 15개 통과했다. 선택 STT runtime 검사 6개도 로컬에 준비된 환경에서 별도로 통과했다. 실제 설치 목록을 이용한 하네스 전환 검사도 통과했으나 OpenCode CLI 턴 실행은 검사하지 않았다. HUD는 실제 Tina ARM SDK로 빌드하고 C 파서를 sanitizer로 검사했다. 현재 기기의 framebuffer 캡처는 확인했지만 수정 바이너리를 기기에 배포한 결과는 아니다. 이 결과는 Windows 리뷰 환경의 기록이며 다른 OS나 모든 하네스 버전의 인증이 아니다.
 
-Supervisor 단독 런타임의 기본 하네스 survey는 현재 Windows/macOS에서만 연결된다. Linux 코어·API의 자동 검사를 전체 Linux 하네스 제어·네이티브 tray 패키지 지원으로 확대 해석하지 않는다. 기본 STT runtime 테스트는 형제 Control checkout과 Python 의존성 설치를 수행하는 검사를 `SNOWBALL_TEST_STT=1`일 때만 실행한다.
+Supervisor 단독 런타임의 기본 하네스 survey는 현재 Windows/macOS에서만 연결된다. Linux suite의 Web 설치·네이티브 tray/패키지 검증은 위 멀티플랫폼 기록으로 구분하며, 이 검증을 실제 공급자 하네스 dispatch·기기 인수까지 확대 해석하지 않는다. 기본 STT runtime 테스트는 형제 Control checkout과 Python 의존성 설치를 수행하는 검사를 `SNOWBALL_TEST_STT=1`일 때만 실행한다.
 
 **검토한 공개 런타임:** [MK20 Preview 0.2.6](https://github.com/fkiller/Snowball_Control/releases/tag/mk20-preview-0.2.6)의 `mk20-runtime.zip`, SHA-256 `2916a40413f5fe0b89d67924b7d1cc0028c6fdd9dfecd4e0c3045e32d683d99c`. manifest는 네이티브 소스 커밋 `b4be16726240cbf4a72854015e3d8e0b1cd79455`, SNMK1과 SNAU-lease-v1을 고정하며 포함 파일 55개의 해시를 검증했다. 실제 제조사 ARM 도구 체인으로 빌드한 HUD/audio, 부팅 스크립트, 폰트·라이선스와 해당 HUD/제조사 QMK 소스·고지를 포함한다. 공통 준비와 명시적인 읽기 전용 `-NoDeploy` 진단 모두 이 릴리스를 고정한다. 일반 PC 추가 설치는 이를 기기에 배포하지 않는다. 산출물 검증을 새 바이너리의 실물 실행 증거로 취급하지 않는다.
 

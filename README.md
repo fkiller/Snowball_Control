@@ -29,15 +29,38 @@
 
 **Install Snowball once per PC.** The default installation includes the Web UI, MK20 discovery/transport and speech runtime, M5Stack discovery/gateway, and all three Codex/Antigravity/OpenCode harness plugins. No device profile selection or connected USB device is needed.
 
-Run in Windows PowerShell:
+Choose your platform below, then use the code block’s **Copy** button on GitHub. README Markdown supports these expandable selectors; interactive tabs require a documentation website.
+
+<details open>
+<summary><strong>Windows · PowerShell</strong></summary>
 
 ```powershell
 & ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/fkiller/Snowball_Middleware/main/install.ps1')))
 ```
 
-The installer prepares Node/Git/Python, builds the companion components, checks the actual isolated harness workers, and starts a hidden per-user background application with a tray icon. The terminal returns after the owned runtime responds. The tray provides Web UI, status, Settings, Pause/Resume, Restart, Quit and login startup. Web UI stays on **http://127.0.0.1:8765/**. Default location: `%LOCALAPPDATA%\Snowball`; **Start-Snowball.ps1** restarts it without downloading dependencies. Missing native harness applications remain unavailable until installed and signed in through their vendors.
+</details>
 
-For updates, use the same `-InstallRoot` with `-Update` and omit `-Profile`. Old single-device installs gain both adapters while preserving device settings, pairing keys, controller state, speech caches, custom API port and login startup preference. An absent or ambiguous private LAN leaves automatic discovery waiting while the Web UI remains available; use `-Bind PRIVATE_PC_IP` when needed.
+<details>
+<summary><strong>macOS · Terminal</strong></summary>
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/fkiller/Snowball_Middleware/main/install.sh | bash
+```
+
+</details>
+
+<details>
+<summary><strong>Linux · Terminal</strong></summary>
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/fkiller/Snowball_Middleware/main/install.sh | bash
+```
+
+</details>
+
+Windows prepares Node/Git/Python; macOS/Linux require curl, Git and Python >=3.12 with venv/pip and prepare a checksum-verified Node LTS locally. The installer builds the companion components, checks the actual isolated harness workers, and starts a hidden per-user background application with a tray icon. The terminal returns after the owned runtime responds. The tray provides Web UI, status, Settings, Pause/Resume, Restart, Quit and login startup. Web UI stays on **http://127.0.0.1:8765/**. Default locations: Windows `%LOCALAPPDATA%\Snowball`, macOS `~/Library/Application Support/Snowball`, Linux `${XDG_DATA_HOME:-~/.local/share}/Snowball`. **Start-Snowball.ps1** (Windows) / **Start-Snowball.sh** (macOS/Linux) restart it without downloading dependencies. Missing native harness applications remain unavailable until installed and signed in through their vendors.
+
+For updates, use the same `-InstallRoot` with `-Update` on Windows, or `--root PATH --update` on macOS/Linux, and omit the profile option. For example, download `install.sh` and run `bash install.sh --root "$HOME/.local/share/Snowball" --update` on Linux (use your existing root). Old single-device installs gain both adapters while preserving device settings, pairing keys, controller state, speech caches, custom API port and login startup preference. An absent or ambiguous private LAN leaves automatic discovery waiting while the Web UI remains available; use `-Bind PRIVATE_PC_IP` (Windows) / `--bind PRIVATE_PC_IP` (macOS/Linux) when needed.
 
 MK20 joins Wi-Fi independently: press K17 (Machines), choose a PC and pair/select it. M5Stack firmware **0.4.0 and later** automatically discovers registered and new middleware PCs on the same LAN. Select a New PC in Machines to pair over Wi-Fi. Adding a PC requires only the complete middleware installation: no device-specific install, USB connection or registration script. Use a trusted private LAN with device ports allowed, the same broadcast subnet and no client isolation.
 
@@ -56,7 +79,7 @@ MK20 preparation now groups normal Windows USB functions under their physical pa
 
 On Windows, allow the middleware Node.js process on your private network when Windows asks. Denying network access can block LAN discovery and selection even while the background middleware and USB detection work. The local Web UI remains loopback-only.
 
-Options: `-Update`, `-InstallRoot PATH`, `-Bind PRIVATE_PC_IP`, `-Port 8765`, `-NoStart`, `-NoShortcut`. `-Profile web|mk20|m5stack` remains an explicit development/diagnostic subset option, not the normal installation flow; it retains adapters already installed in that root. macOS source users with Node/Git/Python can run `npm run setup --` from a sibling checkout layout; explicit USB preparation uses `--prepare-m5stack [--no-flash]`. Linux suite workers are not yet supported. See the central specification for protocol, authentication and field-verification limits.
+Options: `-Update`, `-InstallRoot PATH`, `-Bind PRIVATE_PC_IP`, `-Port 8765`, `-NoStart`, `-NoShortcut`. `-Profile web|mk20|m5stack` remains an explicit development/diagnostic subset option, not the normal installation flow; it retains adapters already installed in that root. macOS/Linux: `--update`, `--root PATH`, `--bind PRIVATE_PC_IP`, `--port 8765`, `--no-start`, `--no-shortcut`, `--python PATH`, `--data-dir PATH`; `bash install.sh --help` lists all options. Linux requires a graphical desktop, Electron system libraries and user access to device USB/serial interfaces; no sandbox bypass or automatic USB permission changes are used. Linux Wi-Fi import may be unavailable: use the common device setup guide. macOS/Linux interactive device acceptance remains separate from automated tests. See the central specification for protocol, authentication and field-verification limits.
 
 [Common architecture and repository ownership](https://github.com/fkiller/Snowball_Control/blob/main/docs/ARCHITECTURE.md)
 

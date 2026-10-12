@@ -29,15 +29,38 @@
 
 **PC마다 Snowball을 한 번 설치하세요.** 기본 설치에 Web UI, MK20 검색·연결·음성 런타임, M5Stack 검색·게이트웨이, Codex·Antigravity·OpenCode 하네스 플러그인 3종이 모두 포함됩니다. 기기 프로필을 고르거나 USB 기기를 연결할 필요가 없습니다.
 
-Windows PowerShell에서 실행하세요.
+아래에서 플랫폼을 펼친 뒤 GitHub 코드 블록의 **Copy** 버튼으로 명령을 복사하세요. README Markdown에서는 접기/펼치기 선택을 사용하며, 실제 탭은 별도 문서 웹사이트가 필요합니다.
+
+<details open>
+<summary><strong>Windows · PowerShell</strong></summary>
 
 ```powershell
 & ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/fkiller/Snowball_Middleware/main/install.ps1')))
 ```
 
-설치기는 Node/Git/Python과 구성 요소를 준비하고 실제 격리 하네스 워커를 확인한 뒤, 트레이 아이콘이 있는 사용자별 숨김 백그라운드 앱을 시작합니다. 소유 런타임이 응답하면 설치 터미널로 돌아옵니다. 트레이에서 Web UI, 상태, 설정, 일시정지/재개, 재시작, 종료, 로그인 자동 시작을 제공합니다. Web UI는 **http://127.0.0.1:8765/**이며 기본 설치 위치는 `%LOCALAPPDATA%\Snowball`입니다. **Start-Snowball.ps1**은 다운로드 없이 다시 실행합니다. 네이티브 하네스 앱과 로그인은 공급자를 통해 준비하며, 없으면 사용 불가로 표시합니다.
+</details>
 
-기존 설치 업데이트는 같은 `-InstallRoot`에 `-Update`를 추가하고 `-Profile`은 생략하세요. 기존 단일 기기 설치에도 두 어댑터를 준비하며 기기 설정·페어링 키·컨트롤러 상태·음성 캐시·사용자 지정 API 포트·로그인 자동 시작 설정을 보존합니다. 사설 LAN이 없거나 선택이 모호하면 자동 검색은 대기·재시도하고 Web UI는 유지합니다. 필요하면 `-Bind PC의_사설_IP`를 지정하세요.
+<details>
+<summary><strong>macOS · Terminal</strong></summary>
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/fkiller/Snowball_Middleware/main/install.sh | bash
+```
+
+</details>
+
+<details>
+<summary><strong>Linux · Terminal</strong></summary>
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/fkiller/Snowball_Middleware/main/install.sh | bash
+```
+
+</details>
+
+Windows는 Node/Git/Python을 준비합니다. macOS/Linux는 curl·Git·venv/pip을 포함한 Python >=3.12가 필요하며, 설치기가 체크섬을 검증한 Node LTS를 사용자 폴더에 준비합니다. 구성 요소를 빌드하고 실제 격리 하네스 워커를 확인한 뒤, 트레이 아이콘이 있는 사용자별 숨김 백그라운드 앱을 시작합니다. 소유 런타임이 응답하면 설치 터미널로 돌아옵니다. 트레이에서 Web UI, 상태, 설정, 일시정지/재개, 재시작, 종료, 로그인 자동 시작을 제공합니다. Web UI는 **http://127.0.0.1:8765/**이며 기본 설치 위치는 Windows `%LOCALAPPDATA%\Snowball`, macOS `~/Library/Application Support/Snowball`, Linux `${XDG_DATA_HOME:-~/.local/share}/Snowball`입니다. **Start-Snowball.ps1**(Windows) / **Start-Snowball.sh**(macOS/Linux)은 다운로드 없이 다시 실행합니다. 네이티브 하네스 앱과 로그인은 공급자를 통해 준비하며, 없으면 사용 불가로 표시합니다.
+
+기존 설치 업데이트는 Windows에서 같은 `-InstallRoot`에 `-Update`, macOS/Linux에서 같은 `--root 경로`에 `--update`를 추가하고 프로필 옵션은 생략하세요. 예를 들어 Linux에서는 `install.sh`를 내려받아 `bash install.sh --root "$HOME/.local/share/Snowball" --update`로 갱신합니다(실제 기존 설치 경로 사용). 기존 단일 기기 설치에도 두 어댑터를 준비하며 기기 설정·페어링 키·컨트롤러 상태·음성 캐시·사용자 지정 API 포트·로그인 자동 시작 설정을 보존합니다. 사설 LAN이 없거나 선택이 모호하면 자동 검색은 대기·재시도하고 Web UI는 유지합니다. 필요하면 Windows `-Bind PC의_사설_IP` / macOS·Linux `--bind PC의_사설_IP`를 지정하세요.
 
 MK20은 Wi-Fi에 독립적으로 연결한 뒤 K17(Machines)에서 PC를 선택해 페어링합니다. M5Stack 펌웨어 **0.4.0 이상**은 같은 LAN의 등록 PC와 새 미들웨어를 자동 검색합니다. 머신 목록에서 새 PC를 선택하면 Wi-Fi로 페어링합니다. PC 추가에는 전체 미들웨어 설치만 필요하며 기기별 추가 설치·USB 연결·등록 스크립트는 필요하지 않습니다. 같은 브로드캐스트 서브넷, 기기 포트 허용, 클라이언트 격리 해제 상태의 신뢰하는 사설 LAN을 사용하세요.
 
@@ -56,7 +79,7 @@ MK20 준비 검색은 Windows의 복합 USB 기능을 실제 부모별로 합치
 
 Windows가 Node.js 네트워크 접근을 요청하면 미들웨어가 사용할 개인 네트워크 접근을 허용합니다. 거절하면 백그라운드 미들웨어·USB 감지가 동작해도 LAN 검색과 선택은 차단될 수 있습니다. 로컬 Web UI는 계속 루프백 전용입니다.
 
-옵션: `-Update`, `-InstallRoot 경로`, `-Bind PC의_사설_IP`, `-Port 8765`, `-NoStart`, `-NoShortcut`. `-Profile web|mk20|m5stack`은 개발·진단용 명시적 부분 구성으로 유지하며 일반 설치에서는 필요 없습니다. 같은 루트에 이미 설치된 어댑터는 유지합니다. Node/Git/Python이 준비된 macOS 소스 환경에서는 같은 부모 폴더 체크아웃으로 `npm run setup --`을 실행하며, USB 준비는 `--prepare-m5stack [--no-flash]`로 명시합니다. Linux 전체 워커 런타임은 아직 지원하지 않습니다. 프로토콜·인증·실물 검증 범위는 중앙 명세를 확인하세요.
+옵션: `-Update`, `-InstallRoot 경로`, `-Bind PC의_사설_IP`, `-Port 8765`, `-NoStart`, `-NoShortcut`. `-Profile web|mk20|m5stack`은 개발·진단용 명시적 부분 구성으로 유지하며 일반 설치에서는 필요 없습니다. 같은 루트에 이미 설치된 어댑터는 유지합니다. macOS/Linux 옵션: `--update`, `--root 경로`, `--bind PC의_사설_IP`, `--port 8765`, `--no-start`, `--no-shortcut`, `--python 경로`, `--data-dir 경로`. 전체 옵션은 `bash install.sh --help`로 확인합니다. Linux는 그래픽 데스크톱·Electron 시스템 라이브러리·사용자의 USB/시리얼 접근 권한이 필요하며 sandbox 우회나 USB 권한 자동 변경은 하지 않습니다. Linux에서 OS Wi-Fi 가져오기를 지원하지 않으면 공통 기기 설정 안내를 사용합니다. macOS/Linux의 대화형 실물 기기 인수 검증은 자동 테스트와 별도입니다. 프로토콜·인증·실물 검증 범위는 중앙 명세를 확인하세요.
 
 [공통 아키텍처와 저장소 역할](https://github.com/fkiller/Snowball_Control/blob/main/docs/ARCHITECTURE.md)
 
