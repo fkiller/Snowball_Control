@@ -29,7 +29,7 @@
 
 **PC마다 Snowball을 한 번 설치하세요.** 기본 설치에 Web UI, MK20 검색·연결·음성 런타임, M5Stack 검색·게이트웨이, Codex·Antigravity·OpenCode 하네스 플러그인 3종이 모두 포함됩니다. 기기 프로필을 고르거나 USB 기기를 연결할 필요가 없습니다.
 
-아래에서 플랫폼을 펼친 뒤 GitHub 코드 블록의 **Copy** 버튼으로 명령을 복사하세요. README Markdown에서는 접기/펼치기 선택을 사용하며, 실제 탭은 별도 문서 웹사이트가 필요합니다.
+사용하는 OS를 펼친 뒤 명령을 복사하세요.
 
 <details open>
 <summary><strong>Windows · PowerShell</strong></summary>
@@ -58,41 +58,97 @@ curl -fsSL https://raw.githubusercontent.com/fkiller/Snowball_Middleware/main/in
 
 </details>
 
-Windows는 Node/Git/Python을 준비합니다. macOS/Linux는 curl·Git·venv/pip을 포함한 Python >=3.12가 필요하며, 설치기가 체크섬을 검증한 Node LTS를 사용자 폴더에 준비합니다. 구성 요소를 빌드하고 실제 격리 하네스 워커를 확인한 뒤, 트레이 아이콘이 있는 사용자별 숨김 백그라운드 앱을 시작합니다. 소유 런타임이 응답하면 설치 터미널로 돌아옵니다. 트레이에서 Web UI, 상태, 설정, 일시정지/재개, 재시작, 종료, 로그인 자동 시작을 제공합니다. Web UI는 **http://127.0.0.1:8765/**이며 기본 설치 위치는 Windows `%LOCALAPPDATA%\Snowball`, macOS `~/Library/Application Support/Snowball`, Linux `${XDG_DATA_HOME:-~/.local/share}/Snowball`입니다. **Start-Snowball.ps1**(Windows) / **Start-Snowball.sh**(macOS/Linux)은 다운로드 없이 다시 실행합니다. 네이티브 하네스 앱과 로그인은 공급자를 통해 준비하며, 없으면 사용 불가로 표시합니다.
+설치가 끝나면 트레이 아이콘에서 **http://127.0.0.1:8765/** Web UI와 설정·일시정지/재개·로그인 자동 시작을 관리합니다. Windows는 Node/Git/Python을 준비합니다. macOS/Linux는 curl·Git·venv/pip을 포함한 Python >=3.12가 필요하며 Linux는 그래픽 데스크톱과 Electron 시스템 라이브러리도 필요합니다. 네이티브 하네스 앱 설치와 로그인은 각 공급자를 통해 준비하세요.
 
-기존 설치 업데이트는 Windows에서 같은 `-InstallRoot`에 `-Update`, macOS/Linux에서 같은 `--root 경로`에 `--update`를 추가하고 프로필 옵션은 생략하세요. 예를 들어 Linux에서는 `install.sh`를 내려받아 `bash install.sh --root "$HOME/.local/share/Snowball" --update`로 갱신합니다(실제 기존 설치 경로 사용). 기존 단일 기기 설치에도 두 어댑터를 준비하며 기기 설정·페어링 키·컨트롤러 상태·음성 캐시·사용자 지정 API 포트·로그인 자동 시작 설정을 보존합니다. 사설 LAN이 없거나 선택이 모호하면 자동 검색은 대기·재시도하고 Web UI는 유지합니다. 필요하면 Windows `-Bind PC의_사설_IP` / macOS·Linux `--bind PC의_사설_IP`를 지정하세요.
+<a id="update-snowball"></a>
+## Snowball 업데이트
 
-MK20은 Wi-Fi에 독립적으로 연결한 뒤 K17(Machines)에서 PC를 선택해 페어링합니다. M5Stack 펌웨어 **0.4.0 이상**은 같은 LAN의 등록 PC와 새 미들웨어를 자동 검색합니다. 머신 목록에서 새 PC를 선택하면 Wi-Fi로 페어링합니다. PC 추가에는 전체 미들웨어 설치만 필요하며 기기별 추가 설치·USB 연결·등록 스크립트는 필요하지 않습니다. 같은 브로드캐스트 서브넷, 기기 포트 허용, 클라이언트 격리 해제 상태의 신뢰하는 사설 LAN을 사용하세요.
+### 1. PC 소프트웨어 업데이트
 
-모든 기기 펌웨어·런타임 변경은 공통 **기기 설정…** 창에서 제공합니다. 같은 설치 루트에서 일반 미들웨어 **Update**를 마친 뒤 **Installed → Included**와 개선 사항을 확인하세요. 개발 소스만 수정하면 설치본의 제공 후보는 바뀌지 않습니다.
+**기존에 설치한 폴더를 사용하세요.** 아래는 기본 경로 예시입니다. 다른 폴더(예: `Snowball-LAN`)에 설치했다면 첫 줄을 그 경로로 바꾸세요. 기기 프로필 옵션은 넣지 않습니다.
 
-M5Stack 최초 준비나 펌웨어 갱신은 **USB 연결 시 자동으로 열리는 기기 설정 창**에서 진행합니다. 트레이의 **기기 설정…**에서도 열 수 있습니다. 현재/제공 버전과 개선 사항을 보여주며, 사용자가 설치·업데이트를 선택해야 전체 플래시 비공개 백업 → 펌웨어 쓰기 → Wi-Fi·페어링 저장 영역 보존 검증 → 자동 재기동 확인을 수행합니다. [제공 펌웨어 버전과 개선 사항](https://github.com/fkiller/Snowball_Device_M5Stack/blob/main/firmware/release.json)을 확인할 수 있습니다. 저장된 네트워크가 없으면 기본 선택된 가져오기 옵션으로 업데이트 후 PC의 연결된 Wi-Fi를 OS가 허용하는 범위에서 이관하고, 기존 정보가 있으면 덮어쓰지 않습니다. OS 비밀번호는 해당 선택 이후에만 읽으며 UI·로그에 표시하지 않습니다. 가져올 수 없으면 같은 창에서 설정 → Wi-Fi, 네트워크 선택, FACES 키보드 비밀번호 입력을 그림으로 안내합니다. 최초 ESP32 Core 4MB/16MB만 지원합니다. CP210x만으로 기종을 확정하지 않으며 Snowball 응답이 없는 기기는 사용자가 실제 기종을 확인해야 합니다. 빌드는 누락된 도구를 다운로드할 수 있습니다. 0.3.0 이하는 새 PC LAN 검색을 위해 기기 펌웨어를 한 번 업그레이드해야 합니다. `Register-M5Stack.ps1` / `.sh`는 선택적 레거시 유지보수 도구로 남으며 일반 설치와 `-Update`가 기기를 자동 플래싱하지 않습니다.
+<details open>
+<summary><strong>Windows · PowerShell</strong></summary>
+
+```powershell
+$installRoot = Join-Path $env:LOCALAPPDATA 'Snowball'
+& ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/fkiller/Snowball_Middleware/main/install.ps1'))) -InstallRoot $installRoot -Update
+```
+
+</details>
+
+<details>
+<summary><strong>macOS · Terminal</strong></summary>
+
+```bash
+install_root="$HOME/Library/Application Support/Snowball"
+curl -fsSL https://raw.githubusercontent.com/fkiller/Snowball_Middleware/main/install.sh | bash -s -- --root "$install_root" --update
+```
+
+</details>
+
+<details>
+<summary><strong>Linux · Terminal</strong></summary>
+
+```bash
+install_root="${XDG_DATA_HOME:-$HOME/.local/share}/Snowball"
+curl -fsSL https://raw.githubusercontent.com/fkiller/Snowball_Middleware/main/install.sh | bash -s -- --root "$install_root" --update
+```
+
+</details>
+
+업데이트는 기기 설정·페어링 키·컨트롤러 상태·음성 캐시·API 포트·로그인 자동 시작 선택을 보존합니다. 이전 단일 기기 설치에도 두 기기 어댑터를 포함합니다. PC 업데이트로 **Included(제공)** 후보를 갱신한 뒤, 기기 펌웨어는 아래 절차로 적용합니다.
+
+<a id="update-device"></a>
+### 2. 기기 펌웨어 업데이트
+
+1. PC 업데이트 후 기기를 USB 데이터 케이블로 연결하고 트레이에서 **기기 설정…** 메뉴를 엽니다.
+2. 기기를 선택하고 **Installed(현재) → Included(제공)** 버전과 개선 사항을 확인합니다.
+3. 기종을 확인한 뒤 **설치 / 업데이트**를 선택합니다. 복구 백업 검증과 설정 보존 절차를 거쳐 쓰기를 진행합니다.
+4. 재기동과 실행 버전 확인이 끝날 때까지 USB 연결을 유지합니다. 필요하면 같은 창의 Wi-Fi 안내를 따릅니다.
+
+[기기별 상세 절차와 복구](https://github.com/fkiller/Snowball_Middleware/blob/main/README.ko.md#update-device) · [현재 M5Stack 제공 버전과 개선 사항](https://github.com/fkiller/Snowball_Device_M5Stack/blob/main/firmware/release.json)
+
+<details>
+<summary>기기 설정 화면 예시</summary>
 
 <p align="center">
   <img src="assets/screenshots/m5stack_device_setup_ko.png" width="100%" alt="M5Stack 기기 설정: 현재 0.5.0, 제공 0.5.2 및 전체 플래시 백업 진행 화면"><br>
   <em>사용자 제공 캡처(2026-10-12): 0.5.0 → 0.5.2 업데이트의 전체 플래시 백업이 19%(3.0/16.0 MiB) 진행 중인 예시입니다.</em>
 </p>
 
-MK20과 미래 기기를 포함한 모든 디바이스는 같은 **기기 설정…** 여정(감지·버전/개선 사항·동의·검증한 복구 백업·설정 보존·업데이트·재기동·네트워크 설정/시각 안내)을 따릅니다. 지원 어댑터는 기본 설치에 포함하며 별도 등록 스크립트가 필요 없습니다. MK20 런타임 0.2.5는 제품 USB 수신기를 추가하여 SD 카드를 기기에 둔 채 변경하는 런타임 파티션 전체 백업·고정 파일 전송·자동 재기동 후 실행 이미지 해시 검증을 수행합니다. QMK는 별도 DFU·읽기 백업 경로를 유지합니다. 카드 리더는 일반 여정의 단계가 아닌 고급 복구 수단입니다. 기존에 허용된 LAN 관리 연결이 있는 구 펌웨어에는 Windows 기기 설정에서 **MK20 → 런타임 → 백업 후 런타임 업데이트**를 제공합니다. 런타임 파티션 전체 백업을 검증한 뒤 고정 파일만 교체하고 Wi-Fi·PC 등록 보존과 실제 재부팅 후 실행 파일을 확인합니다. 키보드 USB 연결만으로 런타임 업데이트가 가능해지지는 않습니다. 공통 창은 MK20 실제 20개 화면 키·두 노브와 M5Stack Core A/B/C·FACES를 반영한 단계별 인터랙티브 안내를 제공합니다. 안내 클릭은 실물 제어나 연결 성공으로 처리하지 않습니다. M5Stack 0.5.2는 업데이트 후 실물 백업·Wi-Fi·두 PC LAN 검증을 통과했습니다(상세 범위는 중앙 검증 기록 참조). MK20 첫 USB 이관·업데이트 검증은 미해결이며 일반 LAN 페어링·하네스 3종 계약은 유지합니다.
-
 <p align="center">
   <img src="assets/screenshots/mk20_device_setup_ko.png" width="100%" alt="MK20 한국어 기기 설정: LAN 관리 연결, 제공 런타임 0.2.6 및 런타임 파티션 백업 진행 화면"><br>
   <em>사용자 제공 캡처(2026-10-12): MK20 LAN 관리 연결에서 제공 런타임 0.2.6으로 업데이트하기 위한 파티션 백업 진행 예시입니다. 현재 버전의 미확인은 버전을 확인하지 못했다는 뜻이며, 업데이트 완료 화면은 아닙니다.</em>
 </p>
 
-MK20 준비 검색은 Windows의 복합 USB 기능을 실제 부모별로 합치며 서로 다른 기기는 유지합니다. 키보드 HID·DFU 백업 접근·런타임 CDC 응답·LAN 발견은 별개입니다. 미확인 버전을 추측하지 않습니다. 연결된 구 런타임에는 업데이트 수신기가 없고 첫 USB 이관이 아직 미해결입니다. M5Stack 0.5.2는 새 PC 페어링 재부팅도 수정합니다. 2026-10-12 실물에서 0.5.2, 정상 16MB 백업, 기존 Wi-Fi·구 페어링 보존과 MINIME-PC-AMD·SNOWBALL-395의 인증된 LAN 페어링을 확인했습니다. 반복 전환 시 재부팅 없이 각 PC의 실제 Codex·Antigravity 세션 내용에 도달했습니다. USB는 실제 탐색 핸들러 호출에만 사용했고 페어링·제어는 LAN으로 진행했으며 프롬프트는 보내지 않았습니다. 손으로 버튼 조작과 MK20 첫 USB 이관은 별도 실물 검증입니다.
+</details>
 
-Windows가 Node.js 네트워크 접근을 요청하면 미들웨어가 사용할 개인 네트워크 접근을 허용합니다. 거절하면 백그라운드 미들웨어·USB 감지가 동작해도 LAN 검색과 선택은 차단될 수 있습니다. 로컬 Web UI는 계속 루프백 전용입니다.
+## 기기에서 PC 연결
 
-옵션: `-Update`, `-InstallRoot 경로`, `-Bind PC의_사설_IP`, `-Port 8765`, `-NoStart`, `-NoShortcut`. `-Profile web|mk20|m5stack`은 개발·진단용 명시적 부분 구성으로 유지하며 일반 설치에서는 필요 없습니다. 같은 루트에 이미 설치된 어댑터는 유지합니다. macOS/Linux 옵션: `--update`, `--root 경로`, `--bind PC의_사설_IP`, `--port 8765`, `--no-start`, `--no-shortcut`, `--python 경로`, `--data-dir 경로`. 전체 옵션은 `bash install.sh --help`로 확인합니다. Linux는 그래픽 데스크톱·Electron 시스템 라이브러리·사용자의 USB/시리얼 접근 권한이 필요하며 sandbox 우회나 USB 권한 자동 변경은 하지 않습니다. Linux에서 OS Wi-Fi 가져오기를 지원하지 않으면 공통 기기 설정 안내를 사용합니다. macOS/Linux의 대화형 실물 기기 인수 검증은 자동 테스트와 별도입니다. 프로토콜·인증·실물 검증 범위는 중앙 명세를 확인하세요.
+MK20은 Wi-Fi 연결 후 **K17 · Machines**에서 PC를 선택합니다. M5Stack 펌웨어 0.4.0 이상은 **Machines**에서 등록 PC나 새 PC를 선택하여 LAN으로 페어링합니다. PC 추가에는 전체 PC 설치만 필요하며 USB 등록 스크립트는 필요 없습니다. 기기 포트를 허용하고 클라이언트 격리를 해제한 같은 신뢰 사설 LAN을 사용하세요.
 
-[공통 아키텍처와 저장소 역할](https://github.com/fkiller/Snowball_Control/blob/main/docs/ARCHITECTURE.md)
+<details>
+<summary><strong>고급 옵션</strong></summary>
 
-[Control · MK20](https://github.com/fkiller/Snowball_Control) · [Middleware · Installer / Web UI](https://github.com/fkiller/Snowball_Middleware) · [Device · M5Stack](https://github.com/fkiller/Snowball_Device_M5Stack) · Harness: [Codex](https://github.com/fkiller/Snowball_Harness_Codex), [Antigravity](https://github.com/fkiller/Snowball_Harness_Antigravity), [OpenCode](https://github.com/fkiller/Snowball_Harness_OpenCode)
+| 목적 | Windows | macOS / Linux |
+| --- | --- | --- |
+| 기존 설치 폴더 | `-InstallRoot 경로` | `--root 경로` |
+| 사설 LAN 인터페이스 지정 | `-Bind PC의_사설_IP` | `--bind PC의_사설_IP` |
+| API 포트 지정 | `-Port 포트` | `--port 포트` |
+| 설치 후 실행하지 않기 | `-NoStart` | `--no-start` |
+| 바로가기 생략 | `-NoShortcut` | `--no-shortcut` |
+| 진단용 부분 구성 | `-Profile web\|mk20\|m5stack` | `--profile web\|mk20\|m5stack` |
+
+일반 설치·업데이트는 두 기기와 하네스 3종을 함께 포함합니다. 사설 LAN이 없거나 선택이 모호하면 검색은 대기하고 로컬 Web UI는 유지합니다. Windows가 묻는 경우 미들웨어 Node.js의 개인 네트워크 접근을 허용하세요. Linux의 USB/시리얼 접근은 일반 OS 권한을 사용합니다. Unix 전체 옵션은 `bash install.sh --help`로 확인합니다. 설치 폴더의 **Start-Snowball.ps1** / **Start-Snowball.sh**는 다운로드 없이 다시 실행합니다.
+
+</details>
+
+[공통 아키텍처와 검증 범위](https://github.com/fkiller/Snowball_Control/blob/main/docs/ARCHITECTURE.ko.md)
+
+[Control · MK20](https://github.com/fkiller/Snowball_Control) · [Middleware](https://github.com/fkiller/Snowball_Middleware) · [M5Stack](https://github.com/fkiller/Snowball_Device_M5Stack) · Harness: [Codex](https://github.com/fkiller/Snowball_Harness_Codex), [Antigravity](https://github.com/fkiller/Snowball_Harness_Antigravity), [OpenCode](https://github.com/fkiller/Snowball_Harness_OpenCode)
 
 ---
-
-기기 설정은 **화면·통신 런타임**과 **키보드 펌웨어 QMK**를 구분합니다. 같은 기기 ID·주소의 LAN 상태와 관리 연결은 런타임 하나로 표시하며 일반 USB의 QMK 버전 미확인은 구버전을 뜻하지 않습니다. **키보드 펌웨어 확인 모드로 전환**은 QMK 영역에서 대상 MK20·USB 연결에 동의한 뒤 선택합니다. 실제 DFU 이미지 비교 뒤 필요한 경우에만 별도로 백업 후 업데이트합니다. 읽기 가능한 DFU 항목에는 **업데이트 없이 키보드로 돌아가기**도 있습니다. 자동 연결 조회는 체크 상태·버튼·열린 안내를 깜빡이게 하지 않습니다. 수동 DFU는 MK20 전원을 끈 뒤 20개 사각 화면 키 중 맨 윗줄 맨 왼쪽 키(원형 노브 아님)를 누른 채 전원을 켜고 PC USB를 연결하세요. 별도 전원에서는 USB만 다시 꽂아도 전원이 꺼지지 않을 수 있습니다. 자세한 동작과 실물 검증 한계는 중앙 설계 문서를 참조하세요.
 
 ## 🌟 개요 (Overview)
 
