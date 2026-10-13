@@ -168,14 +168,19 @@ def probe(target, directory):
             except (ValueError, KeyError, OSError):
                 pass
     elif target['native']:
+        maple = None
         try:
-            data = setup_qmk.Maple(target['native']).read()
+            maple = setup_qmk.Maple(target['native'])
+            state['returnSupported'] = True
+            data = maple.read()
             binary = (ROOT/'qmk/bin/syk_keyboards_mk20_plus_via.bin').read_bytes()
-            if data[:len(binary)] == binary:
+            state['imageMatch'] = data[:len(binary)] == binary
+            if state['imageMatch']:
                 state['currentVersion'] = RELEASE['components']['qmk']['version']
             state['nextStep'] = 'ready'
         except Exception:
-            state['writable'] = False; state['nextStep'] = 'usb-driver'
+            state['writable'] = False
+            state['nextStep'] = 'qmk-readback' if maple is not None else 'usb-driver'
     return state
 
 

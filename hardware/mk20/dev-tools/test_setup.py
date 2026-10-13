@@ -9,10 +9,21 @@ from unittest.mock import patch
 import setup_maintenance
 from setup_usb import canonical_device_id
 import setup_bridge as bridge
-from setup_qmk import image_with_settings
+from setup_qmk import image_with_settings, upload_end_stall, CAPACITIES
 
 
 class PreparationGuards(unittest.TestCase):
+    def test_maple_end_stall_requires_a_complete_region_and_clean_idle_status(self):
+        idle = bytes.fromhex('000000000200')
+        for size in CAPACITIES:
+            self.assertTrue(upload_end_stall(-9, size, idle))
+            for status in (b'', idle[:5], bytes.fromhex('0f0000000a00'), bytes.fromhex('000000000900')):
+                self.assertFalse(upload_end_stall(-9, size, status))
+            for error in (-7, -4, 0):
+                self.assertFalse(upload_end_stall(error, size, idle))
+        for size in (0, 1024, CAPACITIES[0]-1024, CAPACITIES[1]-1024, 128*1024):
+            self.assertFalse(upload_end_stall(-9, size, idle))
+
     def test_windows_pnp_serial_case_keeps_real_mac_identity(self):
         self.assertEqual(canonical_device_id('MK20-AABBCCDDEEFF'), 'mk20-aabbccddeeff')
         self.assertEqual(canonical_device_id('mk20-aabbccddeeff'), 'mk20-aabbccddeeff')

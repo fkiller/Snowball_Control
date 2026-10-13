@@ -12,6 +12,17 @@ import uuid
 from setup_storage import token
 
 VID, PID, ALT, BLOCK = 0x1eaf, 0x0003, 2, 1024
+CAPACITIES = (64*1024-8192, 128*1024-8192)
+
+
+def upload_end_stall(error_code, size, status):
+    """Maple returns an EP0 STALL for its zero-length end-of-flash upload.
+
+    Accept only libusb PIPE at a supported complete application boundary with
+    an error-free dfuIDLE response. A failed data block must still fail closed.
+    See STM32duino dfu.c dfuUPLOAD_IDLE and usb_core.c Data_Setup0.
+    """
+    return error_code == -9 and size in CAPACITIES and len(status) == 6 and status[0] == 0 and status[4] == 2
 
 
 def devices():
@@ -60,15 +71,27 @@ class Maple:
         raise RuntimeError('qmk_dfu_timeout')
 
     def read(self):
+        import usb.core
         self.request(6)
         data = bytearray()
         for block in range(129):
-            chunk = bytes(self.request(2, block, BLOCK, read=True))
+            try:
+                chunk = bytes(self.request(2, block, BLOCK, read=True))
+            except usb.core.USBError as error:
+                # The bootloader sets dfuIDLE at the flash boundary, then its
+                # USB stack stalls the zero-length reply instead of sending it.
+                # Never turn a timeout, disconnect, or short read into success.
+                if error.backend_error_code != -9 or len(data) not in CAPACITIES:
+                    raise
+                status = bytes(self.request(3, data=6, read=True))
+                if not upload_end_stall(error.backend_error_code, len(data), status):
+                    raise
+                break
             data.extend(chunk)
             if len(chunk) < BLOCK:
                 break
         self.request(6)
-        if len(data) not in (64*1024-8192, 128*1024-8192):
+        if len(data) not in CAPACITIES:
             raise RuntimeError('qmk_backup_capacity_unrecognized')
         return bytes(data)
 
@@ -80,9 +103,12 @@ class Maple:
         self.request(6)
 
     def reboot(self):
-        self.request(1, 0, b'')
+        # An empty DNLOAD in dfuIDLE is rejected by Maple. A one-byte UPLOAD
+        # enters dfuUPLOAD_IDLE without writing before requesting USB reset.
+        # Some Windows drivers cannot reset the MCU: arrival must be verified.
+        self.request(6)
+        self.request(2, 0, 1, read=True)
         try:
-            self.idle()
             self.dev.reset()
         except Exception:
             pass  # Re-enumeration, not this exception, determines completion.
