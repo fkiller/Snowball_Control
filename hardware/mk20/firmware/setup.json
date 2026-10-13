@@ -48,7 +48,7 @@
         "왼쪽 노브를 눌러 강조한 PC를 선택하세요. 새 PC라면 페어링도 이 선택으로 시작됩니다.",
         "실제 기기에서 선택한 PC의 하네스·프로젝트·세션이 나타나는지 확인하세요. 나타나지 않으면 연결 완료가 아닙니다."
       ],
-      "note": "Wi-Fi는 위 PC 창에서 가져오거나 직접 입력합니다. 현재 MK20에는 기기에서 비밀번호를 편집하는 메뉴가 없습니다. 이 안내는 조작 연습이며 실제 기기를 제어하지 않습니다. QMK 키보드 펌웨어는 별도 DFU 확인이 필요합니다. 카드 리더는 고급 복구 수단입니다.",
+      "note": "Wi-Fi는 위 PC 창에서 가져오거나 직접 입력합니다. 현재 MK20에는 기기에서 비밀번호를 편집하는 메뉴가 없습니다. 이 안내는 조작 연습이며 실제 기기를 제어하지 않습니다. QMK는 위 업데이트 준비 버튼으로 DFU에 진입한 뒤 별도로 확인합니다. 버튼이 없으면 USB를 빼고 좌측 상단 키를 누른 채 연결하세요. 카드 리더는 고급 복구 수단입니다.",
       "diagram": {
         "title": "MK20 · 20 display keys / 2 knobs",
         "selection": "K17 Machines",
@@ -121,7 +121,7 @@
         "Press the left knob to select the highlighted PC. Selecting a new PC also starts pairing.",
         "Check the physical device for the selected PC’s harnesses, projects and sessions. If they do not appear, connection is not complete."
       ],
-      "note": "Import or enter Wi-Fi in this PC window. MK20 currently has no on-device password editor. This walkthrough explains the controls; it does not control your device. QMK keyboard firmware requires its separate DFU step. A card reader is an advanced recovery tool.",
+      "note": "Import or enter Wi-Fi in this PC window. MK20 currently has no on-device password editor. This walkthrough explains the controls; it does not control your device. Use Prepare QMK update above to enter DFU for a separate image check. If unavailable, unplug USB, hold the top-left key and reconnect. A card reader is an advanced recovery tool.",
       "diagram": {
         "title": "MK20 · 20 display keys / 2 knobs",
         "selection": "K17 Machines",

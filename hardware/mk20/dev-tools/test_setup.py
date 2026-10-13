@@ -50,6 +50,18 @@ class PreparationGuards(unittest.TestCase):
         existing = [{'usbIdentity': 'cdc|mk20-aabbccddeeff|COM5', 'native': {'transport': 'usb'}}]
         self.assertEqual(bridge.usb_presence_targets([{'identity': identity}], existing), [])
 
+    def test_duplicate_pnp_presence_keeps_one_physical_parent(self):
+        identity = r'USB\VID_4250&PID_426F\7&one&0&2'
+        self.assertEqual(bridge.usb_presence_targets([{'identity':identity}], [{'usbIdentity':identity.upper()}]), [])
+
+    def test_current_images_and_newer_versions_never_authorize_redundant_writes(self):
+        version = bridge.RELEASE['components']['runtime']['version']
+        state = dict(component='runtime', currentVersion=version, imageMatch=True)
+        self.assertFalse(bridge.update_needed(state))
+        self.assertTrue(bridge.update_needed(state | {'imageMatch':False}))
+        self.assertTrue(bridge.update_needed(state | {'currentVersion':None}))
+        self.assertFalse(bridge.update_needed(state | {'currentVersion':'9999.0.0','imageMatch':False}))
+
     def test_qmk_plan_preserves_every_byte_outside_reviewed_binary(self):
         original=bytes(range(256))*224
         image=image_with_settings(original,b'\x01'*39244)

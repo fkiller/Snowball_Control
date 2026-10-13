@@ -37,6 +37,15 @@ def progress(phase, **data):
     emit('progress', phase=phase, **data)
 
 
+def update_needed(state):
+    current = state.get('currentVersion')
+    expected = RELEASE['components'][state['component']]['version']
+    if not current:
+        return True
+    before, after = tuple(map(int, current.split('.'))), tuple(map(int, expected.split('.')))
+    return before < after or (before == after and state.get('imageMatch') is False)
+
+
 def atomic(file, data):
     file = Path(file)
     if file.is_symlink() or any(p.is_symlink() for p in file.parents):
@@ -77,6 +86,8 @@ def usb_presence_targets(found, existing):
             continue
         seen.add(identity.lower())
         linux = match[1].upper() == '1D6B&PID_0104'
+        if any(t['usbIdentity'].lower() == identity.lower() for t in existing):
+            continue
         if linux and any(t['usbIdentity'].split('|')[1].lower() in identity.lower()
                          for t in existing if (t.get('native') or {}).get('transport') == 'usb'):
             continue
@@ -315,7 +326,7 @@ def runtime_status(address, device_id):
 
 
 def main():
-    parser=argparse.ArgumentParser(); parser.add_argument('--command',required=True,choices=['list','probe','install','wifi','verify','status']); parser.add_argument('--port'); parser.add_argument('--backup-dir',required=True)
+    parser=argparse.ArgumentParser(); parser.add_argument('--command',required=True,choices=['list','probe','install','prepare','wifi','verify','status']); parser.add_argument('--port'); parser.add_argument('--backup-dir',required=True)
     args=parser.parse_args(); request=json.loads(sys.stdin.readline(65537) or '{}')
     directory=Path(args.backup_dir).resolve(strict=True)
     if args.command=='status':
@@ -335,6 +346,14 @@ def main():
     if args.command=='probe':
         emit('target',target=probe(target,directory)); return
     if request.get('confirmBoard') is not True or request.get('version')!=RELEASE['version'] or request.get('usbIdentity')!=target['usbIdentity']:
+        raise RuntimeError('firmware_review_required')
+    if args.command=='prepare':
+        if target['component']!='runtime' or not target['native'] or target['native'].get('transport')!='maintenance':
+            raise RuntimeError('qmk_bootloader_command_unavailable')
+        setup_maintenance.prepare_qmk(target)
+        emit('prepared',component='qmk');return
+    state = probe(target,directory)
+    if not state['writable'] or not update_needed(state):
         raise RuntimeError('firmware_review_required')
     if not target['native']:
         raise RuntimeError('qmk_enter_dfu_required')

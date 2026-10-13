@@ -41,7 +41,7 @@ def adb(args, endpoint=None, timeout=15, destination=None):
     return result.stdout
 
 
-IDENTITY = ('test -e /dev/fb21 && test -e /dev/ttyS1 && '
+IDENTITY = ('test -e /dev/fb21 && test -r /dev/ttyS1 && test -w /dev/ttyS1 && '
             'test -r /dev/mmcblk0p1 && test -f /mnt/SDCARD/lunch.sh && '
             'test -f /mnt/SDCARD/mk20-hud && test -f /mnt/SDCARD/mk20-audio && '
             'uname -m && cat /sys/class/net/wlan0/address')
@@ -91,12 +91,55 @@ def hashes(endpoint, names):
     return result
 
 
+QMK_OWNER = r'''p=$(pidof mk20-hud)
+case "$p" in ''|*[!0-9]*) exit 1 ;; esac
+uart=
+for f in /proc/$p/fd/*; do
+if test "$(readlink "$f")" = /dev/ttyS1; then uart=1; break; fi
+done
+test "$uart" = 1 || exit 1
+'''
+
+
 def probe(target, release):
     current = hashes(target['native']['endpoint'], ('mk20-hud', 'mk20-audio'))
     expected = release['components']['runtime']['images']
     matches = all(current.get(name) == expected[name] for name in expected)
+    try:
+        supported = adb(['shell', QMK_OWNER+'printf ready'], target['native']['endpoint']).strip() == b'ready'
+    except (RuntimeError, subprocess.TimeoutExpired):
+        supported = False
     return dict(component='runtime', currentVersion=release['version'] if matches else None,
-                nextStep='maintenance', writable=True, imageMatch=matches)
+                nextStep='maintenance', writable=True, imageMatch=matches, prepareSupported=supported)
+
+
+def prepare_qmk(target):
+    """Explicitly request the manufacturer's UART bootloader command, no flash.
+
+    The native HUD owns ttyS1: stop it only while sending the fixed frame and
+    resume it with a shell trap, including failures. LAN identity is rechecked;
+    neither a renderer command nor an inferred USB/LAN identity is accepted.
+    """
+    import setup_qmk
+    endpoint = target['native']['endpoint']
+    if identity(endpoint) != target['native']['deviceId']:
+        raise RuntimeError('maintenance_identity_unconfirmed')
+    before = {d['port'] for d in setup_qmk.devices()}
+    # mk20_plus.c processByte(): AA55, sum, len, inverse-len, data, F55F.
+    # id_custom_request_bootloader_jump = 0x19; no EEPROM/keymap operation.
+    # The running HUD already configured its open UART as 115200 8N1.
+    # Tina Linux has no stty utility; require that real owner instead.
+    script = QMK_OWNER+r'''trap 'kill -CONT $p' EXIT
+kill -STOP $p || exit 1
+printf '\252\125\031\001\376\031\365\137' > /dev/ttyS1'''
+    adb(['shell', script], endpoint)
+    deadline = time.monotonic()+20
+    while time.monotonic() < deadline:
+        arrived = [d for d in setup_qmk.devices() if d['port'] not in before]
+        if len(arrived) == 1:
+            return
+        time.sleep(.25)
+    raise RuntimeError('qmk_dfu_unconfirmed')
 
 
 SETTINGS = r'''for f in /mnt/SDCARD/dev-access.conf /mnt/SDCARD/snowball-*; do

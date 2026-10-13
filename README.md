@@ -92,6 +92,8 @@ Options: `-Update`, `-InstallRoot PATH`, `-Bind PRIVATE_PC_IP`, `-Port 8765`, `-
 
 ---
 
+Device setup hides Update when the installed component matches the included image, removes disconnected USB entries and quietly checks in the background. A connected device needing an update opens review once; repeated checks do not reopen a dismissed window. Independently connected LAN maintenance remains labeled separately. For QMK, keep USB connected and choose **Prepare QMK update** in its authorized LAN maintenance entry after model confirmation to request DFU, then review its readback before choosing a backed-up update. Normal keyboard USB cannot report its exact firmware image.
+
 ## 🌟 Overview
 
 **Snowball is an inter-Harness local control interface.** It gives developers a common way to navigate and control Codex, AGY, and OpenCode through an MK20 desk terminal and local Web Supervisor. The user chooses the harness, project, and session; each harness keeps its native runtime, history, models, and permissions.
