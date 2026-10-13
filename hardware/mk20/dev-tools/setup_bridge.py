@@ -326,7 +326,7 @@ def runtime_status(address, device_id):
 
 
 def main():
-    parser=argparse.ArgumentParser(); parser.add_argument('--command',required=True,choices=['list','probe','install','prepare','wifi','verify','status']); parser.add_argument('--port'); parser.add_argument('--backup-dir',required=True)
+    parser=argparse.ArgumentParser(); parser.add_argument('--command',required=True,choices=['list','probe','install','prepare','return-keyboard','wifi','verify','status']); parser.add_argument('--port'); parser.add_argument('--backup-dir',required=True)
     args=parser.parse_args(); request=json.loads(sys.stdin.readline(65537) or '{}')
     directory=Path(args.backup_dir).resolve(strict=True)
     if args.command=='status':
@@ -339,7 +339,7 @@ def main():
         verify_runtime(args.port,directory,request.get('lan',[])); return
     targets=inventory(directory)
     if args.command=='list':
-        emit('ports',ports=[{k:t[k] for k in ('port','usbIdentity','label','component','present','transport') if k in t} for t in targets]); return
+        emit('ports',ports=[{k:t[k] for k in ('port','usbIdentity','label','component','present','transport','deviceId','address') if k in t} for t in targets]); return
     target=next((t for t in targets if t['port']==args.port),None)
     if not target:
         raise RuntimeError('setup_target_disconnected')
@@ -352,6 +352,12 @@ def main():
             raise RuntimeError('qmk_bootloader_command_unavailable')
         setup_maintenance.prepare_qmk(target)
         emit('prepared',component='qmk');return
+    if args.command=='return-keyboard':
+        if target['component']!='qmk' or not target['native'] or request.get('network') or request.get('migrateWifi') or request.get('ssid'):
+            raise RuntimeError('firmware_review_required')
+        setup_qmk.Maple(target['native']).reboot()
+        wait_keyboard(target['native'])
+        emit('returned',component='qmk');return
     state = probe(target,directory)
     if not state['writable'] or not update_needed(state):
         raise RuntimeError('firmware_review_required')
@@ -370,15 +376,20 @@ def main():
     if hashlib.sha256(image).hexdigest()!=RELEASE['components']['qmk']['sha256']:
         raise RuntimeError('invalid_qmk_image')
     backup=setup_qmk.install(target['native'],image,directory,progress)
+    wait_keyboard(target['native'])
+    emit('verified',component='qmk',version=RELEASE['components']['qmk']['version'],backup=str(backup))
+
+
+def wait_keyboard(target):
     # Actual keyboard arrival is required; no timer converts reset into success.
     deadline=time.monotonic()+25
     while time.monotonic()<deadline:
         import libusb_package,usb.core,usb.backend.libusb1
         backend=usb.backend.libusb1.get_backend(find_library=libusb_package.find_library)
-        original=target['native']['dev']
+        original=target['dev']
         arrived=any(d.bus==original.bus and d.port_numbers and tuple(d.port_numbers)==tuple(original.port_numbers or ()) for d in usb.core.find(find_all=True,idVendor=0x4250,idProduct=0x426f,backend=backend))
         if arrived:
-            emit('verified',component='qmk',version=RELEASE['components']['qmk']['version'],backup=str(backup)); return
+            return
         time.sleep(.5)
     raise RuntimeError('qmk_reboot_unconfirmed')
 

@@ -75,7 +75,8 @@ def devices():
             continue
         key = 'maintenance|'+device_id+'|'+endpoint
         found.append(dict(port=token(key), usbIdentity=key, label='MK20 · LAN maintenance', component='runtime',
-                          transport='maintenance', native=dict(transport='maintenance', endpoint=endpoint, deviceId=device_id)))
+                          transport='maintenance', deviceId=device_id, address=endpoint.rsplit(':', 1)[0],
+                          native=dict(transport='maintenance', endpoint=endpoint, deviceId=device_id)))
     return found
 
 
