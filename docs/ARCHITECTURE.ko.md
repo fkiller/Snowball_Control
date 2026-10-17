@@ -459,6 +459,8 @@ Control `host`에서 `npm ci && npm run build`, Middleware에서 `npm ci && npm 
 
 필수 검사: Control `host`의 `npm test`, 명시적으로 나열한 `plugins/device-mk20/tests/*.test.mjs` 파일의 `node --test`, `hardware/mk20/contract/Test-QmkProtocol.ps1`, Middleware의 `npm test`, `node --test tests/mk20-ux-parity.test.mjs`, `node scripts/test-harness-switching.mjs`. STT는 Python 의존성과 실제 발화 WAV fixture를 준비한 뒤 Control `host`에서 `npm run test:stt`로 별도 실행한다. 일반 테스트는 STT 통합을 명시적으로 skip하며 설치되지 않은 모델을 몰래 다운로드하지 않는다.
 
+**이식 가능한 회귀 검사**: Git diff 미리보기는 선택한 프로젝트 루트를 실제 경로로 해석한 뒤 파일의 실제 경로와 비교한다. macOS 임시 디렉터리 등 정상적인 프로젝트 별칭을 허용하면서 프로젝트 밖으로 향하는 경로 이동과 링크는 계속 차단한다. 디렉터리 링크를 거쳐 실제 Git 저장소의 diff를 읽고 외부 링크가 거부되는 회귀 검사를 포함한다. MK20 UDP 통합 검사는 실제 연결된 사설 IPv4 어댑터 하나를 명시적으로 선택하므로 클라우드 NIC가 여러 개여도 데스크톱 LAN 자동 선택에 의존하지 않는다. 실제 UDP 패킷으로 lease 교체·만료·이전 작업 차단을 검사하며 운영 LAN 자동 선택은 여전히 모호한 인터페이스를 거부한다. 기기 펌웨어·페어링·하네스 dispatch·SDK/worker 계약·저장된 컨트롤러 설정은 바꾸지 않는다. 실물 하드웨어와 인증된 네이티브 하네스 인수 검증은 CI와 구분한다.
+
 실물 화면은 Middleware `scripts/dump_mk20_screens.py --adb PATH --device ADDRESS:PORT --output-dir LOCAL_DIRECTORY`로 캡처한다. framebuffer 크기를 실물에서 읽으며 개인 절대 경로를 코드에 고정하지 않는다. 새 HUD 배포 후 한글 긴 목록, 모델 선택, 물리 키 승인·중단, USB host 없는 부팅은 별도 실물 확인이 필요하다. 자동 통과 숫자나 100% 커버리지를 배지로 고정하지 않는다.
 
 2026-10-02 로컬 검증에서 Control 66개(별도 STT 2개 제외), 별도 실제 WAV STT 2개, MK20 plugin 13개, QMK 계약 14개, 레거시 승인 차단 15개가 통과했다. Middleware는 241개 통과/5개 선택 검사 제외, MK20 encoder·카탈로그·파일 경계 검사는 15개 통과했다. 선택 STT runtime 검사 6개도 로컬에 준비된 환경에서 별도로 통과했다. 실제 설치 목록을 이용한 하네스 전환 검사도 통과했으나 OpenCode CLI 턴 실행은 검사하지 않았다. HUD는 실제 Tina ARM SDK로 빌드하고 C 파서를 sanitizer로 검사했다. 현재 기기의 framebuffer 캡처는 확인했지만 수정 바이너리를 기기에 배포한 결과는 아니다. 이 결과는 Windows 리뷰 환경의 기록이며 다른 OS나 모든 하네스 버전의 인증이 아니다.
