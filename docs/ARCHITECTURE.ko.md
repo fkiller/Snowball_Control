@@ -473,7 +473,7 @@ Control `host`에서 `npm ci && npm run build`, Middleware에서 `npm ci && npm 
 
 Supervisor 단독 런타임의 기본 하네스 survey는 현재 Windows/macOS에서만 연결된다. Linux suite의 Web 설치·네이티브 tray/패키지 검증은 위 멀티플랫폼 기록으로 구분하며, 이 검증을 실제 공급자 하네스 dispatch·기기 인수까지 확대 해석하지 않는다. 기본 STT runtime 테스트는 형제 Control checkout과 Python 의존성 설치를 수행하는 검사를 `SNOWBALL_TEST_STT=1`일 때만 실행한다.
 
-**검토한 공개 런타임:** [MK20 Preview 0.2.6](https://github.com/fkiller/Snowball_Control/releases/tag/mk20-preview-0.2.6)의 `mk20-runtime.zip`, SHA-256 `2916a40413f5fe0b89d67924b7d1cc0028c6fdd9dfecd4e0c3045e32d683d99c`. manifest는 네이티브 소스 커밋 `b4be16726240cbf4a72854015e3d8e0b1cd79455`, SNMK1과 SNAU-lease-v1을 고정하며 포함 파일 55개의 해시를 검증했다. 실제 제조사 ARM 도구 체인으로 빌드한 HUD/audio, 부팅 스크립트, 폰트·라이선스와 해당 HUD/제조사 QMK 소스·고지를 포함한다. 공통 준비와 명시적인 읽기 전용 `-NoDeploy` 진단 모두 이 릴리스를 고정한다. 일반 PC 추가 설치는 이를 기기에 배포하지 않는다. 산출물 검증을 새 바이너리의 실물 실행 증거로 취급하지 않는다.
+**검토한 공개 런타임:** [MK20 Preview 0.2.7](https://github.com/fkiller/Snowball_Control/releases/tag/mk20-preview-0.2.7)의 `mk20-runtime.zip`, SHA-256 `f30584756f799f6d4c71b4abd2a9a9e4c9784424d5124986e66340eec2cca94c`. manifest는 네이티브 소스 커밋 `535bc7f17c552d7ba8c9a063b1e4f41808eebe4c`, SNMK1·SNAU-lease-v1·SNMU1을 고정하며 포함 파일 61개의 해시를 검증했다. 실제 제조사 ARM 도구 체인으로 빌드한 HUD/audio/USB updater, 부팅 스크립트, 비트맵 atlas·생성기·폰트·라이선스와 해당 HUD/제조사 QMK 소스·고지를 포함한다. 공통 준비와 명시적인 읽기 전용 `-NoDeploy` 진단 모두 이 릴리스를 고정한다. 일반 PC 추가 설치는 이를 기기에 배포하지 않는다. 산출물 검증을 새 바이너리의 실물 실행 증거로 취급하지 않는다.
 
 ## 7. 공개 전 남은 검증과 질문
 

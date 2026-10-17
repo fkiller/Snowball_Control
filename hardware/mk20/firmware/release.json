@@ -1,6 +1,6 @@
 {
   "board": "mk20",
-  "version": "0.2.6",
+  "version": "0.2.7",
   "components": {
     "qmk": {
       "name": "QMK keyboard",
@@ -9,17 +9,20 @@
     },
     "runtime": {
       "name": "T113 runtime / USB",
-      "version": "0.2.6",
-      "url": "https://github.com/fkiller/Snowball_Control/releases/download/mk20-preview-0.2.6/mk20-runtime.zip",
-      "sha256": "2916a40413f5fe0b89d67924b7d1cc0028c6fdd9dfecd4e0c3045e32d683d99c",
+      "version": "0.2.7",
+      "url": "https://github.com/fkiller/Snowball_Control/releases/download/mk20-preview-0.2.7/mk20-runtime.zip",
+      "sha256": "f30584756f799f6d4c71b4abd2a9a9e4c9784424d5124986e66340eec2cca94c",
       "images": {
-        "mk20-hud": "94b00de6ff120a3abca1e204c53b8748592c2893d1e30d040ea9ce2a4c2559fd",
+        "mk20-hud": "8a937aac8f7b4d2f1b164af3977ed6c1f44a04e66c0372085ced9776903074a5",
         "mk20-audio": "1c13d8be6c019a208d5ccd59c26f68f0a719088710c9a572c4a2e2646617e19e"
       }
     }
   },
   "changes": {
     "ko": [
+      "대화를 Markdown 미리보기로 표시합니다. 제목·목록·인용·코드·표를 작은 화면에 맞추고 스크롤 중 서식을 유지합니다.",
+      "Neo둥근모 기반 16×16 단색 한글 비트맵을 내장해 낮은 해상도에서도 획을 또렷하게 표시합니다.",
+      "코드의 따옴표·괄호·역슬래시를 보존하고 누락된 ASCII 비트맵 문자를 보완합니다.",
       "복구 후 HUD/audio 재시작 과정에 USB 수신 채널·단일 실행 잠금이 상속되지 않도록 보호합니다.",
       "SD 카드를 분리하지 않는 제품 USB 런타임 업데이트 수신기를 추가합니다. 구 펌웨어의 최초 이관 필요 여부는 별도로 표시합니다.",
       "변경하는 런타임 파티션 전체를 읽기 전용으로 백업·해시 검증한 뒤 고정 파일만 전송합니다. 중단된 파일 교체는 부팅 시 이전 세트로 복구합니다.",
@@ -27,6 +30,9 @@
       "실제 MK20의 20개 화면 키와 두 노브를 반영한 단계별 조작 안내를 제공합니다."
     ],
     "en": [
+      "Renders conversation Markdown as a compact preview with headings, lists, quotes, code and tables; keeps formatting while scrolling.",
+      "Embeds monochrome 16×16 Hangul bitmaps derived from NeoDunggeunmo for crisp low-resolution text.",
+      "Preserves code quotes, brackets and backslashes, and fills missing ASCII bitmap glyphs.",
       "Prevents restarted HUD/audio children from inheriting the USB receiver channel or single-instance lock during recovery.",
       "Adds a product USB runtime receiver: leave the SD card in the device. Legacy firmware requiring initial migration is identified separately.",
       "Reads and hash-verifies the entire affected runtime partition before fixed-file transfer. Interrupted replacement rolls back at boot.",
