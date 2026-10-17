@@ -13,11 +13,14 @@ const stage = path.resolve(destination);
 if(execFileSync('git',['status','--porcelain','--untracked-files=normal','--','hardware/mk20/hud','hardware/mk20/dev-tools/lunch.sh','hardware/mk20/qmk','hardware/mk20/firmware/runtime-version.h'],{cwd:root,encoding:'utf8'}).trim())throw Error('Commit runtime source before packaging');
 if (fs.existsSync(stage)) throw Error('Stage directory must be new');
 fs.mkdirSync(stage, { recursive: true });
-const deploy = ['mk20-hud', 'mk20-audio', 'lunch.sh', 'fonts/D2Coding.ttf'];
+const deploy = ['mk20-hud', 'mk20-audio', 'lunch.sh', 'fonts/D2Coding.ttf', 'mk20-update'];
 const copy = (source, name) => { fs.mkdirSync(path.dirname(path.join(stage, name)), { recursive: true }); fs.copyFileSync(source, path.join(stage, name)); };
-for (const name of ['mk20-hud', 'mk20-audio']) copy(path.join(root, 'hardware/mk20/hud', name), name);
+for (const name of ['mk20-hud', 'mk20-audio', 'mk20-update']) copy(path.join(root, 'hardware/mk20/hud', name), name);
 copy(path.join(root,'hardware/mk20/dev-tools/lunch.sh'), 'lunch.sh');
 copy(fontFile, 'fonts/D2Coding.ttf'); copy(fontLicense, 'licenses/D2Coding-OFL.txt');
+copy(path.join(root, 'hardware/mk20/hud/fonts/OFL.txt'), 'licenses/Snowball-Hangul-Pixels-OFL.txt');
+copy(path.join(root, 'hardware/mk20/hud/fonts/OFL.txt'), 'source/hud/fonts/OFL.txt');
+copy(path.join(root, 'hardware/mk20/dev-tools/generate-hangul-font.py'), 'source/dev-tools/generate-hangul-font.py');
 copy(path.join(root, 'LICENSE'), 'licenses/Snowball-LICENSE.txt');
 copy(path.join(root, 'hardware/mk20/qmk/LICENSE'), 'licenses/QMK-LICENSE.txt');
 copy(path.join(root, 'hardware/mk20/firmware/runtime-version.h'), 'source/firmware/runtime-version.h');
@@ -38,5 +41,5 @@ function scan(directory, prefix = '') {
 }
 scan(stage);
 const commit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
-fs.writeFileSync(path.join(stage, 'manifest.json'), JSON.stringify({ version: 1, deviceProtocol:'SNMK1', audioProtocol:'SNAU-lease-v1', sourceCommit: commit, target: 'Tina Linux ARMv7 hard-float', toolchain: 'vendor arm-openwrt-linux GCC 6.4.1 / glibc 2.23; FreeType 2.6.1 headers', deploy, files }, null, 2) + '\n');
+fs.writeFileSync(path.join(stage, 'manifest.json'), JSON.stringify({ version: 1, deviceProtocol:'SNMK1', audioProtocol:'SNAU-lease-v1', usbUpdateProtocol:'SNMU1', sourceCommit: commit, target: 'Tina Linux ARMv7 hard-float', toolchain: 'vendor arm-openwrt-linux GCC 6.4.1 / glibc 2.23; FreeType 2.6.1 headers', deploy, files }, null, 2) + '\n');
 console.log(stage);

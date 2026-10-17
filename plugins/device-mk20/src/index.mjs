@@ -39,6 +39,16 @@ function text(value, maxBytes) {
   for (const char of value.replace(/[\x00-\x1f\x7f"\\{}\[\]]/g,' ')) { if (Buffer.byteLength(out+char)>maxBytes) break; out+=char; }
   return out;
 }
+// Body strings are JSON-escaped by JSON.stringify and decoded by the HUD's
+// read_display_string. Keep source punctuation visible in rendered code blocks.
+function bodyText(value, maxBytes) {
+  requireThat(typeof value === 'string', 'invalid_text'); let out = '';
+  for (const char of value.replace(/[\x00-\x1f\x7f]/g, ' ')) {
+    if (Buffer.byteLength(out + char) > maxBytes) break;
+    out += char;
+  }
+  return out;
+}
 /** Pure renderer. Deliberately no machine/harness/session or mutable global selection dependency. */
 export function encodeLegacyPreview(view, sequence) {
   requireThat(view && int(sequence,0,Number.MAX_SAFE_INTEGER) && Array.isArray(view.keys) && view.keys.length <= 20 && Array.isArray(view.lines) && view.lines.length <= 8, 'invalid_view');
@@ -57,7 +67,11 @@ export function encodeLegacyPreview(view, sequence) {
     }
     return k;
   });
-  const packet={type:'v2_sync',seq:sequence,viewMode:text(view.mode ?? 'lab',15),topTitle:text(view.title,63),topSubtitle:text(view.subtitle ?? '',63),topBody:view.lines.map(line=>text(line,168)).join('\n'),topScroll:view.scroll,topTotalLines:view.totalLines,volume:view.volume,isMuted:view.muted,keys};
+  const packet={type:'v2_sync',seq:sequence,viewMode:text(view.mode ?? 'lab',15),topTitle:text(view.title,63),topSubtitle:text(view.subtitle ?? '',63),topBody:view.lines.map(line=>bodyText(line,168)).join('\n'),topScroll:view.scroll,topTotalLines:view.totalLines,volume:view.volume,isMuted:view.muted,keys};
+  if (view.styles !== undefined) {
+    requireThat(typeof view.styles === 'string' && /^[thcqlr]{0,8}$/.test(view.styles) && view.styles.length === view.lines.length, 'invalid_styles');
+    packet.topStyles = view.styles;
+  }
   if(view.controllerId!==undefined||view.runId!==undefined){requireThat(/^ctl_[a-f0-9]{16}$/.test(view.controllerId)&&/^[a-f0-9]{32}$/.test(view.runId)&&int(sequence,1,0x7fffffff),'invalid_scope');packet.controllerId=view.controllerId;packet.runId=view.runId;}
   if(view.leaseToken!==undefined){requireThat(/^[a-f0-9]{32}$/.test(view.leaseToken),'invalid_lease');packet.lease=view.leaseToken;}
   if (view.skinId !== undefined) {

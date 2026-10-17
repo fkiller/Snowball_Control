@@ -311,6 +311,9 @@ void v2_render_top_frame(uint16_t *fb) {
         if (*p == '\n') p++;
     }
 
+    // Empty styled rows (especially a final horizontal rule) have no body bytes.
+    int styled_rows = strlen(g_v2_state.top_styles);
+    while (line_count < styled_rows && line_count < 8) lines[line_count++][0] = '\0';
     if (line_count == 0) {
         strcpy(lines[0], "No content.");
         line_count = 1;
@@ -343,7 +346,21 @@ void v2_render_top_frame(uint16_t *fb) {
             color = g_v2_theme.top_accent;
         }
 
-        draw_string_16(fb, TOP_W, 12, y, line, color, 1);
+        // The host parses full Markdown before wrapping. Styles are viewport-local
+        // and reset on every packet, including legacy/plain-file frames.
+        char style = g_v2_state.top_styles[i];
+        if (style && style != 't') color = g_v2_theme.top_text;
+        if (style == 'h') color = g_v2_theme.top_accent;
+        if (style == 'c') draw_rect_16(fb, TOP_W, 10, y - 1, TOP_W - 22, 18, g_v2_theme.top_card);
+        if (style == 'q') {
+            color = g_v2_theme.top_dim;
+            draw_rect_16(fb, TOP_W, 12, y, 2, 16, g_v2_theme.top_accent);
+        }
+        if (style == 'r') {
+            draw_line_16(fb, TOP_W, 12, y + 8, TOP_W - 16, y + 8, g_v2_theme.top_border);
+        } else {
+            draw_string_clipped_16(fb, TOP_W, 12, y, line, color, 1, 12, 46, TOP_W - 28, 80);
+        }
     }
 
     // 4. Scrollbar indicator on right edge

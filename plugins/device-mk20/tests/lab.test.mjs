@@ -41,6 +41,15 @@ test('rich lab previews stay bounded and reject invalid firmware color/index fie
   for(const bad of [{colors:[{type:'key'}]},{colors:[6]},{activeItem:-1},{total:256}])
     assert.throws(()=>encodeLegacyPreview({...view,keys:[{id:1,main:'x',...bad}]},1),/invalid_key/);
 });
+
+test('Markdown body keeps JSON punctuation and viewport styles without accepting invalid style metadata', () => {
+  const line = 'const x = {"keys": [], "topStyles":"r"}; // C:\\code';
+  const parsed = JSON.parse(encodeLegacyPreview({...view, lines:[line], styles:'c'}, 1));
+  assert.equal(parsed.topBody, line);
+  assert.equal(parsed.topStyles, 'c');
+  assert.throws(() => encodeLegacyPreview({...view, lines:[line], styles:'cc'}, 1), /invalid_styles/);
+  assert.throws(() => encodeLegacyPreview({...view, lines:[line], styles:'x'}, 1), /invalid_styles/);
+});
 test('real loopback lab preview stays on pinned peer and spoofed sender cannot retarget it',async t=>{
   const peer=dgram.createSocket('udp4');const spoof=dgram.createSocket('udp4');peer.bind(0,'127.0.0.1');spoof.bind(0,'127.0.0.1');await Promise.all([once(peer,'listening'),once(spoof,'listening')]);t.after(()=>{peer.close();spoof.close();});
   const transport=new Mk20LabTransport({labEnabled:true,localAddress:'127.0.0.1',targetAddress:'127.0.0.1',targetPort:peer.address().port});t.after(()=>transport.close());const started=await transport.start();assert.equal(started.controllable,false);

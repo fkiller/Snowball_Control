@@ -90,8 +90,8 @@ A `DeviceSkin` defines the complete visual appearance for a device. Colors are a
     ]
   },
   "fonts": {
-    "korean": "D2Coding",
-    "english": "D2Coding",
+    "korean": "Snowball Hangul Pixels",
+    "english": "font8x16",
     "sizeTitle": 10,
     "sizeMain": 14,
     "sizeSub": 10,

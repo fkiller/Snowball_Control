@@ -318,8 +318,8 @@ test('luminance and contrast font reversal: dynamically adapts text color for re
 test('extended design elements: all built-in skins specify fonts, button styles, gradients, and backgrounds', () => {
   for (const skin of BUILTIN_MK20_SKINS) {
     // 1. Fonts (Korean / English)
-    assert.equal(skin.fonts.korean, 'D2Coding');
-    assert.equal(skin.fonts.english, 'D2Coding');
+    assert.equal(skin.fonts.korean, 'Snowball Hangul Pixels');
+    assert.equal(skin.fonts.english, 'font8x16');
     assert.ok(skin.fonts.sizeTitle > 0);
     assert.ok(skin.fonts.sizeMain > 0);
     assert.ok(skin.fonts.sizeSub > 0);
@@ -367,8 +367,8 @@ test('extended design elements: all built-in skins specify fonts, button styles,
 
     // 9. Wire tokens verification
     const tokens = skin.toWireTokens();
-    assert.equal(tokens.fontKorean, 'D2Coding');
-    assert.equal(tokens.fontEnglish, 'D2Coding');
+    assert.equal(tokens.fontKorean, 'Snowball Hangul Pixels');
+    assert.equal(tokens.fontEnglish, 'font8x16');
     assert.equal(typeof tokens.btnLineVisible, 'boolean');
     assert.ok(tokens.btnLineColor >= 0 && tokens.btnLineColor <= 0xffff);
     assert.equal(typeof tokens.btnFillVisible, 'boolean');

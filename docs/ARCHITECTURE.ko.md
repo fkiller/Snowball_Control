@@ -316,7 +316,13 @@ Wi-Fi 비밀번호가 포함된 SD 설정·개인 백업은 공개하지 않는�
 
 기본 대기 화면은 호스트 sync 이전에 실제 세션이나 모델이 있는 것처럼 표시하지 않는다. 긴 UTF-8 텍스트는 코드포인트 경계에서 자르고, 잘린 목록 값의 나머지도 끝까지 소비한다. 한글 스크롤은 Unicode 렌더러로 clipping한다.
 
-HUD는 ARMv7 hard-float의 **Tina 이미지와 호환되는 sysroot/toolchain**이 필요하다. 제조사 SDK는 Git에 포함되지 않는다. SDK가 있으면 기본 `make`를 사용하고, 외부 환경에서는 `CROSS_COMPILE`, `FREETYPE_HEADERS` 또는 `FREETYPE_ARCHIVE`를 제공한다. 최신 배포판의 ARM 컴파일러로 빌드가 성공했다고 Tina의 오래된 glibc에서 실행된다고 보장하지 않는다. 글꼴은 `SNOWBALL_FONT` 또는 SD의 `fonts/D2Coding.ttf`에서 읽는다. STT backend는 CUDA 또는 CPU이며 Metal/Vulkan 지원을 주장하지 않는다.
+HUD는 ARMv7 hard-float의 **Tina 이미지와 호환되는 sysroot/toolchain**이 필요하다. 제조사 SDK는 Git에 포함되지 않는다. SDK가 있으면 기본 `make`를 사용하고, 외부 환경에서는 `CROSS_COMPILE`, `FREETYPE_HEADERS` 또는 `FREETYPE_ARCHIVE`를 제공한다. 최신 배포판의 ARM 컴파일러로 빌드가 성공했다고 Tina의 오래된 glibc에서 실행된다고 보장하지 않는다. STT backend는 CUDA 또는 CPU이며 Metal/Vulkan 지원을 주장하지 않는다.
+
+**한글 픽셀 글꼴(런타임 0.2.7):** Neo둥근모 v1.601의 16×16 단색 래스터 부분집합을 **Snowball Hangul Pixels** 이름으로 HUD에 내장한다(SIL OFL 1.1). 현대 한글 완성형 11,172자와 현대 조합/호환 자모 118자의 비트맵은 361,280바이트다. 안티앨리어싱 없이 정수 배율과 clipping을 적용하므로 SD 폰트나 FreeType이 없어도 한글을 읽을 수 있다. ASCII는 기존 8×16 비트맵을 사용하고 누락되었던 백틱·중괄호·물결표를 보완한다. 나머지 Unicode는 `SNOWBALL_FONT`, SD `fonts/D2Coding.ttf`, 시스템 D2Coding의 기존 FreeType fallback을 유지하며, 글꼴을 읽지 못하면 `?`를 표시한다. 생성 헤더의 원본 TTF 해시와 `dev-tools/generate-hangul-font.py`로 재생성할 수 있고 `hud/fonts/OFL.txt`를 배포 라이선스에 포함한다. 한글 글꼴은 UI 언어 선택과 무관하다. 기존 업데이트 허용 파일 5개는 그대로이며 비트맵은 `mk20-hud` 안에 포함된다.
+
+**MK20 대화 Markdown 미리보기(0.2.7):** Middleware가 네이티브 사용자/에이전트 메시지 전체를 파싱한 뒤 50셀 줄바꿈과 4줄 viewport 분할을 적용한다. ATX/setext 제목은 강조색, 목록은 들여쓰기, 체크 항목은 `(x)`/`( )`, 인용은 세로선, 구분선은 가로선으로 표시한다. 강조 문법은 기호 없이 본문을 표시하고, 인라인 코드/링크는 코드 내용/링크 이름을 보존한다. 코드 펜스와 들여쓴 코드는 문장부호·공백을 유지하며 별도 배경으로 구분한다. 스트리밍 중 닫히지 않은 코드 펜스 안에서도 스크롤 서식이 유지된다. 표는 `열 이름: 값` 묶음으로 풀어 가로 잘림을 피한다. 작은 화면용 텍스트 미리보기이며 HTML/browser 렌더러가 아니다. 이미지는 설명을 표시하고 링크 클릭이나 HTML 실행은 지원하지 않는다. 원본 대화, 파일/diff, 음성 초안과 원문 process 상세는 변경하지 않는다.
+
+선택 wire 필드 `topStyles`는 전송한 각 줄에 대응하는 `t/h/c/q/l/r` 문자열이다. 매 패킷 초기화하여 레거시/파일 화면에 이전 서식이 남지 않는다. 본문은 JSON escaping으로 따옴표·중괄호·대괄호·역슬래시를 보존하며 패킷 용량 검사에 서식도 포함한다. Codex/Antigravity/OpenCode의 공통 MK20 대화 경로에 적용하고 dispatch·소유권·승인·모델/effort·페어링은 변경하지 않는다. Web/M5Stack 표시와 펌웨어는 그대로다. 호스트·미리보기·UX parity·하네스 전환 자동 검사 및 실제 C 소프트웨어 렌더러 확인은 실물 업데이트/화면 인수와 구분하며, 쓰기 가능한 대상이 연결되지 않은 상태에서 실물 인수는 미확인이다.
 
 ## 5. 실제 상태와 전송
 

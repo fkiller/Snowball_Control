@@ -1,5 +1,6 @@
 #include "unicode_text.h"
 #include "gfx_prims.h"
+#include "hangul_pixels.h"
 #include <dlfcn.h>
 #include <ft2build.h>
 #include FT_FREETYPE_H
@@ -69,10 +70,15 @@ int unicode_draw_clipped(uint16_t *fb, int stride, int x, int y, const char *s, 
     static FT_Face face;
     static time_t retry_at;
     static FT_Error (*load)(FT_Face, FT_ULong, FT_Int32);
-    if (!face && time(NULL) >= retry_at) {
+    int needs_fallback = 0;
+    for (const char *p = s; *p;) {
+        unsigned cp; p += unicode_step(p, &cp);
+        if (cp >= 128 && !hangul_pixels(cp)) needs_fallback = 1;
+    }
+    if (needs_fallback && !face && time(NULL) >= retry_at) {
         retry_at = time(NULL) + 5;
         void *lib = dlopen("libfreetype.so.6", RTLD_LAZY);
-        if (!lib) { fprintf(stderr, "[Font] FreeType unavailable: %s\n", dlerror()); return 0; }
+        if (!lib) { fprintf(stderr, "[Font] FreeType unavailable: %s\n", dlerror()); goto render; }
         FT_Error (*init)(FT_Library*) = dlsym(lib, "FT_Init_FreeType");
         FT_Error (*newface)(FT_Library, const char*, FT_Long, FT_Face*) = dlsym(lib, "FT_New_Face");
         FT_Error (*size)(FT_Face, FT_UInt, FT_UInt) = dlsym(lib, "FT_Set_Pixel_Sizes");
@@ -81,17 +87,17 @@ int unicode_draw_clipped(uint16_t *fb, int stride, int x, int y, const char *s, 
         FT_Library library;
         const char *font = getenv("SNOWBALL_FONT");
         const char *paths[] = {font, "/mnt/SDCARD/fonts/D2Coding.ttf", "/usr/share/fonts/D2Coding.ttf", NULL};
-        if (!init || !newface || !size || !load || !indexof || init(&library)) { fprintf(stderr, "[Font] FreeType initialization failed\n"); return 0; }
+        if (!init || !newface || !size || !load || !indexof || init(&library)) { fprintf(stderr, "[Font] FreeType initialization failed\n"); goto render; }
         for (int i = 0; i < 3 && !face; i++) {
             if (paths[i] && !newface(library, paths[i], 0, &face)) {
                 if (!indexof(face, 0xD55C)) { fprintf(stderr, "[Font] Font has no Hangul: %s\n", paths[i]); face = NULL; }
                 else fprintf(stderr, "[Font] Korean font ready: %s\n", paths[i]);
             }
         }
-        if (!face) { fprintf(stderr, "[Font] Install D2Coding.ttf in /mnt/SDCARD/fonts or set SNOWBALL_FONT\n"); return 0; }
-        if (size(face, 0, 16)) { face = NULL; return 0; }
+        if (!face) { fprintf(stderr, "[Font] Install D2Coding.ttf for non-Hangul Unicode fallback\n"); goto render; }
+        if (size(face, 0, 16)) { face = NULL; goto render; }
     }
-    if (!face) return 0;
+render: ;
     int height = stride == TOP_W ? TOP_H : KEY_H;
     int baseline = 13; // Optimized for D2Coding at 16px
     while (*s) {
@@ -100,9 +106,22 @@ int unicode_draw_clipped(uint16_t *fb, int stride, int x, int y, const char *s, 
             // Strictly render English / ASCII using the standard font8x16 bitmap font
             draw_ascii_glyph(fb, stride, x, y, (char)cp, color, scale, clip_x, clip_y, clip_w, clip_h, height);
             x += 8 * scale;
+        } else if (hangul_pixels(cp)) {
+            // Exact 16x16 bitmap cells: no anti-aliasing or runtime font dependency.
+            const uint16_t *pixels = hangul_pixels(cp);
+            for (int row = 0; row < 16; row++) for (int col = 0; col < 16; col++) {
+                if (!(pixels[row] & (0x8000 >> col))) continue;
+                for (int dy = 0; dy < scale; dy++) for (int dx = 0; dx < scale; dx++) {
+                    int px = x + col * scale + dx, py = y + row * scale + dy;
+                    if (px >= 0 && px < stride && py >= 0 && py < height &&
+                        px >= clip_x && px < clip_x + clip_w && py >= clip_y && py < clip_y + clip_h)
+                        fb[py * stride + px] = color;
+                }
+            }
+            x += 16 * scale;
         } else {
-            // Strictly render Korean / Unicode using FreeType D2Coding font
-            if (!load(face, cp, FT_LOAD_RENDER)) {
+            // Other Unicode retains the existing user font / D2Coding fallback.
+            if (face && !load(face, cp, FT_LOAD_RENDER)) {
                 FT_GlyphSlot glyph = face->glyph;
                 FT_Bitmap *b = &glyph->bitmap;
                 for (unsigned row = 0; row < b->rows; row++) {
@@ -126,7 +145,7 @@ int unicode_draw_clipped(uint16_t *fb, int stride, int x, int y, const char *s, 
                         }
                     }
                 }
-            }
+            } else draw_ascii_glyph(fb, stride, x, y, '?', color, scale, clip_x, clip_y, clip_w, clip_h, height);
             x += 16 * scale;
         }
     }

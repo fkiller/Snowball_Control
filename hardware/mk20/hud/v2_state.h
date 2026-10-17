@@ -101,6 +101,7 @@ typedef struct {
     char top_title[64];
     char top_subtitle[64];
     char top_body[16384]; // multi-line text
+    char top_styles[9];   // optional viewport rows: text/heading/code/quote/list/rule
     int top_scroll;
     int top_total_lines;
     int volume;

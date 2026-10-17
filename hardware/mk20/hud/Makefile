@@ -39,7 +39,8 @@ mk20-hud: $(OBJS)
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
-unicode_text.o: $(FREETYPE_HEADERS)/ft2build.h
+unicode_text.o: $(FREETYPE_HEADERS)/ft2build.h hangul_pixels.h
+v2_state.o v2_render.o mk20-hud.o: v2_state.h
 mk20-prepare.o: mk20-prepare.h mk20-network.h ../firmware/runtime-version.h
 $(FREETYPE_HEADERS)/ft2build.h:
 	@test -f "$(FREETYPE_ARCHIVE)" || { echo 'Set FREETYPE_HEADERS to installed FreeType headers, or FREETYPE_ARCHIVE to a supplied source archive.'; exit 1; }

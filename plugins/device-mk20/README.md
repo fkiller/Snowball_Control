@@ -67,7 +67,7 @@ Each `DeviceSkin` supports comprehensive visual styling properties:
 
 | Design Element | Field | Type / Options | Description |
 | :--- | :--- | :--- | :--- |
-| **Fonts (KO/EN)** | `fonts.korean`, `fonts.english` | String (`'D2Coding'`) | Open-source SIL OFL font optimized for 128x128 small displays, preventing anti-aliasing blur. |
+| **Fonts (KO/EN)** | `fonts.korean`, `fonts.english` | `'Snowball Hangul Pixels'`, `'font8x16'` | Runtime 0.2.7 embeds 16px monochrome Hangul derived from NeoDunggeunmo (SIL OFL); ASCII uses 8×16 bitmaps. D2Coding remains the other-Unicode fallback. These skin names describe the native fixed glyph routing, not arbitrary font installation. |
 | **Font Sizes** | `fonts.sizeTitle`, `sizeMain`, `sizeSub`, `sizeDebug` | Integer (10, 14, 10, 9) | Legible type scale for button title pills, main labels, sub-labels, and debug messages. |
 | **Button Style** | `buttonStyle` | `{ lineVisible, lineColor, fillVisible, fillColor }` | Controls button border outline and background box fill visibility and RGB colors. |
 | **Title Style** | `titleStyle` | `{ lineVisible, lineColor, fillVisible, fillColor, fontColor }` | Styling for the top title pill banner of each button. |

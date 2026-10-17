@@ -20,8 +20,8 @@ static const V2_Theme s_builtin_themes[] = {
     {
         .skin_id = "slate-dark",
         .skin_name = "Slate Dark",
-        .font_korean = "D2Coding",
-        .font_english = "D2Coding",
+        .font_korean = "Snowball Hangul Pixels",
+        .font_english = "font8x16",
         .top_bg = 0x0863,
         .top_card = 0x10C5,
         .top_border = 0x1947,
@@ -60,8 +60,8 @@ static const V2_Theme s_builtin_themes[] = {
     {
         .skin_id = "matrix-emerald",
         .skin_name = "Matrix Emerald",
-        .font_korean = "D2Coding",
-        .font_english = "D2Coding",
+        .font_korean = "Snowball Hangul Pixels",
+        .font_english = "font8x16",
         .top_bg = 0x0060,
         .top_card = 0x08E1,
         .top_border = 0x1407,
@@ -100,8 +100,8 @@ static const V2_Theme s_builtin_themes[] = {
     {
         .skin_id = "cyberpunk-neon",
         .skin_name = "Cyberpunk Neon",
-        .font_korean = "D2Coding",
-        .font_english = "D2Coding",
+        .font_korean = "Snowball Hangul Pixels",
+        .font_english = "font8x16",
         .top_bg = 0x0843,
         .top_card = 0x1886,
         .top_border = 0x79DD,
@@ -140,8 +140,8 @@ static const V2_Theme s_builtin_themes[] = {
     {
         .skin_id = "amber-crt",
         .skin_name = "Amber CRT",
-        .font_korean = "D2Coding",
-        .font_english = "D2Coding",
+        .font_korean = "Snowball Hangul Pixels",
+        .font_english = "font8x16",
         .top_bg = 0x1060,
         .top_card = 0x20A0,
         .top_border = 0x79A1,
@@ -180,8 +180,8 @@ static const V2_Theme s_builtin_themes[] = {
     {
         .skin_id = "high-contrast",
         .skin_name = "High Contrast",
-        .font_korean = "D2Coding",
-        .font_english = "D2Coding",
+        .font_korean = "Snowball Hangul Pixels",
+        .font_english = "font8x16",
         .top_bg = 0x0000,
         .top_card = 0x1082,
         .top_border = 0xFFFF,
@@ -449,6 +449,8 @@ int v2_parse_sync_packet(const char *json, int len) {
     parse_string_field(json, "topTitle", g_v2_state.top_title, sizeof(g_v2_state.top_title));
     parse_string_field(json, "topSubtitle", g_v2_state.top_subtitle, sizeof(g_v2_state.top_subtitle));
     parse_string_field(json, "topBody", g_v2_state.top_body, sizeof(g_v2_state.top_body));
+    memset(g_v2_state.top_styles, 0, sizeof(g_v2_state.top_styles));
+    parse_string_field(json, "topStyles", g_v2_state.top_styles, sizeof(g_v2_state.top_styles));
     parse_int_field(json, "topScroll", &g_v2_state.top_scroll);
     parse_int_field(json, "topTotalLines", &g_v2_state.top_total_lines);
     parse_int_field(json, "volume", &g_v2_state.volume);

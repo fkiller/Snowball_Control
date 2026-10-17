@@ -161,8 +161,8 @@ export class DeviceSkin {
     // Extended Design Elements:
     // 1. Fonts (Korean / English)
     this.fonts = Object.freeze({
-      korean: String(definition.fonts?.korean || 'D2Coding'),
-      english: String(definition.fonts?.english || 'D2Coding'),
+      korean: String(definition.fonts?.korean || 'Snowball Hangul Pixels'),
+      english: String(definition.fonts?.english || 'font8x16'),
       sizeTitle: Number.isInteger(definition.fonts?.sizeTitle) ? definition.fonts.sizeTitle : 10,
       sizeMain: Number.isInteger(definition.fonts?.sizeMain) ? definition.fonts.sizeMain : 14,
       sizeSub: Number.isInteger(definition.fonts?.sizeSub) ? definition.fonts.sizeSub : 10,
@@ -391,8 +391,8 @@ export const BUILTIN_MK20_SKINS = Object.freeze([
       palette: ['#e2e8f0', '#06b6d4', '#10b981', '#f59e0b', '#f43f5e', '#94a3b8']
     },
     fonts: {
-      korean: 'D2Coding',
-      english: 'D2Coding',
+      korean: 'Snowball Hangul Pixels',
+      english: 'font8x16',
       sizeTitle: 10,
       sizeMain: 14,
       sizeSub: 10,
@@ -465,8 +465,8 @@ export const BUILTIN_MK20_SKINS = Object.freeze([
       palette: ['#4ade80', '#22c55e', '#86efac', '#a3e635', '#ef4444', '#4ade80']
     },
     fonts: {
-      korean: 'D2Coding',
-      english: 'D2Coding',
+      korean: 'Snowball Hangul Pixels',
+      english: 'font8x16',
       sizeTitle: 10,
       sizeMain: 14,
       sizeSub: 10,
@@ -538,8 +538,8 @@ export const BUILTIN_MK20_SKINS = Object.freeze([
       palette: ['#f8fafc', '#06b6d4', '#10b981', '#facc15', '#f43f5e', '#c4b5fd']
     },
     fonts: {
-      korean: 'D2Coding',
-      english: 'D2Coding',
+      korean: 'Snowball Hangul Pixels',
+      english: 'font8x16',
       sizeTitle: 10,
       sizeMain: 14,
       sizeSub: 10,
@@ -612,8 +612,8 @@ export const BUILTIN_MK20_SKINS = Object.freeze([
       palette: ['#fef3c7', '#fbbf24', '#f59e0b', '#d97706', '#b45309', '#fbbf24']
     },
     fonts: {
-      korean: 'D2Coding',
-      english: 'D2Coding',
+      korean: 'Snowball Hangul Pixels',
+      english: 'font8x16',
       sizeTitle: 10,
       sizeMain: 14,
       sizeSub: 10,
@@ -685,8 +685,8 @@ export const BUILTIN_MK20_SKINS = Object.freeze([
       palette: ['#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff', '#888888']
     },
     fonts: {
-      korean: 'D2Coding',
-      english: 'D2Coding',
+      korean: 'Snowball Hangul Pixels',
+      english: 'font8x16',
       sizeTitle: 10,
       sizeMain: 14,
       sizeSub: 10,
