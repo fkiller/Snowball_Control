@@ -3,6 +3,7 @@
 Linux host test only; no USB/hardware or successful firmware operation is faked.
 """
 from pathlib import Path
+import hashlib
 import shutil
 import subprocess
 import tempfile
@@ -14,6 +15,49 @@ FILES = ('mk20-hud', 'mk20-audio', 'lunch.sh', 'fonts/D2Coding.ttf', 'mk20-updat
 
 @unittest.skipUnless(shutil.which('cc') and shutil.which('sh'), 'Requires Linux host C compiler and shell')
 class MigrationTransaction(unittest.TestCase):
+    def test_kept_files_are_never_copied_and_survive_native_commit_or_rollback(self):
+        for committed in [False, True]:
+            with self.subTest(committed=committed), tempfile.TemporaryDirectory(prefix='snowball-keep-') as scratch:
+                root=Path(scratch); (root/'fonts').mkdir(); stage=root/'.snowball-update'; stage.mkdir()
+                original={name:('old '+name).encode() for name in FILES}
+                original[FILES[3]]=b'font bitmap data'*270000
+                for name,data in original.items(): (root/name).write_bytes(data)
+                script=root/'migration.sh'
+                script.write_text((ROOT/'migrate_runtime.sh').read_text().replace('root=/mnt/SDCARD','root='+str(root)))
+                kept=[1,3]; inodes={i:(root/FILES[i]).stat().st_ino for i in kept}
+                for i,name in enumerate(FILES):
+                    if i in kept:
+                        digest=hashlib.sha256(original[name]).hexdigest()
+                        subprocess.run(['sh',str(script),'keep',str(i),digest],check=True)
+                    else: (stage/('new'+str(i))).write_bytes(('new '+name).encode())
+                plan=subprocess.check_output(['sh',str(script),'plan']).decode()
+                self.assertIn('FILE 3 '+str(len(original[FILES[3]])),plan)
+                subprocess.run(['sh',str(script),'commit'],check=True)
+                for i in kept:
+                    self.assertFalse((stage/('old'+str(i))).exists())
+                    self.assertEqual((root/FILES[i]).stat().st_ino,inodes[i])
+                if committed: (stage/'committed').write_bytes(b'')
+                recovery=root/'recovery'
+                subprocess.run(['cc','-O2','-DSNMU_TEST','-DSNMU_ROOT="'+str(root)+'"',str(ROOT.parent/'hud/mk20-update.c'),'-o',str(recovery)],check=True)
+                subprocess.run([str(recovery),'--recover'],check=True)
+                self.assertFalse(stage.exists())
+                for i,name in enumerate(FILES):
+                    self.assertEqual((root/name).read_bytes(),('new '+name).encode() if committed and i not in kept else original[name])
+
+    def test_keep_rejects_bad_hash_and_revalidates_before_commit(self):
+        with tempfile.TemporaryDirectory(prefix='snowball-keep-check-') as scratch:
+            root=Path(scratch); stage=root/'.snowball-update'; stage.mkdir(); (root/'fonts').mkdir()
+            font=root/FILES[3]; font.write_bytes(b'original font')
+            script=root/'migration.sh'
+            script.write_text((ROOT/'migrate_runtime.sh').read_text().replace('root=/mnt/SDCARD','root='+str(root)))
+            self.assertNotEqual(subprocess.run(['sh',str(script),'keep','3','0'*64]).returncode,0)
+            self.assertFalse((stage/'copy3').exists())
+            subprocess.run(['sh',str(script),'keep','3',hashlib.sha256(font.read_bytes()).hexdigest()],check=True)
+            for i in [0,1,2,4]: (stage/('new'+str(i))).write_bytes(b'new')
+            font.write_bytes(b'changed externally')
+            self.assertNotEqual(subprocess.run(['sh',str(script),'commit']).returncode,0)
+            self.assertFalse((stage/'journal').exists())
+
     def test_first_migration_commit_can_be_recovered_to_exact_legacy_files(self):
         with tempfile.TemporaryDirectory(prefix='snowball-migration-') as scratch:
             root = Path(scratch)

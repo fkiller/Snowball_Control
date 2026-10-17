@@ -37,6 +37,8 @@ def adb(args, endpoint=None, timeout=15, destination=None):
                             stdout=destination if destination else subprocess.PIPE,
                             stderr=subprocess.PIPE, timeout=timeout, creationflags=flags)
     if result.returncode:
+        if b'No space left on device' in result.stderr:
+            raise RuntimeError('insufficient_runtime_storage')
         raise RuntimeError('maintenance_connection_failed')
     return result.stdout
 
@@ -150,6 +152,28 @@ sha256sum "$f" || exit 1
 done'''
 
 
+def storage_plan(payload, files, expected):
+    """Plan staging against actual filesystem free space, not partition size."""
+    lines = [line.strip() for line in payload.decode('ascii').splitlines() if line.strip()]
+    if not lines or not re.fullmatch(r'SPACE [0-9]+', lines[0]) or len(lines) > len(FILES)+1:
+        raise RuntimeError('invalid_maintenance_storage')
+    available = int(lines[0].split()[1])*1024
+    current = {}
+    for line in lines[1:]:
+        parts = line.split()
+        if len(parts)!=4 or parts[0]!='FILE' or parts[1] not in [str(i) for i in range(len(FILES))] or not parts[2].isdigit() or not re.fullmatch('[a-f0-9]{64}',parts[3]):
+            raise RuntimeError('invalid_maintenance_storage')
+        i = int(parts[1])
+        if i in current:
+            raise RuntimeError('invalid_maintenance_storage')
+        current[i] = (int(parts[2]), parts[3])
+    kept = {i for i, name in enumerate(FILES) if i in current and current[i][1]==expected[name]}
+    required = 512*1024 + sum(len(files[name])+current.get(i,(0,''))[0] for i,name in enumerate(FILES) if i not in kept)
+    if available < required:
+        raise RuntimeError('insufficient_runtime_storage')
+    return kept
+
+
 def install(target, directory, files, expected, release, request, progress, emit, *, backup_only=False):
     if request.get('migrateWifi') or request.get('network') is not None:
         raise RuntimeError('maintenance_preserves_existing_wifi')
@@ -161,8 +185,8 @@ def install(target, directory, files, expected, release, request, progress, emit
     partial = backup.with_suffix('.partial')
     frozen = finalized = False
     adb(['push', str(ROOT/'migrate_runtime.sh'), REMOTE], endpoint)
-    def action(name):
-        return adb(['shell', '/bin/sh '+REMOTE+' '+name], endpoint, timeout=60)
+    def action(name, *args):
+        return adb(['shell', '/bin/sh '+REMOTE+' '+' '.join([name, *map(str,args)])], endpoint, timeout=60)
     # RAM-only recovery is available before starting a transaction. This also
     # repairs an interrupted first migration which never installed its boot hook.
     if not backup_only:
@@ -210,8 +234,12 @@ def install(target, directory, files, expected, release, request, progress, emit
         if backup_only:
             action('resume'); frozen = False
             return meta | {'backup': str(backup)}
+        kept = storage_plan(action('plan'), files, expected)
         action('begin')
         for i, name in enumerate(FILES):
+            if i in kept:
+                action('keep', i, expected[name])
+                continue
             local = directory/('migration-'+uuid.uuid4().hex)
             try:
                 with open(local, 'xb') as stream:
@@ -230,7 +258,13 @@ def install(target, directory, files, expected, release, request, progress, emit
         action('finalize')
         finalized = True
         progress('reboot')
-        adb(['shell', 'sync; /sbin/reboot'], endpoint)
+        try:
+            adb(['shell', 'sync; /sbin/reboot'], endpoint)
+        except RuntimeError as error:
+            # Legacy adbd can close before acknowledging a real reboot. Success
+            # still requires every identity/file/settings/running-image read below.
+            if str(error) != 'maintenance_connection_failed':
+                raise
         deadline = time.monotonic()+120
         while time.monotonic() < deadline:
             time.sleep(2)

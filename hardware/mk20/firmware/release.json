@@ -20,6 +20,7 @@
   },
   "changes": {
     "ko": [
+      "구형 LAN 업데이트에서 동일 파일을 해시로 확인해 유지하고 실제 파일시스템 공간을 검사하여 큰 폰트의 중복 복사를 방지합니다.",
       "대화를 Markdown 미리보기로 표시합니다. 제목·목록·인용·코드·표를 작은 화면에 맞추고 스크롤 중 서식을 유지합니다.",
       "Neo둥근모 기반 16×16 단색 한글 비트맵을 내장해 낮은 해상도에서도 획을 또렷하게 표시합니다.",
       "코드의 따옴표·괄호·역슬래시를 보존하고 누락된 ASCII 비트맵 문자를 보완합니다.",
@@ -30,6 +31,7 @@
       "실제 MK20의 20개 화면 키와 두 노브를 반영한 단계별 조작 안내를 제공합니다."
     ],
     "en": [
+      "Legacy LAN updates retain hash-identical files and check actual filesystem space, avoiding duplicate copies of the large fallback font.",
       "Renders conversation Markdown as a compact preview with headings, lists, quotes, code and tables; keeps formatting while scrolling.",
       "Embeds monochrome 16×16 Hangul bitmaps derived from NeoDunggeunmo for crisp low-resolution text.",
       "Preserves code quotes, brackets and backslashes, and fills missing ASCII bitmap glyphs.",
