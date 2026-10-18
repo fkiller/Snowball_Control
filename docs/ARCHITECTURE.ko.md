@@ -483,7 +483,7 @@ Control `host`에서 `npm ci && npm run build`, Middleware에서 `npm ci && npm 
 
 Supervisor 단독 런타임의 기본 하네스 survey는 현재 Windows/macOS에서만 연결된다. Linux suite의 Web 설치·네이티브 tray/패키지 검증은 위 멀티플랫폼 기록으로 구분하며, 이 검증을 실제 공급자 하네스 dispatch·기기 인수까지 확대 해석하지 않는다. 기본 STT runtime 테스트는 형제 Control checkout과 Python 의존성 설치를 수행하는 검사를 `SNOWBALL_TEST_STT=1`일 때만 실행한다.
 
-**검토한 공개 런타임:** [MK20 Preview 0.2.7](https://github.com/fkiller/Snowball_Control/releases/tag/mk20-preview-0.2.7)의 `mk20-runtime.zip`, SHA-256 `f30584756f799f6d4c71b4abd2a9a9e4c9784424d5124986e66340eec2cca94c`. manifest는 네이티브 소스 커밋 `535bc7f17c552d7ba8c9a063b1e4f41808eebe4c`, SNMK1·SNAU-lease-v1·SNMU1을 고정하며 포함 파일 61개의 해시를 검증했다. 실제 제조사 ARM 도구 체인으로 빌드한 HUD/audio/USB updater, 부팅 스크립트, 비트맵 atlas·생성기·폰트·라이선스와 해당 HUD/제조사 QMK 소스·고지를 포함한다. 공통 준비와 명시적인 읽기 전용 `-NoDeploy` 진단 모두 이 릴리스를 고정한다. 일반 PC 추가 설치는 이를 기기에 배포하지 않는다. 산출물 검증을 새 바이너리의 실물 실행 증거로 취급하지 않는다.
+**0.2.7 공개 런타임(과거 기록):** [MK20 Preview 0.2.7](https://github.com/fkiller/Snowball_Control/releases/tag/mk20-preview-0.2.7)의 `mk20-runtime.zip`, SHA-256 `f30584756f799f6d4c71b4abd2a9a9e4c9784424d5124986e66340eec2cca94c`. manifest는 네이티브 소스 커밋 `535bc7f17c552d7ba8c9a063b1e4f41808eebe4c`, SNMK1·SNAU-lease-v1·SNMU1을 고정하며 포함 파일 61개의 해시를 검증했다. 실제 제조사 ARM 도구 체인으로 빌드한 HUD/audio/USB updater, 부팅 스크립트, 비트맵 atlas·생성기·폰트·라이선스와 해당 HUD/제조사 QMK 소스·고지를 포함한다. 공통 준비와 명시적인 읽기 전용 `-NoDeploy` 진단은 처음에 이 릴리스를 고정했으며 현재 후보는 아래에 기록한다. 일반 PC 추가 설치는 이를 기기에 배포하지 않는다. 산출물 검증을 새 바이너리의 실물 실행 증거로 취급하지 않는다.
 
 ## 7. 공개 전 남은 검증과 질문
 
@@ -495,3 +495,5 @@ Supervisor 단독 런타임의 기본 하네스 survey는 현재 Windows/macOS�
 6. **플러그인·동시 제어 범위**: 신뢰한 내장 플러그인으로 Preview 범위를 제한한다. 악성 플러그인의 OS 권한 격리와 Web/MK20이 같은 네이티브 세션에 동시에 전송하는 경로의 공통 직렬화는 추가 구현·검증이 필요하다.
 
 위 항목이 남아 있으므로 공개 범위를 Preview로 명시하더라도 완전한 배포/복구 인증이라고 표현하지 않는다. 리뷰에서 발견한 미완성 기능을 새 모델 목록이나 가짜 승인으로 보완하지 않는다.
+
+**0.2.8 제공 번들:** [MK20 Preview 0.2.8](https://github.com/fkiller/Snowball_Control/releases/tag/mk20-preview-0.2.8)의 `mk20-runtime.zip`, SHA-256 `3128136e23382aecb988d9290eba01a8ee16ea7f3b03be8659390944062c8099`, 네이티브 소스 `2614dff93ccdace3d7f661f8176d5176fcc9cb8e`. 새 다운로드와 파일 61개 해시를 검증했다. 제조사 ARM 빌드·실제 네이티브 세션 데이터의 소프트웨어 렌더러 캡처·6줄/구형 UX 및 언어 18·Middleware 300 통과/선택 13 건너뜀·Control 70/2·MK20 플러그인 17·M5Stack 호스트 22·유지보수 Python Linux 21(Windows 17/4 건너뜀)을 통과했다. 사용 가능한 네이티브 카탈로그 전환도 통과했으며 이 PC의 OpenCode CLI는 미설치다. 소프트웨어/제공 후보 검사와 일반 설치본 제공·전체 백업 실물 0.2.8 업데이트는 구분한다.
