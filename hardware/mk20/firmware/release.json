@@ -22,7 +22,7 @@
     "ko": [
       "하네스 컬러 아이콘 중심의 한 줄 breadcrumb와 콘텐츠 6줄을 제공하고 실제 변경 후 3초만 볼륨/음소거를 표시합니다.",
       "동일 이름의 오프라인 PC 등록은 Saved PCs(K12)에 보존하며 ID를 합치거나 자동 페어링하지 않습니다.",
-      "실제 기기가 알린 콘텐츠 줄 수를 사용합니다. 네이티브 프로젝트/worktree 소속과 최근 접근 순서는 각 PC도 업데이트하세요.",
+      "실제 기기가 알린 콘텐츠 줄 수를 사용합니다. 네이티브 프로젝트/worktree 소속과 하네스 자체 목록 순서는 각 PC도 업데이트하세요.",
       "구형 LAN 업데이트에서 동일 파일을 해시로 확인해 유지하고 실제 파일시스템 공간을 검사하여 큰 폰트의 중복 복사를 방지합니다.",
       "대화를 Markdown 미리보기로 표시합니다. 제목·목록·인용·코드·표를 작은 화면에 맞추고 스크롤 중 서식을 유지합니다.",
       "Neo둥근모 기반 16×16 단색 한글 비트맵을 내장해 낮은 해상도에서도 획을 또렷하게 표시합니다.",
@@ -36,7 +36,7 @@
     "en": [
       "Uses a single-row colored harness breadcrumb, six content rows and a volume/mute overlay that disappears three seconds after an actual change.",
       "Keeps offline duplicate-name PC registrations under Saved PCs (K12), preserving independent identities and explicit pairing.",
-      "Negotiates the actual reader viewport; update each PC for native project/worktree grouping and recent-access ordering.",
+      "Negotiates the actual reader viewport; update each PC for native project/worktree grouping and the harness’s own ordering.",
       "Legacy LAN updates retain hash-identical files and check actual filesystem space, avoiding duplicate copies of the large fallback font.",
       "Renders conversation Markdown as a compact preview with headings, lists, quotes, code and tables; keeps formatting while scrolling.",
       "Embeds monochrome 16×16 Hangul bitmaps derived from NeoDunggeunmo for crisp low-resolution text.",
