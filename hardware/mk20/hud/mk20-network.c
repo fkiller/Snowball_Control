@@ -65,6 +65,8 @@ int mk20_network_init(Mk20Network *n) {
     while(n->count<MK20_HOST_LIMIT&&fgets(line,sizeof line,f)){
         line[strcspn(line,"\r\n")]=0; char *name=strchr(line,'\t');if(!name)continue;*name++=0;
         if(!identifier(line)||strlen(name)>63)continue;
+        int duplicate=0;for(int i=0;i<n->count;i++)if(!strcmp(n->hosts[i].id,line))duplicate=1;
+        if(duplicate)continue;
         Mk20Host *h=&n->hosts[n->count++];strcpy(h->id,line);strcpy(h->name,name);h->paired=1;
     }
     fclose(f); return 1;
@@ -123,4 +125,19 @@ void mk20_network_tick(Mk20Network *n,int socket,uint64_t now) {
 int mk20_network_accept(const Mk20Network *n,const char *packet,const struct sockaddr_in *peer) {
     if(n->selected<0||!n->lease[0]||peer->sin_addr.s_addr!=n->hosts[n->selected].peer.sin_addr.s_addr)return 0;
     char scope[48];snprintf(scope,sizeof scope,"\"lease\":\"%s\"",n->lease);return strstr(packet,scope)!=NULL;
+}
+int mk20_network_visible(const Mk20Network *n,int *indices,uint64_t now) {
+    int count=0;
+    for(int i=0;i<n->count;i++) {
+        const Mk20Host *host=&n->hosts[i];
+        int online=host->seen&&now-host->seen<8000,hidden=0;
+        if(n->saved_menu) { if(!host->paired)continue; }
+        else if(!online) {
+            if(!host->paired)continue;
+            for(int j=0;j<n->count;j++) if(j!=i&&!strcmp(host->name,n->hosts[j].name)&&n->hosts[j].seen&&now-n->hosts[j].seen<8000)hidden=1;
+        }
+        // Presentation only. Never merge IDs, replace a registration or transfer a lease.
+        if(!hidden)indices[count++]=i;
+    }
+    return count;
 }

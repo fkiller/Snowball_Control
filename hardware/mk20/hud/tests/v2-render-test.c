@@ -42,12 +42,22 @@ int main(int argc, char **argv) {
     assert(!strcmp(g_v2_state.top_styles, "hcqr"));
     uint16_t top[TOP_W * TOP_H];
     v2_render_top_frame(top);
-    assert(top[67 * TOP_W + 10] == g_v2_theme.top_card);
-    assert(top[86 * TOP_W + 12] == g_v2_theme.top_accent);
-    assert(top[113 * TOP_W + 12] == g_v2_theme.top_border);
+    assert(top[46 * TOP_W + 10] == g_v2_theme.top_card);
+    assert(top[65 * TOP_W + 12] == g_v2_theme.top_accent);
+    assert(top[92 * TOP_W + 12] == g_v2_theme.top_border);
+    const char *crumb="{\"type\":\"v2_sync\",\"crumbProject\":\"한글 프로젝트\",\"crumbSession\":\"An exceptionally long session title that must fit a single row\",\"crumbHarness\":\"Codex\",\"topBody\":\"1\\n2\\n3\\n4\\n5\\n6\",\"keys\":[]}";
+    assert(v2_parse_sync_packet(crumb,strlen(crumb)));
+    assert(!strcmp(g_v2_state.crumb_project,"한글 프로젝트"));
+    v2_render_top_frame(top);
+    uint16_t header[TOP_W*24];memcpy(header,top,sizeof header);
+    g_v2_now_ms=1000;g_v2_volume_until_ms=4000;v2_render_top_frame(top);
+    assert(memcmp(header,top,sizeof header)); // Only actual-change interval reserves volume width.
+    g_v2_now_ms=4001;v2_render_top_frame(top);assert(!memcmp(header,top,sizeof header));
+    g_v2_volume_until_ms=0;
     const char *plain = "{\"type\":\"v2_sync\",\"topBody\":\"plain\",\"keys\":[]}";
     assert(v2_parse_sync_packet(plain, strlen(plain)));
     assert(!g_v2_state.top_styles[0]);
+    assert(!g_v2_state.crumb_project[0]);
     const char *code = "{\"type\":\"v2_sync\",\"topBody\":\"{\\\"keys\\\": [], \\\"topStyles\\\":\\\"r\\\"}; C:\\\\code\",\"topStyles\":\"c\",\"keys\":[{\"id\":1,\"main\":\"actual\",\"flags\":0}]}";
     assert(v2_parse_sync_packet(code, strlen(code)));
     assert(!strcmp(g_v2_state.top_body, "{\"keys\": [], \"topStyles\":\"r\"}; C:\\code"));
@@ -68,7 +78,9 @@ int main(int argc, char **argv) {
         }
         fclose(output);
     }
+    assert(v2_parse_sync_packet(plain,strlen(plain)));
     g_host_offline = 0;
+    memset(&g_v2_state.keys[17],0,sizeof g_v2_state.keys[17]);
     v2_render_key_frame(fb, 17, 0);
     for (unsigned i = 0; i < sizeof fb / sizeof fb[0]; i++) assert(fb[i] == 0);
     return 0;

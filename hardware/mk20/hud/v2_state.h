@@ -102,6 +102,8 @@ typedef struct {
     char top_subtitle[64];
     char top_body[16384]; // multi-line text
     char top_styles[9];   // optional viewport rows: text/heading/code/quote/list/rule
+    char crumb_project[96], crumb_session[160], crumb_harness[24], crumb_icon[65];
+    char crumb_pixels[513];
     int top_scroll;
     int top_total_lines;
     int volume;
@@ -120,6 +122,8 @@ extern char g_host_connection_name[64];
 extern char g_v2_controller_id[21];
 extern char g_v2_run_id[33];
 extern uint32_t g_v2_sequence;
+extern uint64_t g_v2_volume_until_ms;
+extern uint64_t g_v2_now_ms;
 
 void v2_init_defaults(void);
 void v2_apply_theme(const char *skin_id);

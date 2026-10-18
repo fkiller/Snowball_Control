@@ -1693,18 +1693,23 @@ static void machine_view(void) {
     memset(&g_v2_state,0,sizeof g_v2_state);
     g_v2_state.volume=g_machine_saved.volume;g_v2_state.is_muted=g_machine_saved.is_muted;
     strcpy(g_v2_state.view_mode,"workspace");
-    strcpy(g_v2_state.top_title,"Machines");
-    snprintf(g_v2_state.top_subtitle,sizeof g_v2_state.top_subtitle,"Select to pair / K8 forget / K4 back");
-    size_t used=0; int first=g_network.focus>=4?g_network.focus-3:0;
+    strcpy(g_v2_state.top_title,g_network.saved_menu?"Saved registrations":"Machines");
+    int visible[MK20_HOST_LIMIT],count=mk20_network_visible(&g_network,visible,get_time_ms()),focused=0;
+    for(int j=0;j<count;j++)if(visible[j]==g_network.focus)focused=j;
+    if(count)g_network.focus=visible[focused];
+    size_t used=0; int first=focused>=5?focused-5:0;
     if(!g_network.count)strcpy(g_v2_state.top_body,"Searching local Wi-Fi for middleware...\nStart the MK20 profile on your PC.");
-    for(int i=first;i<g_network.count&&i<first+4;i++){
+    for(int row=first;row<count&&row<first+6;row++){
+        int i=visible[row];
         Mk20Host *h=&g_network.hosts[i]; int online=h->seen&&get_time_ms()-h->seen<8000;
         const char *status=online?" / available":" / offline";
         if(online&&i==g_network.selected&&g_has_host_addr&&get_time_ms()-g_last_host_sync_ms<8000)status=" / connected";
-        used+=snprintf(g_v2_state.top_body+used,sizeof g_v2_state.top_body-used,"%c %s [%s%s]\n",i==g_network.focus?'>':' ',h->name,h->paired?"paired":"new",status);
+        const char *suffix=strlen(h->id)>6?h->id+strlen(h->id)-6:h->id;
+        used+=snprintf(g_v2_state.top_body+used,sizeof g_v2_state.top_body-used,"%c %s [%s%s]%s%.6s\n",i==g_network.focus?'>':' ',h->name,h->paired?"paired":"new",status,g_network.saved_menu?" #":"",g_network.saved_menu?suffix:"");
     }
     const int ids[]={17,16,4,8}; const char *labels[]={"Machines","Pair / Select","Back","Forget"};
     for(int j=0;j<4;j++){V2_Key *k=&g_v2_state.keys[ids[j]]; k->id=ids[j];strcpy(k->main,labels[j]);}
+    g_v2_state.keys[12].id=12;strcpy(g_v2_state.keys[12].main,g_network.saved_menu?"Available PCs":"Saved PCs");
     g_host_offline=0; g_dirty_keys=0x1FFFFE;g_dirty_top=1;
 }
 static void machine_reset_scope(void) {
@@ -1754,6 +1759,7 @@ static void on_key_event(int row, int col, int pressed) {
     if(g_mode_v2&&g_network.menu){
         if(pressed&&key_idx==4)machine_menu(0);
         else if(pressed&&key_idx==16)machine_commit();
+        else if(pressed&&key_idx==12){g_network.saved_menu=!g_network.saved_menu;machine_view();}
         else if(pressed&&key_idx==8){mk20_network_forget(&g_network,g_sockfd,g_network.focus);machine_reset_scope();machine_view();}
         return;
     }
@@ -1866,7 +1872,7 @@ static void on_key_event(int row, int col, int pressed) {
 
 // Handle Left Rotary Knob (controls Card 1 & Key 11)
 static void on_left_knob(int direction) {
-    if(g_mode_v2&&g_network.menu){g_network.focus+=direction;if(g_network.focus<0)g_network.focus=0;if(g_network.focus>=g_network.count)g_network.focus=g_network.count?g_network.count-1:0;machine_view();return;}
+    if(g_mode_v2&&g_network.menu){int visible[MK20_HOST_LIMIT],count=mk20_network_visible(&g_network,visible,get_time_ms()),index=0;for(int i=0;i<count;i++)if(visible[i]==g_network.focus)index=i;index+=direction;if(index<0)index=0;if(index>=count)index=count-1;if(count)g_network.focus=visible[index];machine_view();return;}
     if (g_mode_v2) {
         if (g_sockfd >= 0 && g_has_host_addr) {
             char pkt[128];
@@ -1940,6 +1946,7 @@ static void on_right_knob(int direction) {
         if (g_v2_state.volume < 0) g_v2_state.volume = 0;
         if (g_v2_state.volume > 100) g_v2_state.volume = 100;
         apply_hardware_volume(g_v2_state.volume, g_v2_state.is_muted);
+        g_v2_volume_until_ms=get_time_ms()+3000;
         g_dirty_top = 1;
         return;
     }
@@ -1969,6 +1976,7 @@ static void on_right_knob_click(void) {
         }
         g_v2_state.is_muted = !g_v2_state.is_muted;
         apply_hardware_volume(g_v2_state.volume, g_v2_state.is_muted);
+        g_v2_volume_until_ms=get_time_ms()+3000;
         g_dirty_top = 1;
         return;
     }
@@ -2144,6 +2152,7 @@ static void handle_udp_packet(const char *buf, int len, const struct sockaddr_in
         g_dirty_top = 1;
         if (g_v2_state.volume != prev_vol || g_v2_state.is_muted != prev_mute) {
             apply_hardware_volume(g_v2_state.volume, g_v2_state.is_muted);
+            g_v2_volume_until_ms=get_time_ms()+3000;
         }
         return;
     } else if (strstr(buf, "\"type\":\"v2_sync\"") || strstr(buf, "\"type\": \"v2_sync\"")) {
@@ -2577,11 +2586,14 @@ int main(int argc, char *argv[]) {
             static long long last_host_ping = 0;
             if (g_has_host_addr && now - last_host_ping > 1000) {
                 last_host_ping = now;
-                send_input_to_host("{\"type\":\"ping\"}",15);
+                const char *presence="{\"type\":\"ping\",\"topRows\":6}";
+                send_input_to_host(presence,strlen(presence));
             }
             static long long last_v2_anim_ms = 0;
             if (now - last_v2_anim_ms >= 50) {
                 last_v2_anim_ms = now;
+                g_v2_now_ms=now;
+                if(g_v2_volume_until_ms&&now>=g_v2_volume_until_ms){g_v2_volume_until_ms=0;g_dirty_top=1;}
                 g_v2_tick_count++;
                 for (int k = 1; k <= 20; k++) {
                     if (g_v2_state.keys[k].main[0] && strlen(g_v2_state.keys[k].main) > 14) {

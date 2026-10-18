@@ -30,8 +30,8 @@ export function decodeLegacyInput(bytes) {
     requireThat(value.isClick === undefined && [-1,1].includes(value.delta), 'invalid_knob');
     return {kind:'knob-turn',knob,delta:value.delta,trust:'untrusted_lab',...sequence};
   }
-  requireThat(value.type === 'ping' && Object.keys(value).every(k=>['type','seq'].includes(k)), 'unsupported_packet');
-  return {kind:'presence',trust:'untrusted_lab',...sequence};
+  requireThat(value.type === 'ping' && Object.keys(value).every(k=>['type','seq','topRows'].includes(k)) && (value.topRows===undefined||[4,6].includes(value.topRows)), 'unsupported_packet');
+  return {kind:'presence',trust:'untrusted_lab',...(value.topRows!==undefined?{topRows:value.topRows}:{}),...sequence};
 }
 // Firmware uses substring parsing; do not emit delimiters that can masquerade as JSON fields.
 function text(value, maxBytes) {
@@ -68,6 +68,21 @@ export function encodeLegacyPreview(view, sequence) {
     return k;
   });
   const packet={type:'v2_sync',seq:sequence,viewMode:text(view.mode ?? 'lab',15),topTitle:text(view.title,63),topSubtitle:text(view.subtitle ?? '',63),topBody:view.lines.map(line=>bodyText(line,168)).join('\n'),topScroll:view.scroll,topTotalLines:view.totalLines,volume:view.volume,isMuted:view.muted,keys};
+  if (view.breadcrumb !== undefined) {
+    const crumb=view.breadcrumb;
+    requireThat(crumb && typeof crumb==='object' && !Array.isArray(crumb),'invalid_breadcrumb');
+    packet.crumbProject=text(crumb.project ?? '',95);packet.crumbSession=text(crumb.session ?? '',159);packet.crumbHarness=text(crumb.harness ?? '',23);
+    if (crumb.icon !== undefined) {
+      requireThat(Array.isArray(crumb.icon)&&crumb.icon.length===16&&crumb.icon.every(row=>int(row,0,65535)),'invalid_breadcrumb_icon');
+      packet.crumbIcon=crumb.icon.map(row=>row.toString(16).padStart(4,'0')).join('');
+    }
+    if (crumb.rgb565 !== undefined) {
+      requireThat(typeof crumb.rgb565==='string'&&crumb.rgb565.length===684,'invalid_breadcrumb_pixels');
+      const pixels=Buffer.from(crumb.rgb565,'base64');
+      requireThat(pixels.length===512&&pixels.toString('base64')===crumb.rgb565,'invalid_breadcrumb_pixels');
+      packet.crumbPixels=Array.from({length:256},(_,i)=>{const c=pixels.readUInt16BE(i*2);const packed=(Math.round(((c>>11)&31)*7/31)<<5)|(Math.round(((c>>5)&63)*7/63)<<2)|Math.round((c&31)*3/31);return packed.toString(16).padStart(2,'0');}).join('');
+    }
+  }
   if (view.styles !== undefined) {
     requireThat(typeof view.styles === 'string' && /^[thcqlr]{0,8}$/.test(view.styles) && view.styles.length === view.lines.length, 'invalid_styles');
     packet.topStyles = view.styles;
@@ -82,7 +97,9 @@ export function encodeLegacyPreview(view, sequence) {
     packet.skinName = text(view.skinName, 31);
   }
   const maxCapacity = (view.mode === 'workspace' || view.mode === 'changes' || view.keys.some(k => (k.flags & 32) || (k.items && k.items.length > 0))) ? 4096 : 1400;
-  const encoded=Buffer.from(JSON.stringify(packet)); requireThat(encoded.length <= maxCapacity, 'datagram_capacity'); return encoded;
+  let encoded=Buffer.from(JSON.stringify(packet));
+  if(encoded.length>maxCapacity&&packet.crumbPixels){delete packet.crumbPixels;encoded=Buffer.from(JSON.stringify(packet));}
+  requireThat(encoded.length <= maxCapacity, 'datagram_capacity'); return encoded;
 }
 
 export * from './skin.mjs';

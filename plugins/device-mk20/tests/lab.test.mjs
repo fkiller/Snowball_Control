@@ -5,6 +5,16 @@ import {once} from 'node:events';
 import {compatibility,requireProductionControl,decodeLegacyInput,encodeLegacyPreview,Mk20LabTransport} from '../src/index.mjs';
 const packet=v=>Buffer.from(JSON.stringify(v));
 const view={title:'로컬 테스트',lines:['preview only'],scroll:0,totalLines:1,volume:50,muted:false,keys:[{id:1,top:'Project',main:'Demo',flags:1}]};
+
+test('actual viewport advertisement and bounded breadcrumb remain presentation-only',()=>{
+  assert.equal(decodeLegacyInput(packet({type:'ping',topRows:6})).topRows,6);
+  assert.equal(decodeLegacyInput(packet({type:'ping'})).topRows,undefined);
+  assert.throws(()=>decodeLegacyInput(packet({type:'ping',topRows:99})));
+  const encoded=JSON.parse(encodeLegacyPreview({...view,breadcrumb:{project:'한글 프로젝트',session:'Native task',harness:'Codex',icon:Array(16).fill(0xffff)}},1));
+  assert.equal(encoded.crumbProject,'한글 프로젝트');assert.equal(encoded.crumbIcon,'ffff'.repeat(16));
+  const color=JSON.parse(encodeLegacyPreview({...view,breadcrumb:{icon:Array(16).fill(0xffff),rgb565:Buffer.alloc(512,255).toString('base64')}},1));assert.equal(color.crumbPixels,'ff'.repeat(256));
+  assert.throws(()=>encodeLegacyPreview({...view,breadcrumb:{icon:[-1]}},1));
+});
 test('two actual UDP controllers reject foreign and retired input without sharing theme or sequence',async t=>{
   const peer=dgram.createSocket('udp4');peer.bind(0,'127.0.0.1');await once(peer,'listening');t.after(()=>peer.close());
   const make=controllerId=>new Mk20LabTransport({labEnabled:true,localAddress:'127.0.0.1',targetAddress:'127.0.0.1',targetPort:peer.address().port,controllerId});

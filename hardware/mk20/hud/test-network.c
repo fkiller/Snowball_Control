@@ -30,5 +30,13 @@ int main(void) {
     assert(mk20_network_select(&n,udp,0,4000));assert(n.hosts[0].paired&&n.selected==0&&n.lease[0]);
     mk20_network_tick(&n,udp,40000);assert(n.count==1&&n.hosts[0].paired&&n.selected==-1);
     mk20_network_forget(&n,udp,0);assert(!n.hosts[0].paired&&!n.selected_id[0]);close(udp);
+    Mk20Network duplicates={.count=3,.selected=0};int visible[MK20_HOST_LIMIT];
+    strcpy(duplicates.hosts[0].name,"Same PC");strcpy(duplicates.hosts[0].id,"old");duplicates.hosts[0].paired=1;
+    strcpy(duplicates.hosts[1].name,"Same PC");strcpy(duplicates.hosts[1].id,"new");duplicates.hosts[1].seen=1000;
+    strcpy(duplicates.hosts[2].name,"Other PC");strcpy(duplicates.hosts[2].id,"other");duplicates.hosts[2].paired=1;
+    assert(mk20_network_visible(&duplicates,visible,2000)==2&&visible[0]==1&&visible[1]==2);
+    assert(duplicates.selected==0&&duplicates.hosts[0].paired&&!duplicates.hosts[1].paired); // no authority transfer
+    duplicates.saved_menu=1;assert(mk20_network_visible(&duplicates,visible,2000)==2&&visible[0]==0);
+    duplicates.saved_menu=0;duplicates.hosts[0].seen=1000;assert(mk20_network_visible(&duplicates,visible,2000)==3); // genuinely distinct online IDs stay separate
     puts("MK20 native discovery/scope tests passed");return 0;
 }

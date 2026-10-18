@@ -5,6 +5,7 @@
 #include "snowball_icon.h"
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 
 static void draw_bitmap_16(uint16_t *fb, int stride_pixels, int x, int y, int w, int h, const uint16_t *bitmap) {
     if (!fb || !bitmap) return;
@@ -240,6 +241,13 @@ void v2_render_key_frame(uint16_t *fb, int key_idx, int pressed) {
     }
 }
 
+static int crumb_label(uint16_t *fb,int x,int limit,const char *text,uint16_t color) {
+    char fitted[192];int used=0,width=0,full=unicode_width(text);
+    int budget=limit-(full>limit?16:0);if(budget<0)budget=0;
+    while(*text&&used<180){unsigned cp;int bytes=unicode_step(text,&cp),advance=cp<128?8:16;if(width+advance>budget)break;memcpy(fitted+used,text,bytes);used+=bytes;text+=bytes;width+=advance;}
+    if(*text&&limit>=16){fitted[used++]='.';fitted[used++]='.';width+=16;}fitted[used]=0;
+    draw_string_clipped_16(fb,TOP_W,x,4,fitted,color,1,x,0,limit,24);return width;
+}
 void v2_render_top_frame(uint16_t *fb) {
     if (!fb) return;
 
@@ -271,24 +279,38 @@ void v2_render_top_frame(uint16_t *fb) {
     draw_rect_16(fb, TOP_W, 0, 0, TOP_W, 24, g_v2_theme.top_card);
     draw_line_16(fb, TOP_W, 0, 24, TOP_W - 1, 24, g_v2_theme.top_border);
 
-    // Left Title
-    draw_string_16(fb, TOP_W, 12, 4, g_v2_state.top_title, g_v2_theme.top_text, 1);
+    int show_volume=g_v2_volume_until_ms>g_v2_now_ms;
+    int right=TOP_W-8-(show_volume?88:0);
+    if(g_v2_state.crumb_project[0]) {
+        for(int y=0;y<16;y++)for(int x=0;x<16;x++)fb[(4+y)*TOP_W+8+x]=g_snowball_icon_128[(y*8)*128+x*8];
+        int x=32;
+        if(strlen(g_v2_state.crumb_icon)==64){
+            for(int row=0;row<16;row++){
+                char hex[5];memcpy(hex,g_v2_state.crumb_icon+row*4,4);hex[4]=0;unsigned bits=strtoul(hex,NULL,16);
+                for(int col=0;col<16;col++)if(bits&(1u<<(15-col))){
+                    uint16_t color=g_v2_theme.top_accent;
+                    if(strlen(g_v2_state.crumb_pixels)==512){char pixel[3];memcpy(pixel,g_v2_state.crumb_pixels+(row*16+col)*2,2);pixel[2]=0;unsigned c=strtoul(pixel,NULL,16);color=(((c>>5)*31/7)<<11)|((((c>>2)&7)*63/7)<<5)|((c&3)*31/3);}
+                    fb[(4+row)*TOP_W+x+col]=color;
+                }
+            }
+            x+=24;
+        } else x+=crumb_label(fb,x,64,g_v2_state.crumb_harness,g_v2_theme.top_accent)+8;
+        x+=crumb_label(fb,x,120,g_v2_state.crumb_project,g_v2_theme.top_dim)+8;
+        draw_string_16(fb,TOP_W,x,4,">",g_v2_theme.top_dim,1);x+=16;
+        if(right>x)crumb_label(fb,x,right-x,g_v2_state.crumb_session,g_v2_theme.top_text);
+    } else crumb_label(fb,12,right-12,g_v2_state.top_title,g_v2_theme.top_text);
 
-    // Right Volume Pill
+    // Volume is an actual-change overlay; repeated sync packets do not extend it.
     char vol_str[24];
-    if (g_v2_state.is_muted) {
+    if (show_volume && g_v2_state.is_muted) {
         snprintf(vol_str, sizeof(vol_str), "[MUTED]");
         draw_string_16(fb, TOP_W, TOP_W - 75, 4, vol_str, COLOR_ROSE, 1);
-    } else {
+    } else if(show_volume) {
         snprintf(vol_str, sizeof(vol_str), "VOL %d%%", g_v2_state.volume);
         draw_string_16(fb, TOP_W, TOP_W - 75, 4, vol_str, g_v2_theme.top_accent, 1);
     }
 
-    // 2. Subtitle Bar (y: 25..42)
-    draw_string_16(fb, TOP_W, 12, 27, g_v2_state.top_subtitle, g_v2_theme.top_dim, 1);
-    draw_line_16(fb, TOP_W, 0, 44, TOP_W - 1, 44, g_v2_theme.top_border);
-
-    // 3. Body Text Area (y: 46..140)
+    // All rows below the single breadcrumb belong to content.
     // Parse top_body into lines
     const char *p = g_v2_state.top_body;
     char lines[64][192];
@@ -321,10 +343,10 @@ void v2_render_top_frame(uint16_t *fb) {
 
     // Since the Host streams a sliding window starting at the current scroll position,
     // lines[0] is already the top visible line for this viewport.
-    for (int i = 0; i < 4; i++) {
+    for (int i = 0; i < 6; i++) {
         if (i >= line_count) break;
 
-        int y = 48 + i * 19;
+        int y = 27 + i * 19;
         const char *line = lines[i];
 
         uint16_t color = g_v2_theme.top_text;
@@ -359,22 +381,22 @@ void v2_render_top_frame(uint16_t *fb) {
         if (style == 'r') {
             draw_line_16(fb, TOP_W, 12, y + 8, TOP_W - 16, y + 8, g_v2_theme.top_border);
         } else {
-            draw_string_clipped_16(fb, TOP_W, 12, y, line, color, 1, 12, 46, TOP_W - 28, 80);
+            draw_string_clipped_16(fb, TOP_W, 12, y, line, color, 1, 12, 25, TOP_W - 28, 116);
         }
     }
 
     // 4. Scrollbar indicator on right edge
     int total_lines = g_v2_state.top_total_lines > 0 ? g_v2_state.top_total_lines : line_count;
-    if (total_lines > 4) {
+    if (total_lines > 6) {
         int track_x = TOP_W - 8;
-        int track_y = 48;
-        int track_h = 76;
+        int track_y = 27;
+        int track_h = 112;
         draw_rect_16(fb, TOP_W, track_x, track_y, 4, track_h, g_v2_theme.top_border);
 
-        int thumb_h = track_h * 4 / total_lines;
+        int thumb_h = track_h * 6 / total_lines;
         if (thumb_h < 8) thumb_h = 8;
         if (thumb_h > track_h) thumb_h = track_h;
-        int max_s = total_lines - 4;
+        int max_s = total_lines - 6;
         if (max_s < 1) max_s = 1;
         int s = g_v2_state.top_scroll;
         if (s < 0) s = 0;

@@ -1,4 +1,6 @@
 #include "v2_state.h"
+
+uint64_t g_v2_volume_until_ms=0, g_v2_now_ms=0;
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -446,6 +448,12 @@ int v2_parse_sync_packet(const char *json, int len) {
     if (parse_bool_field(json, "autoFontReverse", &opt_auto_rev)) {
         g_v2_theme.auto_font_reverse = (uint8_t)opt_auto_rev;
     }
+    g_v2_state.crumb_project[0]=g_v2_state.crumb_session[0]=g_v2_state.crumb_harness[0]=g_v2_state.crumb_icon[0]=g_v2_state.crumb_pixels[0]=0;
+    parse_string_field(json,"crumbProject",g_v2_state.crumb_project,sizeof g_v2_state.crumb_project);
+    parse_string_field(json,"crumbSession",g_v2_state.crumb_session,sizeof g_v2_state.crumb_session);
+    parse_string_field(json,"crumbHarness",g_v2_state.crumb_harness,sizeof g_v2_state.crumb_harness);
+    parse_string_field(json,"crumbIcon",g_v2_state.crumb_icon,sizeof g_v2_state.crumb_icon);
+    parse_string_field(json,"crumbPixels",g_v2_state.crumb_pixels,sizeof g_v2_state.crumb_pixels);
     parse_string_field(json, "topTitle", g_v2_state.top_title, sizeof(g_v2_state.top_title));
     parse_string_field(json, "topSubtitle", g_v2_state.top_subtitle, sizeof(g_v2_state.top_subtitle));
     parse_string_field(json, "topBody", g_v2_state.top_body, sizeof(g_v2_state.top_body));

@@ -5,11 +5,12 @@ explicit UDP transport from the prototype boundary. It does not import middlewar
 core, harnesses, ADB, firmware tools or the old global ContextManager. No transport
 starts on import. Run `npm test --prefix plugins/device-mk20` for pure/loopback tests.
 
-Current firmware source (`hardware/mk20/hud/mk20-hud.c`) sends raw JSON key/knob
-packets, frequently without sequence, and updates g_host_addr from received UDP.
-There is no authenticated pairing handshake in that path. Therefore compatibility
-is always lab_only/unpaired/control=false. IP pinning is an accident-prevention
-measure, not authentication or replay protection. Legacy input is labelled
+Current HUD packets use a physical controller ID, transport run ID and sequence;
+selected-host leases pin the display/input route. Runtime 0.2.8 advertises its six-row
+viewport in scoped presence; older devices retain the four-row layout. Optional
+bounded breadcrumb labels and a 16-row icon mask are presentation data only.
+These routing/replay guards do not provide cryptographic enrollment. Compatibility
+remains lab_only/unpaired/control=false. Legacy input is labelled
 untrusted_lab and must never be admitted to CommandJournal as device authorization.
 
 The lab transport requires an explicit labEnabled flag, exact bind address/peer,
