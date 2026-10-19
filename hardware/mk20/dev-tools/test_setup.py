@@ -55,6 +55,7 @@ class PreparationGuards(unittest.TestCase):
         self.assertEqual([t['usbIdentity'] for t in targets], parents)
         self.assertEqual(len({t['port'] for t in targets}), 2)
         self.assertTrue(all(t['native'] is None for t in targets))
+        self.assertTrue(all(t['transport'] == 'usb' for t in targets))
 
     def test_product_cdc_parent_does_not_duplicate_verified_serial_attachment(self):
         identity = r'USB\VID_1D6B&PID_0104\mk20-aabbccddeeff'

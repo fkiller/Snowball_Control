@@ -93,7 +93,7 @@ def usb_presence_targets(found, existing):
             continue
         result.append(dict(port=token('usb|'+identity), usbIdentity=identity,
                            label='MK20 · USB Linux' if linux else 'MK20 · USB QMK',
-                           component='runtime' if linux else 'qmk', native=None))
+                           component='runtime' if linux else 'qmk', transport='usb', native=None))
     return result
 
 
@@ -101,14 +101,14 @@ def inventory(directory=None):
     result = []
     result.extend(setup_maintenance.devices())
     try:
-        result.extend(setup_usb.devices())
+        result.extend(dict(item, transport='usb') for item in setup_usb.devices())
     except ImportError:
         pass
     for card in cards():
-        result.append(dict(port=card['port'], usbIdentity=card['identity'], label='MK20 · SD', component='runtime', native=card))
+        result.append(dict(port=card['port'], usbIdentity=card['identity'], label='MK20 · SD', component='runtime', transport='storage', native=card))
     try:
         for item in setup_qmk.devices():
-            result.append(dict(port=item['port'], usbIdentity=item['identity'], label='MK20 · QMK DFU', component='qmk', native=item))
+            result.append(dict(port=item['port'], usbIdentity=item['identity'], label='MK20 · QMK DFU', component='qmk', transport='usb', native=item))
     except Exception:
         # SD preparation is still available if a USB driver/library is absent.
         pass
