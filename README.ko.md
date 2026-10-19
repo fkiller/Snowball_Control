@@ -170,8 +170,17 @@ M5Stack **0.5.6**는 머신 목록에서 식별되지 않은 “기존 등록 PC
 
 ## 🎥 하드웨어 시연 및 비주얼 쇼케이스 (Visual Showcase)
 
+### 현재 MK20 0.2.8 화면
+
+실물 framebuffer에서 한 줄 아이콘 breadcrumb가 상단 전체 폭을 사용하고, 아래에 콘텐츠 6줄을 표시합니다. 볼륨은 변경 시 3초만 표시하도록 구현됐으며 이 캡처는 상시 볼륨 표시가 없는 기본 상태입니다. 내장 16×16 한글 폰트를 사용합니다. 원래 선택된 Codex 세션의 실제 화면이며 395 Antigravity 인수 결과는 별도입니다.
+
+<p align="center">
+  <img src="assets/screenshots/mk20_compact_breadcrumb_0_2_8.png" width="428" alt="MK20 0.2.8: one-row icon breadcrumb and six native Korean content rows"><br>
+  <em>실제 MK20 0.2.8에서 읽은 428×142 framebuffer 원본입니다.</em>
+</p>
+
 ### 1. 계층 네비게이션 및 음성 세션 실기기 시연
-MK20에서 구동되는 브레드크럼 계층 네비게이션(`기기 > 하네스 > 프로젝트 > 세션`), 내장 마이크 음성 프롬프트 캡처, 모달 뷰(좌측 상단 타이틀 겸 Close 버튼, 열별 단축키, 4×4 그리드 캔버스), 그리고 로터리 노브 선택 동작 시연입니다:
+현재 0.2.8 화면은 위에 있으며, 아래는 이전 실물 시연 영상입니다. MK20에서 구동되는 브레드크럼 계층 네비게이션(`기기 > 하네스 > 프로젝트 > 세션`), 내장 마이크 음성 프롬프트 캡처, 모달 뷰(좌측 상단 타이틀 겸 Close 버튼, 열별 단축키, 4×4 그리드 캔버스), 그리고 로터리 노브 선택 동작 시연입니다:
 
 <p align="center">
   <img src="assets/screenshots/mk20_navigation_demo.gif" width="480" alt="MK20 네비게이션 시연"><br>
@@ -189,10 +198,11 @@ MK20에서 구동되는 브레드크럼 계층 네비게이션(`기기 > 하네�
 </p>
 
 ### 3. 웹 수퍼바이저 대시보드 (Web Supervisor)
-탐색된 작업공간, 세션 저널, MK20 하드웨어 연결 상태를 실시간으로 모니터링하는 로컬 루프백 제어 평면(`http://127.0.0.1:8765/`) 화면입니다:
+현재 설치본은 네이티브 프로젝트·세션 목록, 중앙 대화, 하단 입력창 중심입니다. 모델·effort와 실제 CLI 사용 가능 상태를 입력창에 두고 메타데이터는 접었습니다. 목록은 하네스 자체 순서만 따릅니다. 아래는 기존 Antigravity 인사 세션을 선택한 실제 화면이며 촬영을 위한 프롬프트는 보내지 않았습니다.
 
 <p align="center">
-  <img src="assets/screenshots/web_supervisor_dashboard_ko.png" width="100%" alt="Snowball 웹 수퍼바이저 대시보드">
+  <img src="assets/screenshots/web_supervisor_dashboard_ko.jpg" width="100%" alt="실제 설치 Web UI: Antigravity 네이티브 세션 목록, 대화, 입력창, CLI 사용 가능 상태"><br>
+  <em>2026-10-18 실제 Windows 설치본 캡처. 기존 인사 대화를 표시하며 시연용 대화를 생성하지 않았습니다.</em>
 </p>
 
 ### 4. MK20 오프라인 대기 화면 및 연결 상태
@@ -251,8 +261,8 @@ Snowball_Control/
 │   ├── screenshots/            # 실제 기기 프레임버퍼 캡처, GIF 및 웹 UI 화면
 │   │   ├── mk20_navigation_demo.gif
 │   │   ├── mk20_ui_elements_test.gif
-│   │   ├── web_supervisor_dashboard_ko.png
-│   │   ├── web_supervisor_dashboard_en.png
+│   │   ├── web_supervisor_dashboard_ko.jpg
+│   │   ├── web_supervisor_dashboard_en.jpg
 │   │   ├── mk20_no_pc_response.png
 │   │   ├── mk20_pairing_key17.png
 │   │   └── online_top_display.png

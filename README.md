@@ -172,8 +172,17 @@ Install the complete middleware through the common entry point above. This repos
 
 ## 🎥 Hardware Demos & Visual Showcase
 
+### Current MK20 0.2.8 display
+
+Actual physical framebuffer: a single icon breadcrumb uses the full header width, six content rows use the space below, and volume uses a three-second overlay after a change. This framebuffer shows its normal hidden state. Embedded 16×16 Hangul remains in use. This capture shows the retained native Codex session; it does not certify 395 Antigravity acceptance.
+
+<p align="center">
+  <img src="assets/screenshots/mk20_compact_breadcrumb_0_2_8.png" width="428" alt="MK20 0.2.8: one-row icon breadcrumb and six native Korean content rows"><br>
+  <em>Unedited 428×142 framebuffer from the physical MK20 running 0.2.8.</em>
+</p>
+
 ### 1. Live Breadcrumb Navigation & Voice Session
-Demonstration of the MK20 running its dynamic breadcrumb hierarchy (`Device > Harness > Project > Session`), built-in mic speech prompt capture, modal view with top-left title/close button, and rotary knob selection:
+Earlier hardware demonstration (the current 0.2.8 display is shown above) of the MK20 running its dynamic breadcrumb hierarchy (`Device > Harness > Project > Session`), built-in mic speech prompt capture, modal view with top-left title/close button, and rotary knob selection:
 
 <p align="center">
   <img src="assets/screenshots/mk20_navigation_demo.gif" width="480" alt="MK20 Live Navigation Demo"><br>
@@ -191,10 +200,11 @@ Physical testing of the 20 mechanical key switches with individual 128×128 LCD 
 </p>
 
 ### 3. Web Supervisor Dashboard
-The local-loopback control plane (`http://127.0.0.1:8765/`) visualizing detected workspaces, session journals, and MK20 hardware status in real-time:
+The current installed Web UI puts the native project/session sidebar beside the conversation and bottom composer. Model/effort and actual CLI readiness stay near input; metadata is collapsed. Lists follow only native harness order. The capture below selects an existing Antigravity greeting; no prompt was sent for the screenshot.
 
 <p align="center">
-  <img src="assets/screenshots/web_supervisor_dashboard_en.png" width="100%" alt="Snowball Web Supervisor Dashboard">
+  <img src="assets/screenshots/web_supervisor_dashboard_en.jpg" width="100%" alt="Snowball installed Web UI: native Antigravity session list, conversation, composer and actual CLI readiness"><br>
+  <em>Actual installed Windows Web UI, captured 2026-10-18. The visible history is an existing greeting, not a generated demonstration.</em>
 </p>
 
 ### 4. MK20 Offline Standby Screen & Status
@@ -255,8 +265,8 @@ Snowball_Control/
 │   ├── screenshots/            # Live hardware captures, GIFs & Web UI dashboard
 │   │   ├── mk20_navigation_demo.gif
 │   │   ├── mk20_ui_elements_test.gif
-│   │   ├── web_supervisor_dashboard_en.png
-│   │   ├── web_supervisor_dashboard_ko.png
+│   │   ├── web_supervisor_dashboard_en.jpg
+│   │   ├── web_supervisor_dashboard_ko.jpg
 │   │   ├── mk20_no_pc_response.png
 │   │   ├── mk20_pairing_key17.png
 │   │   └── online_top_display.png

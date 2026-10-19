@@ -458,6 +458,12 @@ M5Stack 게이트웨이는 UDP 47770의 v3 검색, HTTP 47771의 제한된 등�
 
 **하네스 작업 화면과 네이티브 탐색(2026-10-17):** Web Supervisor를 왼쪽 프로젝트·세션 탐색, 중앙 대화, 하단 입력창으로 구성하고 Workspaces Overview를 제거한다. 실제 소유/연결 상태·세션 연결·네이티브 모델/effort 조작은 입력창에 두고 세션 ID·소유자·명령 영수증은 접힌 세션 상세로 이동한다. 이전 메시지를 보는 스크롤 위치와 세션별 초안을 유지한다. 대화의 제목·목록·인용·코드·HTTP(S) 링크는 안전한 DOM으로 표시하고 원문 HTML을 실행하지 않는다. 플러그인의 검증된 하네스 아이콘을 사용하며 같은 provider의 탐색 후보가 여러 개여도 하네스 탭은 하나다. Breadcrumb는 머신 아이콘·하네스 아이콘·프로젝트·잘린 세션 제목의 한 줄이고 전체 이름은 접근성 레이블/툴팁과 기존 선택 메뉴에서 확인한다. 설정·초기 안내·루프백 무인증 접근을 유지하며 외부 폰트나 클라우드를 추가하지 않는다.
 
+최신 설치 Web 캡처(2026-10-18): 새 프롬프트를 보내지 않고 기존 네이티브 Antigravity 인사 세션을 선택했다. 개인 경로·비공개 대화가 노출되지 않는 현재 설치 런타임의 화면이다. [영문 캡처](../assets/screenshots/web_supervisor_dashboard_en.jpg).
+
+<p align="center">
+  <img src="../assets/screenshots/web_supervisor_dashboard_ko.jpg" width="100%" alt="실제 설치본의 대화 중심 Web: Antigravity 네이티브 세션 목록과 CLI 사용 가능 상태">
+</p>
+
 신뢰된 런타임은 선택적인 `navigationCatalog` snapshot을 제공한다. **하네스 자체 프로젝트·세션 순서만** 사용한다. Snowball 탐색은 정렬에 영향을 주지 않으며 이전 navigation-history 파일을 읽거나 쓰지 않는다. Codex의 `project-order`·명시적인 로컬 세션 소속·수동 프로젝트 내 세션 순서를 읽고 없으면 실제 갱신 시각으로 네이티브 최근 순서를 적용한다. append-only 세션 인덱스는 thread ID로 중복을 제거한다. 원격 Codex 프로젝트를 로컬 폴더로 노출하지 않는다. 네이티브 앱에서 같은 프로젝트에 할당된 worktree는 그 프로젝트 아래 묶되 세션별 실제 `cwd`로 명령을 실행한다. 재분류 시 기존 세션 객체·초안을 보존하고 미전송 worktree 초안의 원래 폴더도 유지한다. 파일시스템 식별자로 표시용 별칭을 묶되 대소문자를 구분하는 다른 폴더를 합치거나 WorkspaceStore 파일 권한을 부여하지 않는다. Web/MK20/M5Stack 게이트웨이에 같은 순서를 제공하고 컨트롤러 선택은 독립적으로 유지한다. M5Stack은 호스트만 변경하며 펌웨어·페어링은 그대로다. 실제 이 PC의 Snowball Control은 기본 체크아웃과 할당된 Codex worktree 두 개의 세션을 포함한 프로젝트 하나로 확인했다.
 
 **Antigravity Desktop 관찰(2026-10-17):** Desktop 요약 DB가 있으면 이를 원천으로 쓰고 별도 CLI 기록을 합치거나 더 최신인 CLI 복사본으로 Desktop 행을 대체하지 않는다. 부모에 속한 하위/nested 세션, 다른 app-data 복사본, 삭제된 명시적 프로젝트의 기록은 기본 목록에서 제외한다. 제목이 같아도 서로 다른 최상위 ID는 별도 세션으로 유지한다. `.gemini/config/projects`의 실제 프로젝트 정의와 `Antigravity/app_storage.json`의 `projectsOrder`에서 이름·소속·순서를 읽고 세션은 네이티브 마지막 사용자 입력 시각, 구형 schema는 마지막 변경 시각을 따른다. 할당된 worktree의 실제 실행 폴더를 보존한다. Desktop DB가 없는 CLI 전용 설치는 CLI DB를 계속 관찰한다.
@@ -469,6 +475,11 @@ Codex/Antigravity/OpenCode 본문을 800자·최근 15개로 조용히 자르지
 **설치본 후속 확인(2026-10-18):** 같은 설치 루트의 일반 PC Update로 Middleware `6c01aa2`·Control 문서 `839b39e`·M5Stack 호스트 문서 `7257124`를 설치했다. 실제 HTTP snapshot은 약 2.65 MB·200으로 응답했고 Antigravity CLI 사용 가능을 확인했다. 실제 설치 Web에 Ready / 사용 가능과 기존 800자 이후 본문이 표시됐다. 호스트 식별자·포트 8765·두 기기 프로필을 보존했으며 Web 탐색·실제 원천 갱신 후에도 기존 navigation-history 파일의 SHA-256·수정 시각이 모두 유지됐다. MK20은 원래 선택 세션·간결한 6줄 본문으로 실제 재연결했고 네이티브 인벤토리는 0.2.8을 유지했다. 펌웨어·QMK·등록 권한·네이티브 프롬프트는 쓰지 않았다. 격리 QA 데몬은 종료했다. 395의 일반 Update와 실제 Automated/CLI 결과는 사용자 확인 대기다.
 
 **MK20 간결한 상단(런타임 0.2.8):** 24픽셀 한 줄에서 428픽셀 전체 폭에 Snowball/하네스 아이콘·프로젝트·잘린 세션 제목을 배치한다. 기존 subtitle 줄을 콘텐츠로 돌려 아래에 6줄을 표시한다. 실제 볼륨/음소거가 바뀔 때만 표시하고 monotonic 시각으로 3초 후 사라지며 반복 sync는 시간을 연장하지 않는다. 제한된 선택 필드 `crumbProject`·`crumbSession`·`crumbHarness`와 16행 hex 마스크 `crumbIcon`·선택적인 RGB332 256픽셀 hex `crumbPixels`는 표시 데이터다. 호스트가 플러그인 RGB565에서 제한된 색상을 만들고 패킷 예산이 부족하면 색상 대신 마스크 fallback을 사용한다. scope가 확인된 presence의 `topRows:6`을 읽기 전에는 호스트가 구형 4줄을 사용하여 파일/diff 이어짐과 스크롤 호환을 보존한다. Machines 기본 목록에서는 응답 중인 동일 이름의 ID가 있으면 오프라인 등록 행을 숨기며 **Saved PCs(K12)**에서 모든 등록 ID를 짧은 접미사와 함께 확인·명시적으로 잊을 수 있다. 같은 이름이어도 두 ID가 실제 응답 중이면 별도로 표시한다. 이름/IP로 등록 ID·lease·권한을 합치지 않는다. 기존 호스트 식별 파일이 손상되면 새 PC ID를 조용히 만들지 않고 시작을 차단한다. 소프트웨어/렌더 검증·게시 후 같은 설치 루트의 일반 PC Update와 명시적 전체 백업 런타임 업데이트를 따르며, 제공 및 실물 결과는 아래에 기록한다.
+
+<p align="center">
+  <img src="../assets/screenshots/mk20_compact_breadcrumb_0_2_8.png" width="428" alt="실제 MK20 0.2.8 framebuffer: 한 줄 아이콘 breadcrumb, 한글 본문 6줄, 상시 볼륨 없음"><br>
+  <em>전체 백업을 거친 0.2.8 업데이트 후 캡처한 실물 428×142 원본이다. 기존 Codex 본문을 표시하며 395 Antigravity 인수나 사람의 볼륨 버튼 조작 증거는 아니다.</em>
+</p>
 
 ## 6. 설치·검증
 
