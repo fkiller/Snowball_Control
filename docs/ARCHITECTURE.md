@@ -252,6 +252,8 @@ The MK20 terminal handles screen rendering, physical keys, knobs, and dual-way v
 
 ## 2. Preview Security Boundaries
 
+**Remote expansion development foundation:** The experimental Middleware `RemoteReadGateway` is disabled by default and starts only through an explicit trusted runtime option. It binds a separate loopback listener and does not proxy the Supervisor. Its in-memory, short-lived bearer grants permit a single read-only session-status endpoint; even session counts and harness identifiers are sensitive metadata. Grants can be revoked and disappear on restart. This foundation has no TLS, verified device pairing, persistent device management, browser access, remote command execution, or user-facing enablement. It is not a production Internet interface. A future authenticated gateway must retain the local/offline boundary and expose only explicitly authorized operations; Tailscale may provide a private transport but does not replace application authorization. The experimental native mobile client and any proxy configuration are not a production-ready connection or proof of host identity.
+
 - **Web Supervisor Loopback Binding**: Binds strictly to **`127.0.0.1:8765`** without authentication/PIN for personal loopback ergonomics. It must never be exposed to public network interfaces or unauthenticated reverse proxies.
 - **LAN Communication**: MK20 UDP status packets, key events, and development TCP ADB operate over the local network. Preview UDP uses lease/controller/run/sequence routing and replay checks, but has no encrypted identity proof or cryptographic signatures. These checks do not provide security against a hostile LAN.
 - **Development ADB Shell**: The Tina Linux developer image omits ADB authentication keys. The MAC address filter in `lunch.sh` is an internal LAN guard and does not constitute cryptographic identity verification or access control.
@@ -533,6 +535,8 @@ Native Codex/Antigravity/OpenCode text is no longer silently cut to 800 characte
 </p>
 
 ## 6. Installation & Verification
+
+**Source update shortcut and development checkouts:** Setup creates install-root-specific `snowball` / `snowball.cmd` launchers. After the install root is added to PATH, `snowball update` runs the existing source updater; it checks the installed repository inventory, official origins, clean tracked files and `main` branches before starting. This does not add PATH automatically, shorten first installation, provide signed/atomic releases, or protect direct calls to the older install scripts. The scripts still obtain `main`, so do not use them to update experimental branches. For sibling development checkouts, Control's `node scripts/workspace-revisions.mjs inspect --branch feat/remote-expansion` checks branches and changes; `lock` emits a clean-checkout SHA manifest and `verify --manifest PATH` checks it. This records neither ignored files nor external dependencies and is not a signed or reproducible release.
 
 Place both repositories in the same parent directory:
 
