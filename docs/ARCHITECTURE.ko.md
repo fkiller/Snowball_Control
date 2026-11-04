@@ -495,7 +495,9 @@ Codex/Antigravity/OpenCode 본문을 800자·최근 15개로 조용히 자르지
 
 ## 6. 설치·검증
 
-**소스 업데이트 단축과 개발 체크아웃:** 설치는 해당 설치 루트 전용 `snowball` / `snowball.cmd` 실행기를 만든다. macOS/Linux에서 `~/.local/bin`이 이미 PATH에 있고 기존 명령과 충돌하지 않으면 해당 위치에 자동 연결하며, 그렇지 않으면 PATH 설정이 필요하다. `snowball update`는 기존 소스 업데이트를 실행한다. 현재의 직접 업데이트 스크립트와 setup도 저장소 변경이나 트레이 중지 전에 기존 suite 체크아웃의 공식 origin·추적 파일 변경·`main` 브랜치를 검사한다. 과거에 다운로드한 스크립트에는 이 보호가 없다. 최초 설치 단축이나 서명·원자적 배포는 아직 제공하지 않는다. 기존 스크립트는 계속 `main`을 가져오므로 실험 브랜치 갱신에 사용하지 않는다. 같은 부모의 개발 체크아웃은 Control에서 `node scripts/workspace-revisions.mjs inspect --branch feat/remote-expansion`으로 점검할 수 있다. `lock`은 변경 없는 저장소의 SHA manifest를 출력하고 `verify --manifest PATH`는 이를 검증한다. 무시된 파일과 외부 의존성은 기록하지 않으므로 서명된 릴리스나 재현 빌드를 보장하지 않는다.
+**소스 업데이트 단축과 개발 체크아웃:** 설치는 해당 설치 루트 전용 `snowball` / `snowball.cmd` 실행기를 만든다. macOS/Linux에서 `~/.local/bin`이 이미 PATH에 있고 기존 명령과 충돌하지 않으면 해당 위치에 자동 연결하며, 그렇지 않으면 PATH 설정이 필요하다. `snowball update`는 기존 소스 업데이트를 실행한다. 현재의 직접 업데이트 스크립트와 setup도 저장소 변경이나 트레이 중지 전에 기존 suite 체크아웃의 공식 origin·추적 파일 변경·`main` 브랜치를 검사한다. 과거에 다운로드한 스크립트에는 이 보호가 없다. 설치된 단축 명령은 서명·원자적 배포를 제공하지 않는다. 기존 스크립트는 계속 `main`을 가져오므로 실험 브랜치 갱신에 사용하지 않는다. 같은 부모의 개발 체크아웃은 Control에서 `node scripts/workspace-revisions.mjs inspect --branch feat/remote-expansion`으로 점검할 수 있다. `lock`은 변경 없는 저장소의 SHA manifest를 출력하고 `verify --manifest PATH`는 이를 검증한다. 무시된 파일과 외부 의존성은 기록하지 않으므로 서명된 릴리스나 재현 빌드를 보장하지 않는다.
+
+Node 22.12 이상과 npm이 이미 있는 사용자는 원격 확장 브랜치의 작은 GitHub 기반 `npx --ignore-scripts` 실행기를 Windows·macOS·Linux에서 공통 설치 명령과 `--update`에 사용할 수 있다. npm 실행기 준비 단계에서는 의존성의 lifecycle 스크립트를 자동 실행하지 않으며, 명시적으로 호출한 기존 소스 설치기는 자체 빌드 절차를 수행한다. 설치 대상은 이 실험 브랜치가 아닌 일반 `main` 소스 suite다. npm에 패키지를 게시하지 않았고, 서명되거나 원자적인 릴리스 채널도 아니다.
 
 개발 통합용 Middleware `scripts/install-locked-development.mjs`는 신뢰하는 workspace manifest에 기록된 정확한 커밋으로 공식 저장소 6개를 새 절대 경로에 복제·검증하고 Web 프로필을 빌드한다. 자동 실행이나 공용 PATH 등록은 하지 않는다. Node/npm과 Git이 필요하며 기존 디렉터리를 재사용하지 않는다. 서명된 릴리스 설치가 아니고 detached 개발 체크아웃은 일반 `main` 업데이트 대상이 아니다.
 
