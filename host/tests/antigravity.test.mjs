@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
+import { once } from 'node:events';
 import { AntigravityAdapter } from '../dist/harness/antigravity.js';
 
 test('Antigravity reference adapter cannot acknowledge an unavailable CLI or approval bridge', async () => {
@@ -79,10 +80,12 @@ test('AntigravityAdapter: Brain directory session discovery and transcript delta
       content: 'Streaming response delta chunk from Antigravity agent',
       created_at: new Date().toISOString(),
     };
+    // Let the OS watcher register on the next event-loop turn, then wait for
+    // the actual delta. A bounded timeout still fails if the watcher is broken.
+    const nextDelta = once(adapter, 'delta', { signal: AbortSignal.timeout(3000) });
+    await new Promise(resolve => setImmediate(resolve));
     fs.appendFileSync(transcriptFile, JSON.stringify(newStep) + '\n', 'utf8');
-
-    // Wait for fs watcher
-    await new Promise((r) => setTimeout(r, 200));
+    await nextDelta;
 
     assert.ok(deltas.length >= 1, 'Should receive delta from transcript file watcher');
     assert.equal(deltas[0].sessionId, convId);
