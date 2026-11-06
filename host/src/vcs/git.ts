@@ -28,12 +28,15 @@ export class GitProvider {
   static async getFileDiff(filePath: string, cwd = process.cwd()): Promise<string[]> {
     const root = path.resolve(cwd);
     const fullPath = path.resolve(root, filePath);
-    const within = (target: string) => {
-      const rel = path.relative(root, target);
+    const within = (base: string, target: string) => {
+      const rel = path.relative(base, target);
       return rel !== '..' && !rel.startsWith('..' + path.sep) && !path.isAbsolute(rel);
     };
-    if (typeof filePath !== 'string' || filePath.includes('\0') || !within(fullPath)) return ['File is outside the selected project'];
-    try { if (!within(syncFs.realpathSync(fullPath))) return ['File is outside the selected project']; } catch {}
+    if (typeof filePath !== 'string' || filePath.includes('\0') || !within(root, fullPath)) return ['File is outside the selected project'];
+    try {
+      const realRoot = syncFs.realpathSync(root);
+      if (!within(realRoot, syncFs.realpathSync(fullPath))) return ['File is outside the selected project'];
+    } catch {}
     return new Promise(resolve => {
       const options = { cwd: root, windowsHide: true, maxBuffer: 1024 * 1024, timeout: 10000 };
       const lines = (output: string) => output.split('\n').map(line => line.replace(/\r$/, ''));
