@@ -2,6 +2,9 @@
   <a href="ARCHITECTURE.md">English</a> | <strong>한국어</strong>
 </p>
 
+
+**MK20 Settings 닫기 수정 (2026-11-15):** 네이티브 HUD는 K17을 Machines용으로 먼저 처리하여 호스트에 전달하지 않습니다. 미들웨어 Settings가 유일한 닫기 버튼으로 K17을 제공하여 Machines에서 돌아와도 Settings를 닫을 수 없었습니다. 이제 K4 Close와 K17 Change PC를 표시하고 K4로 초안과 선택을 보존한 채 세션으로 돌아갑니다. 호스트 전용 수정으로 일반 PC Update를 적용하며 펌웨어 쓰기는 필요하지 않습니다. Web·M5Stack 및 하네스 3종의 네이티브 실행 프로토콜은 동일합니다. 허용된 ADB 접근이 불가능하여 실물 화면·입력 인수는 아직 미확인입니다.
+
 # Snowball Control & Middleware — Preview
 
 이 문서는 기기와 미들웨어 전체의 현재 설계를 관리하는 단일 원천이다. 최초 범주는 **Codex, AGY, OpenCode, MK20, 로컬 Web Supervisor**다. 공개 Preview는 신뢰하는 개인 PC와 내부 네트워크용이며, 인터넷이나 다중 사용자 환경에 대한 보안 보장을 제공하지 않는다.

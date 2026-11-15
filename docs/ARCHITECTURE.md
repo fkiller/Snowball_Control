@@ -2,6 +2,9 @@
   <strong>English</strong> | <a href="ARCHITECTURE.ko.md">한국어</a>
 </p>
 
+
+**MK20 Settings exit correction (2026-11-15):** The native HUD reserves K17 for Machines before forwarding host input. The Middleware Settings view previously offered K17 as its only close action, trapping the user in Settings after returning from Machines. Settings now exposes K4 Close and K17 Change PC; the host accepts K4 to return to the session without clearing the draft or selection. This host-only correction requires a normal PC Update, not a firmware flash. Web, M5Stack and the three native harness dispatch protocols are unchanged. Physical framebuffer and input acceptance remain unverified while authorized ADB is unreachable.
+
 # Snowball Control & Middleware — Preview Architecture
 
 This document serves as the **Single Source of Truth (SSOT)** governing the design, boundaries, and interfaces across the physical device and host middleware. The initial scope encompasses **OpenAI Codex, Google Antigravity (AGY), OpenCode, MK20 hardware, and local Web Supervisor**. This public Preview is intended strictly for personal workstations and trusted local networks; it does not provide security guarantees for multi-tenant or untrusted Internet environments.
