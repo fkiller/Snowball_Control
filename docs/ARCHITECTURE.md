@@ -1,7 +1,5 @@
 <p align="right">
   <strong>English</strong> | <a href="ARCHITECTURE.ko.md">한국어</a>
-
-**M5Stack Wi-Fi recovery candidate 0.5.8:** A boot association deadline no longer disables automatic recovery for the saved network. After disconnection the firmware retires the stale authenticated transport, retries the last successfully saved Wi-Fi at bounded intervals, and rediscovers the selected PC after a real association. Retries pause during Wi-Fi editing, scanning, confirmation or a pending send; in-flight operations are not replayed. This is M5Stack-specific; Web and MK20 behavior and all harness protocols are unchanged. Physical outage/recovery and ordinary installed device update remain unverified.
 </p>
 
 
