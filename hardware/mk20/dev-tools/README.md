@@ -86,3 +86,15 @@ Back up the entire SD card before applying the Snowball image. If an update fail
 - `package/PCMonitorApp/qt_app1` executes `/mnt/SDCARD/lunch.sh` as root.
 
 Normal runtime updates leave the SD card in MK20 and verify a complete affected-partition backup over product USB. Legacy firmware without the receiver requires initial migration. Full-card imaging is advanced recovery, not a required normal setup step. Rather than analyzing legacy factory SD contents, we verify deployment and rollback of our own Snowball images. Refer to [docs/ARCHITECTURE.md](../../../docs/ARCHITECTURE.md) for current designs, QMK requirements, and Preview security boundaries.
+
+## Developer ADB recovery (explicit opt-in)
+
+This is a developer workstation tool, excluded from the runtime deploy manifest. Product updates must retain `dev-access.conf` and `snowball-*` developer files. `snowball-dev-adb.sh` can be installed explicitly on a development device and invoked from its preserved configuration:
+
+```sh
+[ ! -r /mnt/SDCARD/snowball-dev-adb.sh ] || /bin/sh /mnt/SDCARD/snowball-dev-adb.sh --watch </dev/null >/tmp/snowball-dev-adb-watch.log 2>&1 &
+```
+
+The guard maintains an exact `DEV_PC_MAC` rule on wlan0 and starts a missing ADB daemon only after that rule succeeds. It never kills adbd, replaces an active USB gadget or broadens access to the LAN. A changed PC network adapter still requires an authorized MAC update; the guard does not invent an owner. Validate actual TCP ADB and a separately enumerated USB recovery interface before changing network adapters or maintenance configuration. QMK HID enumeration alone is not Linux USB/ADB recovery.
+
+On 2026-11-16 the attached development card still allowed a removed Wi-Fi adapter's MAC; boot logs repeatedly recorded `Product USB unavailable`. The mounted runtime files were backed up and hash-verified before correcting only the MAC assignment. Windows raw-disk access was denied, so this file backup is not a newly verified full-media image. The cause of USB controller unavailability requires live ADB inspection; it is not established by these logs. Do not reboot repeatedly or claim USB recovery from QMK presence alone.

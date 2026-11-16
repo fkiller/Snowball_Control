@@ -86,3 +86,15 @@ Snowball 이미지를 적용하기 전에 SD 카드 전체를 백업하세요. �
 - `package/PCMonitorApp/qt_app1`: root 권한으로 `/mnt/SDCARD/lunch.sh`를 실행합니다.
 
 정상 런타임 업데이트는 SD 카드를 기기에 둔 채 제품 USB로 변경 파티션 전체 백업을 검증합니다. USB 수신기가 없는 구 펌웨어는 최초 이관이 남아 있습니다. 전체 카드 이미지는 고급 복구 수단이며 정상 여정의 필수 단계가 아닙니다. 이전 SD 내용 분석 대신 우리가 배포하는 Snowball 이미지와 백업 이미지 복원을 검증합니다. 현재 설계·QMK 필수 조건·Preview 보안 경계는 [아키텍처 문서](../../../docs/ARCHITECTURE.ko.md)를 참고하세요.
+
+## 개발용 ADB 복구 (명시적 선택)
+
+`snowball-dev-adb.sh`는 런타임 배포 파일 목록에서 제외한 개발 PC용 도구입니다. 제품 업데이트는 `dev-access.conf`와 `snowball-*` 개발 파일을 보존해야 합니다. 개발 기기에만 명시적으로 설치하고 보존되는 설정 파일에서 실행합니다.
+
+```sh
+[ ! -r /mnt/SDCARD/snowball-dev-adb.sh ] || /bin/sh /mnt/SDCARD/snowball-dev-adb.sh --watch </dev/null >/tmp/snowball-dev-adb-watch.log 2>&1 &
+```
+
+감시기는 wlan0에서 정확한 `DEV_PC_MAC`의 허용 규칙을 유지하고, 이 규칙이 성공한 뒤에만 누락된 ADB 데몬을 시작합니다. adbd 종료, 활성 USB gadget 교체, LAN 전체 접근 허용은 수행하지 않습니다. PC 어댑터 변경 시에는 여전히 허용 MAC 갱신이 필요하며 소유자를 임의로 정하지 않습니다. 어댑터나 유지보수 설정을 변경하기 전에 실제 TCP ADB와 별도로 열거되는 USB 복구 인터페이스를 검증해야 합니다. QMK HID 인식만으로 Linux USB·ADB 복구가 검증된 것은 아닙니다.
+
+2026-11-16 연결한 개발 카드에는 제거된 Wi-Fi 어댑터의 MAC이 남아 있었고 부팅 로그는 반복적으로 `Product USB unavailable`을 기록했습니다. 마운트된 런타임 파일을 복사·해시 검증한 뒤 MAC 항목만 수정했습니다. Windows 원시 디스크 읽기 권한이 거부되어 이 파일 백업은 새 전체 매체 이미지가 아닙니다. USB 컨트롤러 미노출의 원인은 실제 ADB 접속 후 추가 확인이 필요하며 로그만으로 확정하지 않습니다. 반복 재부팅이나 QMK 인식만으로 USB 복구 성공을 주장하지 않습니다.
