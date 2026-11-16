@@ -26,6 +26,12 @@ class DevelopmentAdbConfig(unittest.TestCase):
         for value in ['', 'DEV_PC_MAC="example"\n', 'DEV_PC_MAC="12:34:56:78:9a:bc"\n'*2, 'DEV_PC_MAC="12:34:56:78:9a:bc"; exit 0\n']:
             self.assertNotEqual(self.check(value).returncode, 0)
 
+    def test_trusted_subnet_rejects_public_broad_and_invalid_routes(self):
+        for subnet in ['192.168.1.0/24', '10.0.0.0/8', '172.16.1.0/24']:
+            self.assertEqual(subprocess.run(['sh', str(SCRIPT), '--check-subnet', subnet]).returncode, 0)
+        for subnet in ['0.0.0.0/0', '8.8.8.0/24', '172.32.0.0/16', '192.168.999.0/24', '10..0.0/24', '10.0.0.0/0', '10.0.0.0/31', '10.0.0.0/24;echo bad']:
+            self.assertNotEqual(subprocess.run(['sh', str(SCRIPT), '--check-subnet', subnet]).returncode, 0)
+
     def test_config_is_never_executed(self):
         with tempfile.TemporaryDirectory() as directory:
             marker = Path(directory)/'executed'
