@@ -79,3 +79,11 @@ test('lease overhead is included in preview datagram capacity',()=>{
   }
   assert.ok(nearLimit);assert.throws(()=>encodeLegacyPreview({...nearLimit,leaseToken:'b'.repeat(32)},1),/datagram_capacity/);
 });
+
+test('Settings skin metadata has a bounded 4KB wire budget',()=>{
+  const settings={...view,mode:'settings',lines:Array(4).fill('Theme description '.repeat(5)),keys:Array.from({length:20},(_,i)=>({id:i+1,main:'Skin choice '+i,top:'REGISTERED',sub:'Select or active'}))};
+  const encoded=encodeLegacyPreview(settings,1);
+  assert.ok(encoded.length>1400&&encoded.length<=4096);
+  assert.throws(()=>encodeLegacyPreview({...settings,mode:'session'},1),/datagram_capacity/);
+  assert.throws(()=>encodeLegacyPreview({...settings,keys:settings.keys.map(k=>({...k,items:Array(8).fill('x'.repeat(23))}))},1),/datagram_capacity/);
+});

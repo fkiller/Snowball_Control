@@ -96,7 +96,7 @@ export function encodeLegacyPreview(view, sequence) {
   if (view.skinName !== undefined) {
     packet.skinName = text(view.skinName, 31);
   }
-  const maxCapacity = (view.mode === 'workspace' || view.mode === 'changes' || view.keys.some(k => (k.flags & 32) || (k.items && k.items.length > 0))) ? 4096 : 1400;
+  const maxCapacity = (view.mode === 'workspace' || view.mode === 'changes' || view.mode === 'settings' || view.keys.some(k => (k.flags & 32) || (k.items && k.items.length > 0))) ? 4096 : 1400;
   let encoded=Buffer.from(JSON.stringify(packet));
   if(encoded.length>maxCapacity&&packet.crumbPixels){delete packet.crumbPixels;encoded=Buffer.from(JSON.stringify(packet));}
   requireThat(encoded.length <= maxCapacity, 'datagram_capacity'); return encoded;
