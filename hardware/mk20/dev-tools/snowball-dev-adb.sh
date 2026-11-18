@@ -84,7 +84,8 @@ while :; do
             iptables -I INPUT 1 -p tcp --dport 5555 -j SNOWBALL_DEV_ADB || { sleep 5; continue; }
         fi
         if ! pidof adbd >/dev/null; then
-            ADB_TRANSPORT_PORT=5555 /bin/adbd -D >> /tmp/snowball-dev-adbd.log 2>&1 < /dev/null &
+            # The vendor daemon traces ADB traffic continuously; /tmp also holds the HUD's audio owner lease.
+            ADB_TRANSPORT_PORT=5555 /bin/adbd -D </dev/null >/dev/null 2>&1 &
             log 'Started missing development ADB after confirming access rule'
         fi
     elif [ "$last" != invalid ]; then
